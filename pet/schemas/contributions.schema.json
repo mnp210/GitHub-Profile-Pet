@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/github-profile-pet/schemas/contributions.schema.json",
+  "title": "ContributionLedgerDocument",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generation",
+    "monotonicPublicHwm",
+    "dailyAccruedXp",
+    "hourlySliceUsage",
+    "slices",
+    "monthlyHistoricalSummary"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "monotonicPublicHwm": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "dailyAccruedXp": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 300
+      }
+    },
+    "hourlySliceUsage": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "slices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "sliceId",
+          "syncDate",
+          "discoveredAt",
+          "units",
+          "status",
+          "rewardedXp",
+          "rewardedSatiety",
+          "expiryAt",
+          "evaluatedAt"
+        ],
+        "properties": {
+          "sliceId": { "type": "string" },
+          "syncDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+          "discoveredAt": { "type": "string", "format": "date-time" },
+          "units": { "type": "integer", "minimum": 1 },
+          "status": {
+            "type": "string",
+            "enum": ["rewarded", "forfeited", "pending", "expired"]
+          },
+          "rewardedXp": { "type": "integer", "minimum": 0 },
+          "rewardedSatiety": { "type": "integer", "minimum": 0 },
+          "expiryAt": { "type": "string", "format": "date-time" },
+          "evaluatedAt": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "monthlyHistoricalSummary": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "month",
+          "totalObservedUnits",
+          "rewardedUnits",
+          "forfeitedUnits",
+          "expiredUnits",
+          "rewardedXp"
+        ],
+        "properties": {
+          "month": { "type": "string", "pattern": "^\\d{4}-\\d{2}$" },
+          "totalObservedUnits": { "type": "integer", "minimum": 0 },
+          "rewardedUnits": { "type": "integer", "minimum": 0 },
+          "forfeitedUnits": { "type": "integer", "minimum": 0 },
+          "expiredUnits": { "type": "integer", "minimum": 0 },
+          "rewardedXp": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

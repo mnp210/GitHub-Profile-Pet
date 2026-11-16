@@ -1,0 +1,31 @@
+name: "🍖 Feed Pet"
+description: "Offer a nutritious commit meal to your companion to restore Satiety and earn XP."
+title: "pet: feed"
+labels: ["pet-action:pending", "pet:feed"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### 🍖 Feed Your Companion
+        Feeding increases your pet's **Satiety (Hunger)** and awards base **XP**.
+        - **Satiety Limit:** Feeding is rejected if your pet is already full (Satiety = 100).
+        - **Cooldown:** A strict 60-second cooldown is enforced between care actions.
+        - **Diminishing Returns:** Repeated feeding within a rolling 60-second window yields diminishing XP.
+  - type: dropdown
+    id: meal_type
+    attributes:
+      label: "Select Meal"
+      description: "Choose a balanced meal for your companion."
+      options:
+        - "Byte-sized Salmon Snack"
+        - "Clean Code Kibble"
+        - "Green CI Feast"
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirm_action
+    attributes:
+      label: "Confirm Action"
+      options:
+        - label: "I confirm this feeding action for my GitHub Profile Pet."
+          required: true

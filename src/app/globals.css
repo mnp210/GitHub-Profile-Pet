@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* Refined Neutral Charcoal & Slate Foundation */
+    --color-bg-base: #0c0e12;
+    --color-bg-subtle: #12151b;
+    --color-bg-surface: #181c24;
+    --color-bg-surface-raised: #1f242e;
+    --color-bg-surface-active: #272c38;
+
+    --color-border-subtle: #222733;
+    --color-border-default: #2d3342;
+    --color-border-strong: #3f475a;
+
+    --color-text-primary: #f1f5f9;
+    --color-text-secondary: #94a3b8;
+    --color-text-muted: #64748b;
+    --color-text-faint: #475569;
+
+    /* Single Restrained Brand Accent: Warm Indigo/Cobalt (not neon) */
+    --color-accent-brand: #4f46e5;
+    --color-accent-brand-hover: #4338ca;
+    --color-accent-brand-subtle: rgba(79, 70, 229, 0.12);
+  }
+
+  body {
+    background-color: var(--color-bg-base);
+    color: var(--color-text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* Refined, low-profile scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-bg-base);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2a3140;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3b4458;
+  }
+}
+
+/* Accessible Keyboard Focus Indicators */
+:focus-visible {
+  outline: 2px solid #6366f1 !important;
+  outline-offset: 2px !important;
+}
+
+/* User Reduced Motion Preferences */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-pet-cat,
+  .animate-pet-dragon,
+  .animate-pet-fox,
+  .animate-pet-slime {
+    animation: none !important;
+  }
+}
+
+/* Disciplined Pixel Sprite Animations (isolated to the character artwork itself) */
+@keyframes pet-idle-cat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes pet-idle-dragon {
+  0%, 100% { transform: translateY(0px) scale(1); }
+  50% { transform: translateY(-5px) scale(1.02); }
+}
+
+@keyframes pet-idle-fox {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes pet-idle-slime {
+  0%, 100% { transform: translateY(0px) scale(1, 1); }
+  40% { transform: translateY(-5px) scale(0.94, 1.06); }
+  75% { transform: translateY(1px) scale(1.05, 0.95); }
+}
+
+.animate-pet-cat {
+  animation: pet-idle-cat 3s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.animate-pet-dragon {
+  animation: pet-idle-dragon 3.5s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.animate-pet-fox {
+  animation: pet-idle-fox 2.8s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.animate-pet-slime {
+  animation: pet-idle-slime 2.4s ease-in-out infinite;
+  transform-origin: bottom center;
+}

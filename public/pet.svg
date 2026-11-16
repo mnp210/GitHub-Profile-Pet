@@ -1,0 +1,233 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 200" width="450" height="200" shape-rendering="crispEdges">
+  <title>Shadow Claw — GitHub Profile Pet</title>
+  <desc>Shadow Claw is a Level 1 cat companion in Hatchling stage. Current Mood: Happy. Energy: 100%, Satiety: 100%, Happiness: 100%.</desc>
+  <style>
+    .pet-name {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      fill: #f0f6fc;
+    }
+    .pet-subtitle {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 11px;
+      font-weight: 500;
+      fill: #8b949e;
+    }
+    .badge-text {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 9px;
+      font-weight: 700;
+      fill: #8b949e;
+      letter-spacing: 0.5px;
+    }
+    .level-text {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 10px;
+      font-weight: 700;
+      fill: #e0e7ff;
+      letter-spacing: 0.5px;
+    }
+    .vital-label {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 10.5px;
+      font-weight: 600;
+      fill: #8b949e;
+    }
+    .vital-value {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 9.5px;
+      font-weight: 600;
+      fill: #f0f6fc;
+    }
+    .quote-text {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 10px;
+      font-style: italic;
+      fill: #8b949e;
+    }
+  </style>
+
+  <!-- Card Background -->
+  <rect width="450" height="200" rx="10" fill="#0d1117" />
+  <rect x="0.5" y="0.5" width="449" height="199" rx="9.5" fill="none" stroke="#21262d" stroke-width="1" />
+
+  <!-- Sprite Habitat Pedestal -->
+  <ellipse cx="72" cy="144" rx="44" ry="7" fill="rgba(0, 0, 0, 0.5)" />
+
+  <!-- Character Vector Sprite (32x32 pixel matrix at 3x scale) -->
+  <g class="pet-sprite" shape-rendering="crispEdges">
+      <rect x="51" y="57" width="6" height="3" fill="#1a1228" />
+      <rect x="87" y="57" width="6" height="3" fill="#1a1228" />
+      <rect x="45" y="60" width="3" height="3" fill="#d1fae5" />
+      <rect x="48" y="60" width="3" height="3" fill="#1a1228" />
+      <rect x="51" y="60" width="3" height="3" fill="#f472b6" />
+      <rect x="54" y="60" width="3" height="3" fill="#1a1228" />
+      <rect x="87" y="60" width="3" height="3" fill="#1a1228" />
+      <rect x="90" y="60" width="3" height="3" fill="#f472b6" />
+      <rect x="93" y="60" width="3" height="3" fill="#1a1228" />
+      <rect x="96" y="60" width="3" height="3" fill="#d1fae5" />
+      <rect x="45" y="63" width="3" height="3" fill="#d1fae5" />
+      <rect x="48" y="63" width="3" height="3" fill="#1a1228" />
+      <rect x="51" y="63" width="6" height="3" fill="#f472b6" />
+      <rect x="57" y="63" width="30" height="3" fill="#1a1228" />
+      <rect x="87" y="63" width="6" height="3" fill="#f472b6" />
+      <rect x="93" y="63" width="3" height="3" fill="#1a1228" />
+      <rect x="96" y="63" width="3" height="3" fill="#d1fae5" />
+      <rect x="45" y="66" width="3" height="3" fill="#1a1228" />
+      <rect x="48" y="66" width="3" height="3" fill="#2d184a" />
+      <rect x="51" y="66" width="6" height="3" fill="#f472b6" />
+      <rect x="57" y="66" width="30" height="3" fill="#6d39a8" />
+      <rect x="87" y="66" width="6" height="3" fill="#f472b6" />
+      <rect x="93" y="66" width="3" height="3" fill="#2d184a" />
+      <rect x="96" y="66" width="3" height="3" fill="#1a1228" />
+      <rect x="48" y="69" width="3" height="3" fill="#1a1228" />
+      <rect x="51" y="69" width="42" height="3" fill="#6d39a8" />
+      <rect x="93" y="69" width="3" height="3" fill="#1a1228" />
+      <rect x="45" y="72" width="3" height="3" fill="#1a1228" />
+      <rect x="48" y="72" width="48" height="3" fill="#6d39a8" />
+      <rect x="96" y="72" width="3" height="3" fill="#1a1228" />
+      <rect x="42" y="75" width="3" height="3" fill="#1a1228" />
+      <rect x="45" y="75" width="9" height="3" fill="#4a247a" />
+      <rect x="54" y="75" width="3" height="3" fill="#1a1228" />
+      <rect x="57" y="75" width="3" height="3" fill="#4a247a" />
+      <rect x="60" y="75" width="3" height="3" fill="#1a1228" />
+      <rect x="63" y="75" width="18" height="3" fill="#4a247a" />
+      <rect x="81" y="75" width="3" height="3" fill="#1a1228" />
+      <rect x="84" y="75" width="3" height="3" fill="#4a247a" />
+      <rect x="87" y="75" width="3" height="3" fill="#1a1228" />
+      <rect x="90" y="75" width="9" height="3" fill="#4a247a" />
+      <rect x="99" y="75" width="3" height="3" fill="#1a1228" />
+      <rect x="42" y="78" width="3" height="3" fill="#1a1228" />
+      <rect x="45" y="78" width="12" height="3" fill="#4a247a" />
+      <rect x="57" y="78" width="3" height="3" fill="#1a1228" />
+      <rect x="60" y="78" width="24" height="3" fill="#4a247a" />
+      <rect x="84" y="78" width="3" height="3" fill="#1a1228" />
+      <rect x="87" y="78" width="12" height="3" fill="#4a247a" />
+      <rect x="99" y="78" width="3" height="3" fill="#1a1228" />
+      <rect x="42" y="81" width="3" height="3" fill="#1a1228" />
+      <rect x="45" y="81" width="54" height="3" fill="#2d184a" />
+      <rect x="99" y="81" width="3" height="3" fill="#1a1228" />
+      <rect x="42" y="84" width="3" height="3" fill="#1a1228" />
+      <rect x="45" y="84" width="24" height="3" fill="#2d184a" />
+      <rect x="69" y="84" width="6" height="3" fill="#f472b6" />
+      <rect x="75" y="84" width="24" height="3" fill="#2d184a" />
+      <rect x="99" y="84" width="3" height="3" fill="#1a1228" />
+      <rect x="45" y="87" width="3" height="3" fill="#1a1228" />
+      <rect x="48" y="87" width="18" height="3" fill="#2d184a" />
+      <rect x="66" y="87" width="3" height="3" fill="#1a1228" />
+      <rect x="69" y="87" width="6" height="3" fill="#2d184a" />
+      <rect x="75" y="87" width="3" height="3" fill="#1a1228" />
+      <rect x="78" y="87" width="18" height="3" fill="#2d184a" />
+      <rect x="96" y="87" width="3" height="3" fill="#1a1228" />
+      <rect x="48" y="90" width="3" height="3" fill="#1a1228" />
+      <rect x="51" y="90" width="42" height="3" fill="#2d184a" />
+      <rect x="93" y="90" width="3" height="3" fill="#1a1228" />
+      <rect x="51" y="93" width="3" height="3" fill="#1a1228" />
+      <rect x="54" y="93" width="36" height="3" fill="#6d39a8" />
+      <rect x="90" y="93" width="3" height="3" fill="#1a1228" />
+      <rect x="51" y="96" width="3" height="3" fill="#1a1228" />
+      <rect x="54" y="96" width="36" height="3" fill="#6d39a8" />
+      <rect x="90" y="96" width="3" height="3" fill="#1a1228" />
+      <rect x="99" y="96" width="3" height="3" fill="#1a1228" />
+      <rect x="102" y="96" width="3" height="3" fill="#d1fae5" />
+      <rect x="105" y="96" width="3" height="3" fill="#1a1228" />
+      <rect x="51" y="99" width="3" height="3" fill="#1a1228" />
+      <rect x="54" y="99" width="15" height="3" fill="#4a247a" />
+      <rect x="69" y="99" width="6" height="3" fill="#f472b6" />
+      <rect x="75" y="99" width="15" height="3" fill="#4a247a" />
+      <rect x="90" y="99" width="3" height="3" fill="#1a1228" />
+      <rect x="96" y="99" width="3" height="3" fill="#1a1228" />
+      <rect x="99" y="99" width="3" height="3" fill="#6d39a8" />
+      <rect x="102" y="99" width="3" height="3" fill="#1a1228" />
+      <rect x="48" y="102" width="3" height="3" fill="#1a1228" />
+      <rect x="51" y="102" width="15" height="3" fill="#4a247a" />
+      <rect x="66" y="102" width="3" height="3" fill="#f472b6" />
+      <rect x="69" y="102" width="6" height="3" fill="#d1fae5" />
+      <rect x="75" y="102" width="3" height="3" fill="#f472b6" />
+      <rect x="78" y="102" width="15" height="3" fill="#4a247a" />
+      <rect x="93" y="102" width="3" height="3" fill="#1a1228" />
+      <rect x="96" y="102" width="3" height="3" fill="#6d39a8" />
+      <rect x="99" y="102" width="3" height="3" fill="#1a1228" />
+      <rect x="48" y="105" width="3" height="3" fill="#1a1228" />
+      <rect x="51" y="105" width="18" height="3" fill="#4a247a" />
+      <rect x="69" y="105" width="6" height="3" fill="#f472b6" />
+      <rect x="75" y="105" width="15" height="3" fill="#4a247a" />
+      <rect x="90" y="105" width="3" height="3" fill="#1a1228" />
+      <rect x="93" y="105" width="3" height="3" fill="#4a247a" />
+      <rect x="96" y="105" width="3" height="3" fill="#1a1228" />
+      <rect x="48" y="108" width="3" height="3" fill="#1a1228" />
+      <rect x="51" y="108" width="42" height="3" fill="#2d184a" />
+      <rect x="93" y="108" width="3" height="3" fill="#1a1228" />
+      <rect x="48" y="111" width="3" height="3" fill="#1a1228" />
+      <rect x="51" y="111" width="42" height="3" fill="#2d184a" />
+      <rect x="93" y="111" width="3" height="3" fill="#1a1228" />
+      <rect x="48" y="114" width="3" height="3" fill="#1a1228" />
+      <rect x="51" y="114" width="42" height="3" fill="#2d184a" />
+      <rect x="93" y="114" width="3" height="3" fill="#1a1228" />
+      <rect x="57" y="117" width="3" height="3" fill="#1a1228" />
+      <rect x="60" y="117" width="3" height="3" fill="#6d39a8" />
+      <rect x="63" y="117" width="3" height="3" fill="#1a1228" />
+      <rect x="78" y="117" width="3" height="3" fill="#1a1228" />
+      <rect x="81" y="117" width="3" height="3" fill="#6d39a8" />
+      <rect x="84" y="117" width="3" height="3" fill="#1a1228" />
+      <rect x="54" y="120" width="3" height="3" fill="#1a1228" />
+      <rect x="57" y="120" width="3" height="3" fill="#d1fae5" />
+      <rect x="60" y="120" width="3" height="3" fill="#1a1228" />
+      <rect x="63" y="120" width="3" height="3" fill="#d1fae5" />
+      <rect x="66" y="120" width="3" height="3" fill="#1a1228" />
+      <rect x="75" y="120" width="3" height="3" fill="#1a1228" />
+      <rect x="78" y="120" width="3" height="3" fill="#d1fae5" />
+      <rect x="81" y="120" width="3" height="3" fill="#1a1228" />
+      <rect x="84" y="120" width="3" height="3" fill="#d1fae5" />
+      <rect x="87" y="120" width="3" height="3" fill="#1a1228" />
+  </g>
+
+  <!-- Activity State Pill -->
+  <g class="activity-badge">
+    <rect x="28" y="160" width="88" height="18" rx="9" fill="#161b22" stroke="#21262d" stroke-width="1" />
+    <text x="72" y="172.5" class="badge-text" text-anchor="middle">HAPPY ✨</text>
+  </g>
+
+  <!-- Header: Pet Identity & Level Badge -->
+  <text x="150" y="32" class="pet-name">Shadow Claw</text>
+  <text x="150" y="47" class="pet-subtitle">Void Familiar • Hatchling</text>
+
+  <!-- Level Badge Pill -->
+  <g class="level-badge">
+    <rect x="372" y="17" width="54" height="20" rx="4" fill="#4338ca" />
+    <text x="399" y="31" class="level-text" text-anchor="middle">LVL 1</text>
+  </g>
+
+  <!-- Vitals Telemetry Section -->
+  <g class="vitals-section">
+    <!-- XP Progress -->
+    <text x="150" y="67" class="vital-label">EXP</text>
+    <text x="420" y="67" class="vital-value" text-anchor="end">0 / 100</text>
+    <rect x="150" y="72" width="270" height="5" rx="2.5" fill="#161b22" />
+    <rect x="150" y="72" width="0" height="5" rx="2.5" fill="#818cf8" />
+
+    <!-- Energy Gauge -->
+    <text x="150" y="93" class="vital-label">⚡ Energy</text>
+    <text x="420" y="93" class="vital-value" text-anchor="end">100%</text>
+    <rect x="150" y="98" width="270" height="5" rx="2.5" fill="#161b22" />
+    <rect x="150" y="98" width="270" height="5" rx="2.5" fill="#f59e0b" />
+
+    <!-- Satiety / Hunger Gauge -->
+    <text x="150" y="119" class="vital-label">🍖 Satiety</text>
+    <text x="420" y="119" class="vital-value" text-anchor="end">100%</text>
+    <rect x="150" y="124" width="270" height="5" rx="2.5" fill="#161b22" />
+    <rect x="150" y="124" width="270" height="5" rx="2.5" fill="#10b981" />
+
+    <!-- Joy / Happiness Gauge -->
+    <text x="150" y="145" class="vital-label">💖 Joy</text>
+    <text x="420" y="145" class="vital-value" text-anchor="end">100%</text>
+    <rect x="150" y="150" width="270" height="5" rx="2.5" fill="#161b22" />
+    <rect x="150" y="150" width="270" height="5" rx="2.5" fill="#f472b6" />
+  </g>
+
+  <!-- Companion Speech Bubble / Quote -->
+  <g class="speech-quote">
+    <text x="150" y="178" class="quote-text">“Purrs contentedly and rubs void ears against your cursor.”</text>
+  </g>
+</svg>

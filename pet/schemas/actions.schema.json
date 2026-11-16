@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/github-profile-pet/schemas/actions.schema.json",
+  "title": "ActionLedgerDocument",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generation",
+    "recentActions",
+    "processedRequestRegistry"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "recentActions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["action", "timestamp", "requestId"],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["feed", "train", "rest", "pet"]
+          },
+          "timestamp": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "processedRequestRegistry": {
+      "type": "object",
+      "required": [
+        "highWaterIssueNumber",
+        "sparseProcessedIssueNumbers",
+        "retiredNonActionGaps",
+        "unresolvedGaps"
+      ],
+      "properties": {
+        "highWaterIssueNumber": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sparseProcessedIssueNumbers": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "retiredNonActionGaps": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "unresolvedGaps": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,31 @@
+name: "⚔️ Train Pet"
+description: "Conduct an agile coding training exercise. Costs 18 Energy, boosts Happiness, awards XP."
+title: "pet: train"
+labels: ["pet-action:pending", "pet:train"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### ⚔️ Train Your Companion
+        Training builds agility, boosts **Happiness**, and awards significant **XP**.
+        - **Energy Requirement:** Requires at least **18 Energy**. Fails if Energy < 18.
+        - **Cooldown:** A strict 60-second cooldown is enforced between care actions.
+        - **Diminishing Returns:** Repeated training within a rolling 60-second window yields diminishing XP.
+  - type: dropdown
+    id: training_focus
+    attributes:
+      label: "Training Focus"
+      description: "Select the discipline for this training drill."
+      options:
+        - "Terminal Log Agility Drills"
+        - "Unit Test Obstacle Course"
+        - "Refactoring Kata Challenge"
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirm_action
+    attributes:
+      label: "Confirm Action"
+      options:
+        - label: "I confirm this training session for my GitHub Profile Pet."
+          required: true

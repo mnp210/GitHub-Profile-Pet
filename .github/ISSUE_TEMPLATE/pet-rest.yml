@@ -1,0 +1,31 @@
+name: "💤 Rest Pet"
+description: "Let your companion take a restorative nap. Restores +25 Energy (strictly 0 XP)."
+title: "pet: rest"
+labels: ["pet-action:pending", "pet:rest"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### 💤 Rest Your Companion
+        Resting allows your pet to replenish stamina and recuperate.
+        - **Energy Restored:** Restores **+25 Energy** (clamped to 100).
+        - **XP Award:** Strictly **0 XP**.
+        - **Cooldown:** A strict 60-second cooldown is enforced between care actions.
+  - type: dropdown
+    id: resting_spot
+    attributes:
+      label: "Resting Spot"
+      description: "Choose a cozy sleeping spot for your pet."
+      options:
+        - "Cozy Keyboard Corner"
+        - "Warm Laptop Vent Bed"
+        - "Padded Terminal Pillow"
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirm_action
+    attributes:
+      label: "Confirm Action"
+      options:
+        - label: "I confirm this rest action for my GitHub Profile Pet."
+          required: true

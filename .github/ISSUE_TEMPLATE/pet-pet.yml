@@ -1,0 +1,32 @@
+name: "✨ Pet Companion"
+description: "Give affectionate headpats or chin scratches to boost Happiness and bond with your pet."
+title: "pet: pet"
+labels: ["pet-action:pending", "pet:pet"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### ✨ Pet Your Companion
+        Affectionate bonding elevates your pet's **Happiness** and awards light XP.
+        - **Happiness Boost:** Increases Happiness by **+10** (clamped to 100).
+        - **XP Award:** Awards base **+15 XP**.
+        - **Cooldown:** A strict 60-second cooldown is enforced between care actions.
+        - **Diminishing Returns:** Repeated petting within a rolling 60-second window yields diminishing XP.
+  - type: dropdown
+    id: bonding_gesture
+    attributes:
+      label: "Affection Gesture"
+      description: "Select how you would like to interact with your pet."
+      options:
+        - "Gentle Headpat"
+        - "Whiskers Chin Scratch"
+        - "Warm Belly Rub"
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirm_action
+    attributes:
+      label: "Confirm Action"
+      options:
+        - label: "I confirm this bonding interaction for my GitHub Profile Pet."
+          required: true

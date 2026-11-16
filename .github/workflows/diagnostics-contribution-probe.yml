@@ -1,0 +1,48 @@
+name: Diagnostics Contribution Probe
+
+# Temporary, manually dispatched diagnostic workflow for Phase 3C2.1
+# Validates whether the default GITHUB_TOKEN has read access to public user contribution data
+# and verifies immutable numeric identity resolution.
+
+on:
+  workflow_dispatch:
+    inputs:
+      owner_login:
+        description: 'Target GitHub username to probe (defaults to PET_OWNER_LOGIN or repository owner)'
+        required: false
+        type: string
+        default: ''
+
+# Least privilege: strictly read-only repository access
+permissions:
+  contents: read
+
+# Concurrency group serializes execution per repository
+concurrency:
+  group: pet-diagnostics-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  probe-contributions:
+    name: Probe Public Contribution Snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run GitHub Contribution Diagnostic Probe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PET_OWNER_LOGIN: ${{ inputs.owner_login || vars.PET_OWNER_LOGIN || '' }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          node --experimental-strip-types scripts/probe-github-contributions.ts

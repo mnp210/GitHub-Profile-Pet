@@ -1,0 +1,132 @@
+{
+  "speciesId": "cat",
+  "speciesName": "Shadow Claw",
+  "archetype": "Void Familiar (Nocturnal Debugger)",
+  "frameWidth": 32,
+  "frameHeight": 32,
+  "totalStates": 8,
+  "palette": {
+    "0": "transparent",
+    "1": "#1a1228",
+    "2": "#2d184a",
+    "3": "#4a247a",
+    "4": "#6d39a8",
+    "5": "#10b981",
+    "6": "#d1fae5",
+    "7": "#f472b6"
+  },
+  "rendering": {
+    "pixelScaling": "pixelated",
+    "shapeRendering": "crispEdges",
+    "recommendedScales": [
+      32,
+      48,
+      64,
+      96
+    ],
+    "transparentBackground": true,
+    "bounds": {
+      "coreBodyMax": "24x24 px (Centered in 32x32)",
+      "animationEnvelopeMax": "24x27 px (Reserving >= 2px margin on all sides)",
+      "auditedEnvelope": "Width <= 24px, Height <= 27px across all 37 frames"
+    }
+  },
+  "states": {
+    "idle": {
+      "frameCount": 4,
+      "durationMs": 800,
+      "frameDurationMs": 200,
+      "playbackBehavior": "loop",
+      "sheetWidth": 128,
+      "sheetHeight": 32,
+      "pngSheet": "/sprites/pets/cat/idle_sheet.png",
+      "svgSheet": "/sprites/pets/cat/idle_sheet.svg",
+      "animatedSvg": "/sprites/pets/cat/idle_animated.svg",
+      "staticSvgFallback": "/sprites/pets/cat/idle_frame0.svg"
+    },
+    "happy": {
+      "frameCount": 4,
+      "durationMs": 600,
+      "frameDurationMs": 150,
+      "playbackBehavior": "loop",
+      "sheetWidth": 128,
+      "sheetHeight": 32,
+      "pngSheet": "/sprites/pets/cat/happy_sheet.png",
+      "svgSheet": "/sprites/pets/cat/happy_sheet.svg",
+      "animatedSvg": "/sprites/pets/cat/happy_animated.svg",
+      "staticSvgFallback": "/sprites/pets/cat/happy_frame0.svg"
+    },
+    "curious": {
+      "frameCount": 3,
+      "durationMs": 600,
+      "frameDurationMs": 200,
+      "playbackBehavior": "one-shot",
+      "sheetWidth": 96,
+      "sheetHeight": 32,
+      "pngSheet": "/sprites/pets/cat/curious_sheet.png",
+      "svgSheet": "/sprites/pets/cat/curious_sheet.svg",
+      "animatedSvg": "/sprites/pets/cat/curious_animated.svg",
+      "staticSvgFallback": "/sprites/pets/cat/curious_frame0.svg"
+    },
+    "tired": {
+      "frameCount": 2,
+      "durationMs": 1200,
+      "frameDurationMs": 600,
+      "playbackBehavior": "loop",
+      "sheetWidth": 64,
+      "sheetHeight": 32,
+      "pngSheet": "/sprites/pets/cat/tired_sheet.png",
+      "svgSheet": "/sprites/pets/cat/tired_sheet.svg",
+      "animatedSvg": "/sprites/pets/cat/tired_animated.svg",
+      "staticSvgFallback": "/sprites/pets/cat/tired_frame0.svg"
+    },
+    "sleeping": {
+      "frameCount": 4,
+      "durationMs": 1600,
+      "frameDurationMs": 400,
+      "playbackBehavior": "loop",
+      "sheetWidth": 128,
+      "sheetHeight": 32,
+      "pngSheet": "/sprites/pets/cat/sleeping_sheet.png",
+      "svgSheet": "/sprites/pets/cat/sleeping_sheet.svg",
+      "animatedSvg": "/sprites/pets/cat/sleeping_animated.svg",
+      "staticSvgFallback": "/sprites/pets/cat/sleeping_frame0.svg"
+    },
+    "eating": {
+      "frameCount": 6,
+      "durationMs": 750,
+      "frameDurationMs": 125,
+      "playbackBehavior": "one-shot",
+      "sheetWidth": 192,
+      "sheetHeight": 32,
+      "pngSheet": "/sprites/pets/cat/eating_sheet.png",
+      "svgSheet": "/sprites/pets/cat/eating_sheet.svg",
+      "animatedSvg": "/sprites/pets/cat/eating_animated.svg",
+      "staticSvgFallback": "/sprites/pets/cat/eating_frame0.svg"
+    },
+    "training": {
+      "frameCount": 6,
+      "durationMs": 600,
+      "frameDurationMs": 100,
+      "playbackBehavior": "one-shot",
+      "sheetWidth": 192,
+      "sheetHeight": 32,
+      "pngSheet": "/sprites/pets/cat/training_sheet.png",
+      "svgSheet": "/sprites/pets/cat/training_sheet.svg",
+      "animatedSvg": "/sprites/pets/cat/training_animated.svg",
+      "staticSvgFallback": "/sprites/pets/cat/training_frame0.svg"
+    },
+    "evolve": {
+      "frameCount": 8,
+      "durationMs": 1200,
+      "frameDurationMs": 150,
+      "playbackBehavior": "one-shot",
+      "sheetWidth": 256,
+      "sheetHeight": 32,
+      "pngSheet": "/sprites/pets/cat/evolve_sheet.png",
+      "svgSheet": "/sprites/pets/cat/evolve_sheet.svg",
+      "animatedSvg": "/sprites/pets/cat/evolve_animated.svg",
+      "staticSvgFallback": "/sprites/pets/cat/evolve_frame0.svg"
+    }
+  }
+}

@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/github-profile-pet/schemas/pet.schema.json",
+  "title": "PetStateDocument",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generation",
+    "name",
+    "species",
+    "level",
+    "xp",
+    "maxExp",
+    "energy",
+    "energyAccumulator",
+    "hunger",
+    "happiness",
+    "mood",
+    "evolutionStage",
+    "lastInteractionTime",
+    "lastOfflineResolutionTime",
+    "lastWelcomeBonusClaimedAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 50
+    },
+    "species": {
+      "type": "string",
+      "enum": [
+        "cat",
+        "dragon",
+        "fox",
+        "slime",
+        "shadow_claw",
+        "ignis_ember",
+        "kitsune_sol",
+        "bloop_matrix"
+      ]
+    },
+    "level": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "xp": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "maxExp": {
+      "type": "integer",
+      "minimum": 100
+    },
+    "energy": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "energyAccumulator": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "hunger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "hungerDecayAccumulator": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "happiness": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "happinessDecayAccumulator": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "mood": {
+      "type": "string",
+      "enum": ["Energetic", "Happy", "Focused", "Curious", "Resting"]
+    },
+    "evolutionStage": {
+      "type": "string",
+      "enum": ["Hatchling", "Juvenile", "Ascended", "Celestial"]
+    },
+    "lastInteractionTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "lastOfflineResolutionTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "lastSimulatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "lastWelcomeBonusClaimedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}
