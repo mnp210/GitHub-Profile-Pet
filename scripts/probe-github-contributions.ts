@@ -7,8 +7,8 @@ import {
   GitHubContributionProvider,
   resolveTargetOwner,
   verifyOwnerIdentity,
+  redactSensitiveData,
 } from '../src/features/pet-engine/contribution/index.ts';
-import { redactSensitiveData } from '../src/lib/github/graphqlClient.ts';
 
 interface LedgerIdentityInspection {
   isInitialized: boolean;

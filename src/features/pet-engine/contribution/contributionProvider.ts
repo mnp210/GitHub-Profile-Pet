@@ -2,12 +2,12 @@
 // Native fetch-based GitHub GraphQL provider for public profile contribution snapshots
 
 import {
-  getGitHubGraphQLClient,
+  getNativeGraphQLClient,
   redactSensitiveData,
   GitHubGraphQLError,
   type GitHubGraphQLClient,
   type GraphQLRequestOptions,
-} from '../../../lib/github/graphqlClient.ts';
+} from './nativeGraphQLClient.ts';
 import {
   InvalidContributionDataError,
   OrganizationAccountError,
@@ -171,7 +171,7 @@ export class GitHubContributionProvider {
   private client: GitHubGraphQLClient;
 
   constructor(client?: GitHubGraphQLClient) {
-    this.client = client ?? getGitHubGraphQLClient();
+    this.client = client ?? getNativeGraphQLClient();
   }
 
   /**

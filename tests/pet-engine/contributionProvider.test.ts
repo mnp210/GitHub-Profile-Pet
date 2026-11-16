@@ -16,10 +16,6 @@ import {
   MissingOwnerConfigurationError,
   OrganizationAccountError,
   UserNotFoundError,
-  type RawGraphQLContributionResponse,
-} from '../../src/features/pet-engine/contribution/index.ts';
-
-import {
   setFetchImplementation,
   resetFetchImplementation,
   GitHubUnauthorizedError,
@@ -27,7 +23,8 @@ import {
   GitHubServerError,
   GitHubTimeoutError,
   GitHubGraphQLError,
-} from '../../src/lib/github/graphqlClient.ts';
+  type RawGraphQLContributionResponse,
+} from '../../src/features/pet-engine/contribution/index.ts';
 
 const SAMPLE_FROM = '2026-11-16T00:00:00.000Z';
 const SAMPLE_TO = '2026-11-16T23:59:59.999Z';
