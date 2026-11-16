@@ -5,6 +5,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as cp from 'node:child_process';
 
 import {
   GitHubContributionProvider,
@@ -24,6 +25,8 @@ import {
   GitHubTimeoutError,
   GitHubGraphQLError,
   checkRateLimitConsistency,
+  parseStrictHeaderInteger,
+  isValidIsoDateTimeWithExplicitTimezone,
   type RawGraphQLContributionResponse,
   type RateLimitHeaders,
 } from '../../src/features/pet-engine/contribution/index.ts';
@@ -471,8 +474,8 @@ describe('GitHub Contribution Provider & Immutable Identity Suite (Phase 3C2.1)'
     assert.equal(snapshot.rateLimit.resetAt, '2026-11-16T20:00:00Z');
   });
 
-  // 22. Missing or malformed rateLimit telemetry falls back to safe zero defaults
-  it('TC-PROV-22: Missing or malformed rateLimit in GraphQL response defaults safely', () => {
+  // 22. Missing or malformed rateLimit telemetry does not silently default
+  it('TC-PROV-22: Missing or malformed rateLimit in GraphQL response does not silently default', () => {
     const rawUndefined: RawGraphQLContributionResponse = {
       ...createValidRawResponse(),
       rateLimit: undefined,
@@ -487,10 +490,11 @@ describe('GitHub Contribution Provider & Immutable Identity Suite (Phase 3C2.1)'
     const snapshotEmpty = parseAndValidateContributionResponse(rawEmpty, 'octocat', SAMPLE_FROM, SAMPLE_TO);
     assert.ok(snapshotEmpty.rateLimit);
     assert.equal(snapshotEmpty.rateLimit.limit, null);
-    assert.equal(snapshotEmpty.rateLimit.cost, 1);
-    assert.equal(snapshotEmpty.rateLimit.remaining, 0);
+    assert.equal(snapshotEmpty.rateLimit.cost, null);
+    assert.equal(snapshotEmpty.rateLimit.remaining, null);
     assert.equal(snapshotEmpty.rateLimit.used, null);
-    assert.equal(snapshotEmpty.rateLimit.resetAt, '');
+    assert.equal(snapshotEmpty.rateLimit.resetAt, null);
+    assert.equal(snapshotEmpty.rateLimit.consistency?.isConsistent, false);
   });
 
   // 23. Capture all 5 HTTP response headers via provider execution
@@ -576,7 +580,7 @@ describe('GitHub Contribution Provider & Immutable Identity Suite (Phase 3C2.1)'
     // Missing headers
     const nullConsistency = checkRateLimitConsistency(payload, null);
     assert.equal(nullConsistency.isConsistent, false);
-    assert.ok(nullConsistency.discrepancies.some((d) => d.includes('Missing rate limit HTTP headers')));
+    assert.ok(nullConsistency.discrepancies.some((d) => d.toLowerCase().includes('missing http rate-limit headers')));
   });
 
   // 26. Token redaction in rate-limit error telemetry
@@ -603,5 +607,554 @@ describe('GitHub Contribution Provider & Immutable Identity Suite (Phase 3C2.1)'
         return true;
       }
     );
+  });
+
+  // 27. Entire GraphQL rateLimit object missing fails consistency check
+  it('TC-PROV-27: Entire GraphQL rateLimit object missing fails consistency check with explicit discrepancy', () => {
+    const validHeaders: RateLimitHeaders = {
+      limit: 5000,
+      remaining: 4999,
+      used: 1,
+      reset: Math.floor(Date.now() / 1000) + 3600,
+      resource: 'graphql',
+      raw: {
+        limit: '5000',
+        remaining: '4999',
+        used: '1',
+        reset: String(Math.floor(Date.now() / 1000) + 3600),
+        resource: 'graphql',
+      },
+    };
+
+    const consistency = checkRateLimitConsistency(null, validHeaders);
+    assert.equal(consistency.isConsistent, false);
+    assert.ok(consistency.discrepancies.some((d) => d.includes('Missing GraphQL rateLimit telemetry in response payload')));
+  });
+
+  // 28. Each required GraphQL field missing individually produces an explicit discrepancy
+  it('TC-PROV-28: Each required GraphQL field missing individually produces an explicit discrepancy', () => {
+    const validHeaders: RateLimitHeaders = {
+      limit: 5000,
+      remaining: 4999,
+      used: 1,
+      reset: 1794841239,
+      resource: 'graphql',
+    };
+
+    const basePayload = {
+      limit: 5000,
+      cost: 1,
+      remaining: 4999,
+      used: 1,
+      resetAt: '2026-11-16T15:00:39Z',
+    };
+
+    // Missing limit
+    const noLimit = checkRateLimitConsistency({ ...basePayload, limit: null }, validHeaders);
+    assert.equal(noLimit.isConsistent, false);
+    assert.ok(noLimit.discrepancies.some((d) => d.includes('Missing or non-integer GraphQL rateLimit.limit')));
+
+    // Missing cost
+    const noCost = checkRateLimitConsistency({ ...basePayload, cost: null }, validHeaders);
+    assert.equal(noCost.isConsistent, false);
+    assert.ok(noCost.discrepancies.some((d) => d.includes('Missing or non-integer GraphQL rateLimit.cost')));
+
+    // Missing remaining
+    const noRemaining = checkRateLimitConsistency({ ...basePayload, remaining: null }, validHeaders);
+    assert.equal(noRemaining.isConsistent, false);
+    assert.ok(noRemaining.discrepancies.some((d) => d.includes('Missing or non-integer GraphQL rateLimit.remaining')));
+
+    // Missing used
+    const noUsed = checkRateLimitConsistency({ ...basePayload, used: null }, validHeaders);
+    assert.equal(noUsed.isConsistent, false);
+    assert.ok(noUsed.discrepancies.some((d) => d.includes('Missing or non-integer GraphQL rateLimit.used')));
+
+    // Missing resetAt
+    const noResetAt = checkRateLimitConsistency({ ...basePayload, resetAt: null }, validHeaders);
+    assert.equal(noResetAt.isConsistent, false);
+    assert.ok(noResetAt.discrepancies.some((d) => d.includes('Missing or empty GraphQL rateLimit.resetAt timestamp')));
+  });
+
+  // 29. Invalid or non-integer GraphQL values fail consistency
+  it('TC-PROV-29: Invalid, non-integer, negative, or overflow GraphQL values fail consistency', () => {
+    const validHeaders: RateLimitHeaders = {
+      limit: 5000,
+      remaining: 4999,
+      used: 1,
+      reset: 1794841239,
+      resource: 'graphql',
+    };
+
+    const basePayload = {
+      limit: 5000,
+      cost: 1,
+      remaining: 4999,
+      used: 1,
+      resetAt: '2026-11-16T15:00:39Z',
+    };
+
+    // limit <= 0
+    const zeroLimit = checkRateLimitConsistency({ ...basePayload, limit: 0 }, validHeaders);
+    assert.equal(zeroLimit.isConsistent, false);
+    assert.ok(zeroLimit.discrepancies.some((d) => d.includes('expected positive integer (> 0)')));
+
+    // cost <= 0
+    const zeroCost = checkRateLimitConsistency({ ...basePayload, cost: 0 }, validHeaders);
+    assert.equal(zeroCost.isConsistent, false);
+    assert.ok(zeroCost.discrepancies.some((d) => d.includes('expected positive integer (> 0)')));
+
+    // remaining < 0
+    const negRemaining = checkRateLimitConsistency({ ...basePayload, remaining: -1 }, validHeaders);
+    assert.equal(negRemaining.isConsistent, false);
+    assert.ok(negRemaining.discrepancies.some((d) => d.includes('expected non-negative integer (>= 0)')));
+
+    // used < 0
+    const negUsed = checkRateLimitConsistency({ ...basePayload, used: -1 }, validHeaders);
+    assert.equal(negUsed.isConsistent, false);
+    assert.ok(negUsed.discrepancies.some((d) => d.includes('expected non-negative integer (>= 0)')));
+
+    // remaining > limit
+    const overflowRemaining = checkRateLimitConsistency({ ...basePayload, remaining: 5001 }, validHeaders);
+    assert.equal(overflowRemaining.isConsistent, false);
+    assert.ok(overflowRemaining.discrepancies.some((d) => d.includes('exceeds limit')));
+
+    // used > limit
+    const overflowUsed = checkRateLimitConsistency({ ...basePayload, used: 5001 }, validHeaders);
+    assert.equal(overflowUsed.isConsistent, false);
+    assert.ok(overflowUsed.discrepancies.some((d) => d.includes('exceeds limit')));
+
+    // used + remaining > limit (internal sum overflow)
+    const sumOverflow = checkRateLimitConsistency(
+      { ...basePayload, limit: 5000, used: 3000, remaining: 3000 },
+      { ...validHeaders, limit: 5000, used: 3000, remaining: 3000 }
+    );
+    assert.equal(sumOverflow.isConsistent, false);
+    assert.ok(sumOverflow.discrepancies.some((d) => d.includes('Internal sum overflow')));
+  });
+
+  // 30. Missing HTTP headers object fails consistency check
+  it('TC-PROV-30: Missing HTTP headers object fails consistency check with explicit discrepancy', () => {
+    const payload = {
+      limit: 5000,
+      cost: 1,
+      remaining: 4999,
+      used: 1,
+      resetAt: '2026-11-16T15:00:39Z',
+    };
+
+    const consistency = checkRateLimitConsistency(payload, null);
+    assert.equal(consistency.isConsistent, false);
+    assert.ok(consistency.discrepancies.some((d) => d.includes('Missing HTTP rate-limit headers')));
+  });
+
+  // 31. Each required HTTP header missing individually produces an explicit discrepancy
+  it('TC-PROV-31: Each required HTTP header missing individually produces an explicit discrepancy', () => {
+    const payload = {
+      limit: 5000,
+      cost: 1,
+      remaining: 4999,
+      used: 1,
+      resetAt: '2026-11-16T15:00:39Z',
+    };
+
+    const validRaw = {
+      limit: '5000',
+      remaining: '4999',
+      used: '1',
+      reset: '1794841239',
+      resource: 'graphql',
+    };
+
+    // Missing x-ratelimit-limit
+    const noLimit = checkRateLimitConsistency(payload, {
+      limit: null,
+      remaining: 4999,
+      used: 1,
+      reset: 1794841239,
+      resource: 'graphql',
+      raw: { ...validRaw, limit: null },
+    });
+    assert.equal(noLimit.isConsistent, false);
+    assert.ok(noLimit.discrepancies.some((d) => d.includes('Missing HTTP header x-ratelimit-limit')));
+
+    // Missing x-ratelimit-remaining
+    const noRemaining = checkRateLimitConsistency(payload, {
+      limit: 5000,
+      remaining: null,
+      used: 1,
+      reset: 1794841239,
+      resource: 'graphql',
+      raw: { ...validRaw, remaining: null },
+    });
+    assert.equal(noRemaining.isConsistent, false);
+    assert.ok(noRemaining.discrepancies.some((d) => d.includes('Missing HTTP header x-ratelimit-remaining')));
+
+    // Missing x-ratelimit-used
+    const noUsed = checkRateLimitConsistency(payload, {
+      limit: 5000,
+      remaining: 4999,
+      used: null,
+      reset: 1794841239,
+      resource: 'graphql',
+      raw: { ...validRaw, used: null },
+    });
+    assert.equal(noUsed.isConsistent, false);
+    assert.ok(noUsed.discrepancies.some((d) => d.includes('Missing HTTP header x-ratelimit-used')));
+
+    // Missing x-ratelimit-reset
+    const noReset = checkRateLimitConsistency(payload, {
+      limit: 5000,
+      remaining: 4999,
+      used: 1,
+      reset: null,
+      resource: 'graphql',
+      raw: { ...validRaw, reset: null },
+    });
+    assert.equal(noReset.isConsistent, false);
+    assert.ok(noReset.discrepancies.some((d) => d.includes('Missing HTTP header x-ratelimit-reset')));
+
+    // Missing x-ratelimit-resource
+    const noResource = checkRateLimitConsistency(payload, {
+      limit: 5000,
+      remaining: 4999,
+      used: 1,
+      reset: 1794841239,
+      resource: null,
+      raw: { ...validRaw, resource: null },
+    });
+    assert.equal(noResource.isConsistent, false);
+    assert.ok(noResource.discrepancies.some((d) => d.includes('Missing HTTP header x-ratelimit-resource')));
+  });
+
+  // 32. Malformed numeric headers including partially numeric strings are rejected
+  it('TC-PROV-32: parseStrictHeaderInteger and checkRateLimitConsistency reject partially numeric strings', () => {
+    // Direct parser tests
+    assert.equal(parseStrictHeaderInteger('5000abc'), null);
+    assert.equal(parseStrictHeaderInteger('abc5000'), null);
+    assert.equal(parseStrictHeaderInteger('50 00'), null);
+    assert.equal(parseStrictHeaderInteger('3.14'), null);
+    assert.equal(parseStrictHeaderInteger('-10'), null);
+    assert.equal(parseStrictHeaderInteger(''), null);
+    assert.equal(parseStrictHeaderInteger('   '), null);
+    assert.equal(parseStrictHeaderInteger('5000'), 5000);
+    assert.equal(parseStrictHeaderInteger('0'), 0);
+
+    const payload = {
+      limit: 5000,
+      cost: 1,
+      remaining: 4999,
+      used: 1,
+      resetAt: '2026-11-16T15:00:39Z',
+    };
+
+    // Partially numeric header rejected in consistency check
+    const malformed = checkRateLimitConsistency(payload, {
+      limit: parseStrictHeaderInteger('5000abc'),
+      remaining: 4999,
+      used: 1,
+      reset: 1794841239,
+      resource: 'graphql',
+      raw: {
+        limit: '5000abc',
+        remaining: '4999',
+        used: '1',
+        reset: '1794841239',
+        resource: 'graphql',
+      },
+    });
+
+    assert.equal(malformed.isConsistent, false);
+    assert.ok(malformed.discrepancies.some((d) => d.includes('Malformed HTTP header x-ratelimit-limit')));
+  });
+
+  // 33. Incorrect x-ratelimit-resource produces explicit discrepancy
+  it('TC-PROV-33: Non-graphql resource header produces an explicit discrepancy', () => {
+    const payload = {
+      limit: 5000,
+      cost: 1,
+      remaining: 4999,
+      used: 1,
+      resetAt: '2026-11-16T15:00:39Z',
+    };
+
+    const wrongResource = checkRateLimitConsistency(payload, {
+      limit: 5000,
+      remaining: 4999,
+      used: 1,
+      reset: 1794841239,
+      resource: 'core',
+      raw: {
+        limit: '5000',
+        remaining: '4999',
+        used: '1',
+        reset: '1794841239',
+        resource: 'core',
+      },
+    });
+
+    assert.equal(wrongResource.isConsistent, false);
+    assert.ok(wrongResource.discrepancies.some((d) => d.includes('expected "graphql", received "core"')));
+  });
+
+  // 34. Body/header mismatches for every comparable field produce explicit discrepancies
+  it('TC-PROV-34: Discrepancies flagged for limit, remaining, used, and reset body/header mismatches', () => {
+    const payload = {
+      limit: 5000,
+      cost: 1,
+      remaining: 4990,
+      used: 10,
+      resetAt: '2026-11-16T15:00:00Z',
+    };
+
+    const mismatched = checkRateLimitConsistency(payload, {
+      limit: 1000,
+      remaining: 990,
+      used: 5,
+      reset: Math.floor(new Date('2026-11-16T16:00:00Z').getTime() / 1000), // 1 hour difference (> 2s tolerance)
+      resource: 'graphql',
+    });
+
+    assert.equal(mismatched.isConsistent, false);
+    assert.ok(mismatched.discrepancies.some((d) => d.includes('Limit mismatch')));
+    assert.ok(mismatched.discrepancies.some((d) => d.includes('Remaining mismatch')));
+    assert.ok(mismatched.discrepancies.some((d) => d.includes('Used mismatch')));
+    assert.ok(mismatched.discrepancies.some((d) => d.includes('Reset mismatch')));
+  });
+
+  // 35. Invalid reset timestamp format produces explicit discrepancy
+  it('TC-PROV-35: Malformed reset timestamp string fails timestamp validation', () => {
+    const payload = {
+      limit: 5000,
+      cost: 1,
+      remaining: 4999,
+      used: 1,
+      resetAt: 'invalid-iso-timestamp',
+    };
+
+    const invalidTimestamp = checkRateLimitConsistency(payload, {
+      limit: 5000,
+      remaining: 4999,
+      used: 1,
+      reset: 1794841239,
+      resource: 'graphql',
+    });
+
+    assert.equal(invalidTimestamp.isConsistent, false);
+    assert.ok(invalidTimestamp.discrepancies.some((d) => d.includes('Invalid GraphQL rateLimit.resetAt')));
+  });
+
+  // 36. Valid telemetry passes without hardcoding quota (works for 1000, 5000, or any valid positive integer)
+  it('TC-PROV-36: Valid telemetry passes without hardcoding 1,000 or 5,000 quota', () => {
+    const resetIso = '2026-11-16T15:30:00Z';
+    const resetEpoch = Math.floor(new Date(resetIso).getTime() / 1000);
+
+    // Test with 1000-point limit
+    const check1k = checkRateLimitConsistency(
+      { limit: 1000, cost: 1, remaining: 995, used: 5, resetAt: resetIso },
+      { limit: 1000, remaining: 995, used: 5, reset: resetEpoch, resource: 'graphql' }
+    );
+    assert.equal(check1k.isConsistent, true);
+    assert.equal(check1k.discrepancies.length, 0);
+
+    // Test with 5000-point limit
+    const check5k = checkRateLimitConsistency(
+      { limit: 5000, cost: 1, remaining: 4998, used: 2, resetAt: resetIso },
+      { limit: 5000, remaining: 4998, used: 2, reset: resetEpoch, resource: 'graphql' }
+    );
+    assert.equal(check5k.isConsistent, true);
+    assert.equal(check5k.discrepancies.length, 0);
+
+    // Test with arbitrary 15,000-point enterprise limit
+    const check15k = checkRateLimitConsistency(
+      { limit: 15000, cost: 2, remaining: 14900, used: 100, resetAt: resetIso },
+      { limit: 15000, remaining: 14900, used: 100, reset: resetEpoch, resource: 'graphql' }
+    );
+    assert.equal(check15k.isConsistent, true);
+    assert.equal(check15k.discrepancies.length, 0);
+  });
+
+  // 37. Diagnostic probe fails closed with exit code 1 when rateLimit telemetry is missing or inconsistent
+  it('TC-PROV-37: Diagnostic probe script fails closed with non-zero exit code on missing token or telemetry', () => {
+    const probeScript = path.resolve(process.cwd(), 'scripts', 'probe-github-contributions.ts');
+    assert.throws(
+      () => {
+        cp.execFileSync(process.execPath, ['--experimental-strip-types', probeScript], {
+          env: { ...process.env, GITHUB_TOKEN: '' },
+          stdio: 'pipe',
+        });
+      },
+      /GITHUB_TOKEN environment variable is required/
+    );
+  });
+
+  // 38. Token redaction on failure paths sanitizes sensitive credentials from telemetry error messages
+  it('TC-PROV-38: Token redaction preserves secrets across rate limit error telemetry', async () => {
+    setFetchImplementation(async () => {
+      return new Response(JSON.stringify({ message: `Access denied with bearer ${SAMPLE_TOKEN}` }), {
+        status: 403,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-ratelimit-remaining': '0',
+          'x-ratelimit-limit': '5000',
+          'x-ratelimit-used': '5000',
+          'x-ratelimit-reset': '1794841239',
+          'x-ratelimit-resource': 'graphql',
+        },
+      });
+    });
+
+    const provider = new GitHubContributionProvider();
+    await assert.rejects(
+      async () => provider.fetchUserContributionSnapshot('octocat', SAMPLE_FROM, SAMPLE_TO, SAMPLE_TOKEN),
+      (err: Error) => {
+        assert.ok(!err.message.includes(SAMPLE_TOKEN));
+        return true;
+      }
+    );
+  });
+
+  // 39. Rejects date-only strings
+  it('TC-PROV-39: Rejects date-only strings as incomplete ISO-8601 timestamps', () => {
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-11-16'), false);
+    const check = checkRateLimitConsistency(
+      { limit: 5000, cost: 1, remaining: 4999, used: 1, resetAt: '2026-11-16' },
+      { limit: 5000, remaining: 4999, used: 1, reset: 1794841239, resource: 'graphql' }
+    );
+    assert.equal(check.isConsistent, false);
+    assert.ok(check.discrepancies.some((d) => d.includes('Invalid GraphQL rateLimit.resetAt')));
+  });
+
+  // 40. Rejects year-only strings
+  it('TC-PROV-40: Rejects year-only strings as incomplete ISO-8601 timestamps', () => {
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026'), false);
+    const check = checkRateLimitConsistency(
+      { limit: 5000, cost: 1, remaining: 4999, used: 1, resetAt: '2026' },
+      { limit: 5000, remaining: 4999, used: 1, reset: 1794841239, resource: 'graphql' }
+    );
+    assert.equal(check.isConsistent, false);
+    assert.ok(check.discrepancies.some((d) => d.includes('Invalid GraphQL rateLimit.resetAt')));
+  });
+
+  // 41. Rejects missing timezones
+  it('TC-PROV-41: Rejects date-time strings without explicit timezone designator', () => {
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-11-16T15:00:00'), false);
+    const check = checkRateLimitConsistency(
+      { limit: 5000, cost: 1, remaining: 4999, used: 1, resetAt: '2026-11-16T15:00:00' },
+      { limit: 5000, remaining: 4999, used: 1, reset: 1794841239, resource: 'graphql' }
+    );
+    assert.equal(check.isConsistent, false);
+    assert.ok(check.discrepancies.some((d) => d.includes('Invalid GraphQL rateLimit.resetAt')));
+  });
+
+  // 42. Rejects impossible calendar dates (not merely JS Date parseability)
+  it('TC-PROV-42: Rejects impossible calendar dates including non-leap February 29 and 31st of 30-day months', () => {
+    // February 31 is impossible in any year
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-02-31T15:00:00Z'), false);
+    // February 29 in a non-leap year (2025 or 2026)
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2025-02-29T12:00:00Z'), false);
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-02-29T12:00:00Z'), false);
+    // February 29 in an end-of-century non-leap year (1900 is not divisible by 400)
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('1900-02-29T12:00:00Z'), false);
+    // April 31 (April has only 30 days)
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-04-31T10:00:00Z'), false);
+    // November 31 (November has only 30 days)
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-11-31T00:00:00Z'), false);
+    // Invalid months and days
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-13-01T00:00:00Z'), false);
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-00-10T00:00:00Z'), false);
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-05-00T00:00:00Z'), false);
+
+    const checkFeb31 = checkRateLimitConsistency(
+      { limit: 5000, cost: 1, remaining: 4999, used: 1, resetAt: '2026-02-31T15:00:00Z' },
+      { limit: 5000, remaining: 4999, used: 1, reset: 1794841239, resource: 'graphql' }
+    );
+    assert.equal(checkFeb31.isConsistent, false);
+    assert.ok(checkFeb31.discrepancies.some((d) => d.includes('valid calendar date')));
+  });
+
+  // 43. Rejects empty and whitespace-only reset timestamps
+  it('TC-PROV-43: Rejects empty and whitespace-only reset timestamps', () => {
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone(''), false);
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('   '), false);
+
+    const checkEmpty = checkRateLimitConsistency(
+      { limit: 5000, cost: 1, remaining: 4999, used: 1, resetAt: '' },
+      { limit: 5000, remaining: 4999, used: 1, reset: 1794841239, resource: 'graphql' }
+    );
+    assert.equal(checkEmpty.isConsistent, false);
+    assert.ok(checkEmpty.discrepancies.some((d) => d.includes('Missing or empty GraphQL rateLimit.resetAt timestamp')));
+  });
+
+  // 44. Rejects malformed timezone offsets
+  it('TC-PROV-44: Rejects malformed timezone offsets', () => {
+    // Hour offset out of range (> 23)
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-11-16T15:00:00+25:00'), false);
+    // Minute offset out of range (>= 60)
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-11-16T15:00:00-05:60'), false);
+    // Incomplete offset (missing minutes)
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-11-16T15:00:00+05'), false);
+    // Incomplete offset (single-digit hour)
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-11-16T15:00:00+5:00'), false);
+    // Trailing non-offset characters
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-11-16T15:00:00Z123'), false);
+
+    const checkBadOffset = checkRateLimitConsistency(
+      { limit: 5000, cost: 1, remaining: 4999, used: 1, resetAt: '2026-11-16T15:00:00+25:00' },
+      { limit: 5000, remaining: 4999, used: 1, reset: 1794841239, resource: 'graphql' }
+    );
+    assert.equal(checkBadOffset.isConsistent, false);
+    assert.ok(checkBadOffset.discrepancies.some((d) => d.includes('Invalid GraphQL rateLimit.resetAt')));
+  });
+
+  // 45. Preserves valid UTC and numeric-offset timestamps
+  it('TC-PROV-45: Preserves valid UTC, fractional-second, and numeric-offset timestamps', () => {
+    // Valid standard UTC (Z)
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-11-16T15:00:39Z'), true);
+    // Valid UTC with fractional seconds
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-11-16T15:00:39.123Z'), true);
+    // Valid positive numeric offset (+05:30)
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-11-16T20:30:39+05:30'), true);
+    // Valid negative numeric offset (-08:00)
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2026-11-16T07:00:39-08:00'), true);
+    // Valid leap-year February 29 (2024 is divisible by 4)
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2024-02-29T12:00:00Z'), true);
+    // Valid leap-year February 29 (2000 is divisible by 400)
+    assert.equal(isValidIsoDateTimeWithExplicitTimezone('2000-02-29T00:00:00Z'), true);
+
+    const checkValid = checkRateLimitConsistency(
+      { limit: 5000, cost: 1, remaining: 4999, used: 1, resetAt: '2026-11-16T15:00:39Z' },
+      { limit: 5000, remaining: 4999, used: 1, reset: 1794841239, resource: 'graphql' }
+    );
+    assert.equal(checkValid.isConsistent, true);
+    assert.equal(checkValid.discrepancies.length, 0);
+  });
+
+  // 46. Preserves maximum 2-second comparison tolerance with numeric-offset conversion
+  it('TC-PROV-46: Preserves maximum 2-second tolerance across numeric-offset conversions', () => {
+    // 2026-11-16T20:30:39+05:30 converts to 2026-11-16T15:00:39Z (1794841239s)
+    const offsetIso = '2026-11-16T20:30:39+05:30';
+    const targetEpoch = 1794841239;
+
+    // Exact match (delta = 0s)
+    const exactMatch = checkRateLimitConsistency(
+      { limit: 5000, cost: 1, remaining: 4999, used: 1, resetAt: offsetIso },
+      { limit: 5000, remaining: 4999, used: 1, reset: targetEpoch, resource: 'graphql' }
+    );
+    assert.equal(exactMatch.isConsistent, true);
+
+    // Delta = 2s (within tolerance)
+    const withinTolerance = checkRateLimitConsistency(
+      { limit: 5000, cost: 1, remaining: 4999, used: 1, resetAt: offsetIso },
+      { limit: 5000, remaining: 4999, used: 1, reset: targetEpoch + 2, resource: 'graphql' }
+    );
+    assert.equal(withinTolerance.isConsistent, true);
+
+    // Delta = 3s (exceeds tolerance)
+    const exceedsTolerance = checkRateLimitConsistency(
+      { limit: 5000, cost: 1, remaining: 4999, used: 1, resetAt: offsetIso },
+      { limit: 5000, remaining: 4999, used: 1, reset: targetEpoch + 3, resource: 'graphql' }
+    );
+    assert.equal(exceedsTolerance.isConsistent, false);
+    assert.ok(exceedsTolerance.discrepancies.some((d) => d.includes('difference of 3s exceeds 2s tolerance')));
   });
 });

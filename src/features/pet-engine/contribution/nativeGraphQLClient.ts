@@ -341,6 +341,25 @@ export function getFetchImplementation(): FetchFunction {
   return activeFetch;
 }
 
+/**
+ * Strictly parses an integer from an HTTP header value.
+ * Rejects partially numeric values (such as '5000abc'), negative signs, decimal points, or non-digit strings.
+ */
+export function parseStrictHeaderInteger(val: string | null): number | null {
+  if (val === null) {
+    return null;
+  }
+  const trimmed = val.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed)) {
+    return null;
+  }
+  return parsed;
+}
+
 export class NativeGitHubGraphQLClient implements GitHubGraphQLClient {
   private defaultOptions?: GraphQLRequestOptions;
 
@@ -419,17 +438,24 @@ export class NativeGitHubGraphQLClient implements GitHubGraphQLClient {
     const resourceHeader = response.headers.get('x-ratelimit-resource');
     const retryAfterHeader = response.headers.get('retry-after');
 
-    const parsedLimit = limitHeader !== null ? parseInt(limitHeader, 10) : null;
-    const parsedRemaining = remainingHeader !== null ? parseInt(remainingHeader, 10) : null;
-    const parsedUsed = usedHeader !== null ? parseInt(usedHeader, 10) : null;
-    const parsedReset = resetHeader !== null ? parseInt(resetHeader, 10) : null;
+    const parsedLimit = parseStrictHeaderInteger(limitHeader);
+    const parsedRemaining = parseStrictHeaderInteger(remainingHeader);
+    const parsedUsed = parseStrictHeaderInteger(usedHeader);
+    const parsedReset = parseStrictHeaderInteger(resetHeader);
 
     const rateLimitHeaders: RateLimitHeaders = {
-      limit: Number.isInteger(parsedLimit) ? parsedLimit : null,
-      remaining: Number.isInteger(parsedRemaining) ? parsedRemaining : null,
-      used: Number.isInteger(parsedUsed) ? parsedUsed : null,
-      reset: Number.isInteger(parsedReset) ? parsedReset : null,
+      limit: parsedLimit,
+      remaining: parsedRemaining,
+      used: parsedUsed,
+      reset: parsedReset,
       resource: resourceHeader,
+      raw: {
+        limit: limitHeader,
+        remaining: remainingHeader,
+        used: usedHeader,
+        reset: resetHeader,
+        resource: resourceHeader,
+      },
     };
 
     if (options?.onResponseHeaders) {

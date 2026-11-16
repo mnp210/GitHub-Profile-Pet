@@ -8,6 +8,7 @@ import {
   resolveTargetOwner,
   verifyOwnerIdentity,
   redactSensitiveData,
+  checkRateLimitConsistency,
 } from '../src/features/pet-engine/contribution/index.ts';
 
 interface LedgerIdentityInspection {
@@ -124,36 +125,42 @@ async function main(): Promise<void> {
     console.log(`  * Calendar Reported Total: ${snapshot.counts.calendarReportedTotal} (Informational platform aggregate)`);
     console.log(`  * Restricted (Private) Excluded: ${snapshot.counts.restricted} (Excluded from candidate rewards in Mode A)`);
 
-    let isTelemetryConsistent = true;
+    let isTelemetryConsistent = false;
     let telemetryDiscrepancies: string[] = [];
 
-    if (snapshot.rateLimit) {
+    if (!snapshot.rateLimit) {
+      telemetryDiscrepancies.push('Missing GraphQL rateLimit telemetry in response payload.');
+      console.error('\nTelemetry Consistency Check: FAILED (Missing GraphQL rateLimit in response payload)');
+    } else {
       console.log('\n--- GraphQL Rate Limit Telemetry ---');
       console.log(`  * Pool Limit: ${snapshot.rateLimit.limit !== null ? snapshot.rateLimit.limit : 'unspecified'} points`);
-      console.log(`  * Query Cost: ${snapshot.rateLimit.cost} point(s)`);
-      console.log(`  * Remaining Points: ${snapshot.rateLimit.remaining}`);
+      console.log(`  * Query Cost: ${snapshot.rateLimit.cost !== null ? snapshot.rateLimit.cost : 'unspecified'} point(s)`);
+      console.log(`  * Remaining Points: ${snapshot.rateLimit.remaining !== null ? snapshot.rateLimit.remaining : 'unspecified'}`);
       console.log(`  * Used Points: ${snapshot.rateLimit.used !== null ? snapshot.rateLimit.used : 'unspecified'}`);
-      console.log(`  * Reset At: ${snapshot.rateLimit.resetAt}`);
+      console.log(`  * Reset At: ${snapshot.rateLimit.resetAt !== null ? snapshot.rateLimit.resetAt : 'unspecified'}`);
 
       if (snapshot.rateLimit.headers) {
         console.log('\n--- HTTP Response Headers (Rate Limit) ---');
-        console.log(`  * x-ratelimit-limit: ${snapshot.rateLimit.headers.limit}`);
-        console.log(`  * x-ratelimit-remaining: ${snapshot.rateLimit.headers.remaining}`);
-        console.log(`  * x-ratelimit-used: ${snapshot.rateLimit.headers.used}`);
-        console.log(`  * x-ratelimit-reset: ${snapshot.rateLimit.headers.reset}`);
-        console.log(`  * x-ratelimit-resource: ${snapshot.rateLimit.headers.resource}`);
+        console.log(`  * x-ratelimit-limit: ${snapshot.rateLimit.headers.limit !== null ? snapshot.rateLimit.headers.limit : (snapshot.rateLimit.headers.raw?.limit ?? 'missing')}`);
+        console.log(`  * x-ratelimit-remaining: ${snapshot.rateLimit.headers.remaining !== null ? snapshot.rateLimit.headers.remaining : (snapshot.rateLimit.headers.raw?.remaining ?? 'missing')}`);
+        console.log(`  * x-ratelimit-used: ${snapshot.rateLimit.headers.used !== null ? snapshot.rateLimit.headers.used : (snapshot.rateLimit.headers.raw?.used ?? 'missing')}`);
+        console.log(`  * x-ratelimit-reset: ${snapshot.rateLimit.headers.reset !== null ? snapshot.rateLimit.headers.reset : (snapshot.rateLimit.headers.raw?.reset ?? 'missing')}`);
+        console.log(`  * x-ratelimit-resource: ${snapshot.rateLimit.headers.resource ?? 'missing'}`);
+      } else {
+        console.log('\n--- HTTP Response Headers (Rate Limit) ---');
+        console.log('  * Headers: MISSING (Could not capture transport headers)');
       }
 
-      if (snapshot.rateLimit.consistency) {
-        isTelemetryConsistent = snapshot.rateLimit.consistency.isConsistent;
-        telemetryDiscrepancies = snapshot.rateLimit.consistency.discrepancies;
-        if (isTelemetryConsistent) {
-          console.log('\nTelemetry Consistency Check: PASSED (GraphQL body and HTTP headers agree)');
-        } else {
-          console.error('\nTelemetry Consistency Check: FAILED (Discrepancy detected between GraphQL body and HTTP headers):');
-          for (const d of telemetryDiscrepancies) {
-            console.error(`  - ${d}`);
-          }
+      const consistency = snapshot.rateLimit.consistency ?? checkRateLimitConsistency(snapshot.rateLimit, snapshot.rateLimit.headers ?? null);
+      isTelemetryConsistent = consistency.isConsistent;
+      telemetryDiscrepancies = consistency.discrepancies;
+
+      if (isTelemetryConsistent) {
+        console.log('\nTelemetry Consistency Check: PASSED (GraphQL body and HTTP headers agree)');
+      } else {
+        console.error('\nTelemetry Consistency Check: FAILED (Discrepancy detected between GraphQL body and HTTP headers):');
+        for (const d of telemetryDiscrepancies) {
+          console.error(`  - ${d}`);
         }
       }
     }
@@ -191,12 +198,12 @@ ${
 
 | Metric | GraphQL Body | HTTP Header (\`x-ratelimit-*\`) | Status |
 | :--- | :---: | :---: | :--- |
-| **Pool Limit** | \`${snapshot.rateLimit.limit ?? 'N/A'}\` pts | \`${snapshot.rateLimit.headers?.limit ?? 'N/A'}\` pts | ${snapshot.rateLimit.limit === snapshot.rateLimit.headers?.limit ? '✅ Matches' : '⚠️ Discrepancy'} |
-| **Remaining Points** | \`${snapshot.rateLimit.remaining}\` pts | \`${snapshot.rateLimit.headers?.remaining ?? 'N/A'}\` pts | ${snapshot.rateLimit.remaining === snapshot.rateLimit.headers?.remaining ? '✅ Matches' : '⚠️ Discrepancy'} |
-| **Used Points** | \`${snapshot.rateLimit.used ?? 'N/A'}\` pts | \`${snapshot.rateLimit.headers?.used ?? 'N/A'}\` pts | ${snapshot.rateLimit.used === snapshot.rateLimit.headers?.used ? '✅ Matches' : '⚠️ Discrepancy'} |
-| **Query Cost** | \`${snapshot.rateLimit.cost}\` pt(s) | N/A (GraphQL only) | Measured query cost |
-| **Reset Timestamp** | \`${snapshot.rateLimit.resetAt}\` | \`${snapshot.rateLimit.headers?.reset ?? 'N/A'}\` | ${isTelemetryConsistent ? '✅ Consistent' : '⚠️ Discrepancy'} |
-| **Resource Pool** | N/A | \`${snapshot.rateLimit.headers?.resource ?? 'N/A'}\` | Transport header |
+| **Pool Limit** | \`${snapshot.rateLimit.limit ?? 'N/A'}\` pts | \`${snapshot.rateLimit.headers?.limit ?? (snapshot.rateLimit.headers?.raw?.limit ?? 'N/A')}\` pts | ${snapshot.rateLimit.limit !== null && snapshot.rateLimit.limit === snapshot.rateLimit.headers?.limit ? '✅ Matches' : '⚠️ Discrepancy'} |
+| **Remaining Points** | \`${snapshot.rateLimit.remaining ?? 'N/A'}\` pts | \`${snapshot.rateLimit.headers?.remaining ?? (snapshot.rateLimit.headers?.raw?.remaining ?? 'N/A')}\` pts | ${snapshot.rateLimit.remaining !== null && snapshot.rateLimit.remaining === snapshot.rateLimit.headers?.remaining ? '✅ Matches' : '⚠️ Discrepancy'} |
+| **Used Points** | \`${snapshot.rateLimit.used ?? 'N/A'}\` pts | \`${snapshot.rateLimit.headers?.used ?? (snapshot.rateLimit.headers?.raw?.used ?? 'N/A')}\` pts | ${snapshot.rateLimit.used !== null && snapshot.rateLimit.used === snapshot.rateLimit.headers?.used ? '✅ Matches' : '⚠️ Discrepancy'} |
+| **Query Cost** | \`${snapshot.rateLimit.cost ?? 'N/A'}\` pt(s) | N/A (GraphQL only) | ${snapshot.rateLimit.cost !== null && snapshot.rateLimit.cost > 0 ? 'Measured query cost' : '⚠️ Invalid cost'} |
+| **Reset Timestamp** | \`${snapshot.rateLimit.resetAt ?? 'N/A'}\` | \`${snapshot.rateLimit.headers?.reset ?? (snapshot.rateLimit.headers?.raw?.reset ?? 'N/A')}\` | ${isTelemetryConsistent ? '✅ Consistent' : '⚠️ Discrepancy'} |
+| **Resource Pool** | N/A | \`${snapshot.rateLimit.headers?.resource ?? 'N/A'}\` | ${snapshot.rateLimit.headers?.resource === 'graphql' ? '✅ graphql' : '⚠️ Invalid resource'} |
 
 ${
   !isTelemetryConsistent
@@ -207,7 +214,12 @@ ${telemetryDiscrepancies.map((d) => `> - ${d}`).join('\n')}
     : ''
 }
 `
-    : ''
+    : `
+#### ⏱️ Rate Limit Telemetry Reconciliation
+
+> ❌ **Telemetry Discrepancies Detected:**
+> - Missing GraphQL rateLimit telemetry in response payload.
+`
 }
 
 > *Probe completed in read-only mode. Zero ledger, state, or Git mutations were performed.*

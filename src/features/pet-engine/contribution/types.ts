@@ -17,6 +17,13 @@ export interface RateLimitHeaders {
   used: number | null;
   reset: number | null;
   resource: string | null;
+  raw?: {
+    limit: string | null;
+    remaining: string | null;
+    used: string | null;
+    reset: string | null;
+    resource: string | null;
+  };
 }
 
 export interface RateLimitConsistencyCheck {
@@ -26,11 +33,11 @@ export interface RateLimitConsistencyCheck {
 
 export interface RateLimitInfo {
   limit: number | null;
-  cost: number;
-  remaining: number;
+  cost: number | null;
+  remaining: number | null;
   used: number | null;
-  resetAt: string;
-  headers?: RateLimitHeaders;
+  resetAt: string | null;
+  headers?: RateLimitHeaders | null;
   consistency?: RateLimitConsistencyCheck;
 }
 
@@ -72,10 +79,10 @@ export interface RawGraphQLContributionResponse {
   } | null;
   rateLimit?: {
     limit?: number | null;
-    cost: number;
-    remaining: number;
+    cost?: number | null;
+    remaining?: number | null;
     used?: number | null;
-    resetAt: string;
+    resetAt?: string | null;
   } | null;
 }
 

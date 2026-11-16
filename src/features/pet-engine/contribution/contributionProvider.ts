@@ -63,49 +63,237 @@ query CheckRepositoryOwnerType($login: String!) {
 `.trim();
 
 /**
+ * Strict validation of an ISO-8601 date-time string with an explicit timezone (Z or ±HH:MM).
+ * Validates calendar components (year, month, days in month with leap-year rule)
+ * and time components (hour 0-23, minute 0-59, second 0-59).
+ * Rejects date-only, year-only, missing timezones, impossible calendar dates, and malformed offsets.
+ */
+export function isValidIsoDateTimeWithExplicitTimezone(val: string): boolean {
+  if (typeof val !== 'string' || val.trim().length === 0) {
+    return false;
+  }
+
+  // Complete ISO-8601 date-time with explicit timezone (Z or ±HH:MM)
+  // Rejects date-only, year-only, missing timezone, single-digit offset components, etc.
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.exec(val.trim());
+  if (!isoMatch) {
+    return false;
+  }
+
+  const year = parseInt(isoMatch[1], 10);
+  const month = parseInt(isoMatch[2], 10);
+  const day = parseInt(isoMatch[3], 10);
+  const hour = parseInt(isoMatch[4], 10);
+  const minute = parseInt(isoMatch[5], 10);
+  const second = parseInt(isoMatch[6], 10);
+
+  // Validate month range [1, 12]
+  if (month < 1 || month > 12) {
+    return false;
+  }
+
+  // Calculate days in month with leap-year rule
+  // A leap year is divisible by 4, except end-of-century years which must be divisible by 400
+  let daysInMonth = 31;
+  if (month === 4 || month === 6 || month === 9 || month === 11) {
+    daysInMonth = 30;
+  } else if (month === 2) {
+    const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+    daysInMonth = isLeapYear ? 29 : 28;
+  }
+
+  // Validate day range [1, daysInMonth]
+  if (day < 1 || day > daysInMonth) {
+    return false;
+  }
+
+  // Validate time ranges
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) {
+    return false;
+  }
+
+  // Final check: parseable as valid JavaScript Date timestamp
+  const dateObj = new Date(val.trim());
+  return !isNaN(dateObj.getTime());
+}
+
+/**
  * Cross-checks GraphQL body rateLimit telemetry against HTTP response headers.
- * Detects discrepancies between upstream payload and transport headers.
+ * Detects discrepancies, missing fields, malformed formats, and internal contradictions.
+ * Does not assume or hardcode any expected quota (e.g. 1,000 or 5,000).
  */
 export function checkRateLimitConsistency(
   payloadRateLimit?: RateLimitInfo | null,
   headers?: RateLimitHeaders | null
 ): RateLimitConsistencyCheck {
   const discrepancies: string[] = [];
+
+  // 1. GraphQL body existence
   if (!payloadRateLimit) {
-    return { isConsistent: true, discrepancies: [] };
-  }
-  if (!headers) {
-    return {
-      isConsistent: false,
-      discrepancies: ['Missing rate limit HTTP headers: cannot cross-verify telemetry without transport headers.'],
-    };
-  }
+    discrepancies.push('Missing GraphQL rateLimit telemetry in response payload.');
+  } else {
+    // Validate GraphQL limit
+    if (payloadRateLimit.limit === null || typeof payloadRateLimit.limit !== 'number' || !Number.isInteger(payloadRateLimit.limit)) {
+      discrepancies.push('Missing or non-integer GraphQL rateLimit.limit.');
+    } else if (payloadRateLimit.limit <= 0) {
+      discrepancies.push(`Invalid GraphQL rateLimit.limit: expected positive integer (> 0), received ${payloadRateLimit.limit}.`);
+    }
 
-  if (payloadRateLimit.limit !== null && headers.limit !== null && payloadRateLimit.limit !== headers.limit) {
-    discrepancies.push(
-      `Limit mismatch: GraphQL body reports ${payloadRateLimit.limit}, HTTP header x-ratelimit-limit reports ${headers.limit}`
-    );
-  }
+    // Validate GraphQL cost
+    if (payloadRateLimit.cost === null || typeof payloadRateLimit.cost !== 'number' || !Number.isInteger(payloadRateLimit.cost)) {
+      discrepancies.push('Missing or non-integer GraphQL rateLimit.cost.');
+    } else if (payloadRateLimit.cost <= 0) {
+      discrepancies.push(`Invalid GraphQL rateLimit.cost: expected positive integer (> 0), received ${payloadRateLimit.cost}.`);
+    }
 
-  if (payloadRateLimit.remaining !== null && headers.remaining !== null && payloadRateLimit.remaining !== headers.remaining) {
-    discrepancies.push(
-      `Remaining mismatch: GraphQL body reports ${payloadRateLimit.remaining}, HTTP header x-ratelimit-remaining reports ${headers.remaining}`
-    );
-  }
+    // Validate GraphQL remaining
+    if (payloadRateLimit.remaining === null || typeof payloadRateLimit.remaining !== 'number' || !Number.isInteger(payloadRateLimit.remaining)) {
+      discrepancies.push('Missing or non-integer GraphQL rateLimit.remaining.');
+    } else if (payloadRateLimit.remaining < 0) {
+      discrepancies.push(`Invalid GraphQL rateLimit.remaining: expected non-negative integer (>= 0), received ${payloadRateLimit.remaining}.`);
+    }
 
-  if (payloadRateLimit.used !== null && headers.used !== null && payloadRateLimit.used !== headers.used) {
-    discrepancies.push(
-      `Used mismatch: GraphQL body reports ${payloadRateLimit.used}, HTTP header x-ratelimit-used reports ${headers.used}`
-    );
-  }
+    // Validate GraphQL used
+    if (payloadRateLimit.used === null || typeof payloadRateLimit.used !== 'number' || !Number.isInteger(payloadRateLimit.used)) {
+      discrepancies.push('Missing or non-integer GraphQL rateLimit.used.');
+    } else if (payloadRateLimit.used < 0) {
+      discrepancies.push(`Invalid GraphQL rateLimit.used: expected non-negative integer (>= 0), received ${payloadRateLimit.used}.`);
+    }
 
-  if (payloadRateLimit.resetAt && headers.reset !== null) {
-    const payloadResetEpoch = Math.floor(new Date(payloadRateLimit.resetAt).getTime() / 1000);
-    // Allow up to 2 seconds clock drift between ISO string conversion and Unix epoch seconds header
-    if (Math.abs(payloadResetEpoch - headers.reset) > 2) {
+    // Validate GraphQL resetAt
+    if (!payloadRateLimit.resetAt || typeof payloadRateLimit.resetAt !== 'string' || payloadRateLimit.resetAt.trim().length === 0) {
+      discrepancies.push('Missing or empty GraphQL rateLimit.resetAt timestamp.');
+    } else if (!isValidIsoDateTimeWithExplicitTimezone(payloadRateLimit.resetAt)) {
       discrepancies.push(
-        `Reset mismatch: GraphQL body resetAt=${payloadRateLimit.resetAt} (${payloadResetEpoch}s), HTTP header x-ratelimit-reset=${headers.reset}s`
+        `Invalid GraphQL rateLimit.resetAt: expected complete ISO-8601 date-time with explicit timezone (Z or ±HH:MM) and valid calendar date, received "${payloadRateLimit.resetAt}".`
       );
+    }
+
+    // Validate internal invariants for GraphQL body (remaining & used vs limit)
+    if (payloadRateLimit.limit !== null && payloadRateLimit.limit > 0) {
+      if (payloadRateLimit.remaining !== null && payloadRateLimit.remaining >= 0 && payloadRateLimit.remaining > payloadRateLimit.limit) {
+        discrepancies.push(`GraphQL rateLimit.remaining (${payloadRateLimit.remaining}) exceeds limit (${payloadRateLimit.limit}).`);
+      }
+      if (payloadRateLimit.used !== null && payloadRateLimit.used >= 0 && payloadRateLimit.used > payloadRateLimit.limit) {
+        discrepancies.push(`GraphQL rateLimit.used (${payloadRateLimit.used}) exceeds limit (${payloadRateLimit.limit}).`);
+      }
+      if (
+        payloadRateLimit.used !== null &&
+        payloadRateLimit.remaining !== null &&
+        payloadRateLimit.used >= 0 &&
+        payloadRateLimit.remaining >= 0 &&
+        payloadRateLimit.used + payloadRateLimit.remaining > payloadRateLimit.limit
+      ) {
+        discrepancies.push(
+          `Internal sum overflow: GraphQL body used (${payloadRateLimit.used}) + remaining (${payloadRateLimit.remaining}) = ${payloadRateLimit.used + payloadRateLimit.remaining}, which exceeds limit (${payloadRateLimit.limit}).`
+        );
+      }
+    }
+  }
+
+  // 2. HTTP transport headers existence & validation
+  if (!headers) {
+    discrepancies.push('Missing HTTP rate-limit headers (x-ratelimit-*): cannot cross-verify telemetry without transport headers.');
+  } else {
+    // Validate x-ratelimit-limit
+    if (headers.raw?.limit === null || (headers.raw === undefined && headers.limit === null)) {
+      discrepancies.push('Missing HTTP header x-ratelimit-limit.');
+    } else if (headers.limit === null) {
+      discrepancies.push(`Malformed HTTP header x-ratelimit-limit: expected positive integer string, received "${headers.raw?.limit}".`);
+    } else if (headers.limit <= 0) {
+      discrepancies.push(`Invalid HTTP header x-ratelimit-limit: expected positive integer (> 0), received ${headers.limit}.`);
+    }
+
+    // Validate x-ratelimit-remaining
+    if (headers.raw?.remaining === null || (headers.raw === undefined && headers.remaining === null)) {
+      discrepancies.push('Missing HTTP header x-ratelimit-remaining.');
+    } else if (headers.remaining === null) {
+      discrepancies.push(`Malformed HTTP header x-ratelimit-remaining: expected non-negative integer string, received "${headers.raw?.remaining}".`);
+    } else if (headers.remaining < 0) {
+      discrepancies.push(`Invalid HTTP header x-ratelimit-remaining: expected non-negative integer (>= 0), received ${headers.remaining}.`);
+    } else if (headers.limit !== null && headers.limit > 0 && headers.remaining > headers.limit) {
+      discrepancies.push(`HTTP header x-ratelimit-remaining (${headers.remaining}) exceeds x-ratelimit-limit (${headers.limit}).`);
+    }
+
+    // Validate x-ratelimit-used
+    if (headers.raw?.used === null || (headers.raw === undefined && headers.used === null)) {
+      discrepancies.push('Missing HTTP header x-ratelimit-used.');
+    } else if (headers.used === null) {
+      discrepancies.push(`Malformed HTTP header x-ratelimit-used: expected non-negative integer string, received "${headers.raw?.used}".`);
+    } else if (headers.used < 0) {
+      discrepancies.push(`Invalid HTTP header x-ratelimit-used: expected non-negative integer (>= 0), received ${headers.used}.`);
+    } else if (headers.limit !== null && headers.limit > 0 && headers.used > headers.limit) {
+      discrepancies.push(`HTTP header x-ratelimit-used (${headers.used}) exceeds x-ratelimit-limit (${headers.limit}).`);
+    }
+
+    // Validate internal sum overflow for HTTP headers
+    if (
+      headers.limit !== null &&
+      headers.limit > 0 &&
+      headers.used !== null &&
+      headers.remaining !== null &&
+      headers.used >= 0 &&
+      headers.remaining >= 0 &&
+      headers.used + headers.remaining > headers.limit
+    ) {
+      discrepancies.push(
+        `Internal sum overflow: HTTP headers used (${headers.used}) + remaining (${headers.remaining}) = ${headers.used + headers.remaining}, which exceeds limit (${headers.limit}).`
+      );
+    }
+
+    // Validate x-ratelimit-reset
+    if (headers.raw?.reset === null || (headers.raw === undefined && headers.reset === null)) {
+      discrepancies.push('Missing HTTP header x-ratelimit-reset.');
+    } else if (headers.reset === null) {
+      discrepancies.push(`Malformed HTTP header x-ratelimit-reset: expected positive epoch seconds string, received "${headers.raw?.reset}".`);
+    } else if (headers.reset <= 0) {
+      discrepancies.push(`Invalid HTTP header x-ratelimit-reset: expected positive epoch seconds timestamp, received ${headers.reset}.`);
+    }
+
+    // Validate x-ratelimit-resource
+    if (headers.resource === null || headers.resource === undefined) {
+      discrepancies.push('Missing HTTP header x-ratelimit-resource.');
+    } else if (headers.resource !== 'graphql') {
+      discrepancies.push(`Invalid HTTP header x-ratelimit-resource: expected "graphql", received "${headers.resource}".`);
+    }
+  }
+
+  // 3. Cross-Comparison between GraphQL body and HTTP transport headers
+  if (payloadRateLimit && headers) {
+    if (payloadRateLimit.limit !== null && headers.limit !== null && payloadRateLimit.limit !== headers.limit) {
+      discrepancies.push(
+        `Limit mismatch: GraphQL body reports ${payloadRateLimit.limit}, HTTP header x-ratelimit-limit reports ${headers.limit}`
+      );
+    }
+
+    if (payloadRateLimit.remaining !== null && headers.remaining !== null && payloadRateLimit.remaining !== headers.remaining) {
+      discrepancies.push(
+        `Remaining mismatch: GraphQL body reports ${payloadRateLimit.remaining}, HTTP header x-ratelimit-remaining reports ${headers.remaining}`
+      );
+    }
+
+    if (payloadRateLimit.used !== null && headers.used !== null && payloadRateLimit.used !== headers.used) {
+      discrepancies.push(
+        `Used mismatch: GraphQL body reports ${payloadRateLimit.used}, HTTP header x-ratelimit-used reports ${headers.used}`
+      );
+    }
+
+    if (payloadRateLimit.resetAt && headers.reset !== null && headers.reset > 0) {
+      if (isValidIsoDateTimeWithExplicitTimezone(payloadRateLimit.resetAt)) {
+        const payloadResetMs = new Date(payloadRateLimit.resetAt).getTime();
+        const payloadResetEpoch = Math.floor(payloadResetMs / 1000);
+        // Maximum 2-second comparison tolerance rationale:
+        // GraphQL body returns resetAt as an ISO-8601 string while HTTP transport returns x-ratelimit-reset as integer Unix epoch seconds.
+        // Converting an ISO-8601 string to Unix epoch seconds truncates sub-second millisecond fractions.
+        // In addition, response header generation and payload serialization within the upstream API can cross sub-second boundaries.
+        // A maximum tolerance of <= 2 seconds accommodates sub-second truncation and serialization jitter while strictly preventing minute/hour drift.
+        const delta = Math.abs(payloadResetEpoch - headers.reset);
+        if (delta > 2) {
+          discrepancies.push(
+            `Reset mismatch: GraphQL body resetAt=${payloadRateLimit.resetAt} (${payloadResetEpoch}s), HTTP header x-ratelimit-reset=${headers.reset}s (difference of ${delta}s exceeds 2s tolerance)`
+          );
+        }
+      }
     }
   }
 
@@ -200,10 +388,10 @@ export function parseAndValidateContributionResponse(
   if (raw.rateLimit && typeof raw.rateLimit === 'object') {
     const rawRl = raw.rateLimit;
     const limit = typeof rawRl.limit === 'number' && Number.isInteger(rawRl.limit) ? rawRl.limit : null;
-    const cost = typeof rawRl.cost === 'number' && Number.isInteger(rawRl.cost) ? rawRl.cost : 1;
-    const remaining = typeof rawRl.remaining === 'number' && Number.isInteger(rawRl.remaining) ? rawRl.remaining : 0;
+    const cost = typeof rawRl.cost === 'number' && Number.isInteger(rawRl.cost) ? rawRl.cost : null;
+    const remaining = typeof rawRl.remaining === 'number' && Number.isInteger(rawRl.remaining) ? rawRl.remaining : null;
     const used = typeof rawRl.used === 'number' && Number.isInteger(rawRl.used) ? rawRl.used : null;
-    const resetAt = typeof rawRl.resetAt === 'string' ? rawRl.resetAt : '';
+    const resetAt = typeof rawRl.resetAt === 'string' && rawRl.resetAt.trim().length > 0 ? rawRl.resetAt.trim() : null;
 
     const baseRateLimit: RateLimitInfo = {
       limit,
@@ -211,14 +399,21 @@ export function parseAndValidateContributionResponse(
       remaining,
       used,
       resetAt,
-      headers: responseHeaders ?? undefined,
+      headers: responseHeaders ?? null,
     };
 
-    if (responseHeaders) {
-      baseRateLimit.consistency = checkRateLimitConsistency(baseRateLimit, responseHeaders);
-    }
-
+    baseRateLimit.consistency = checkRateLimitConsistency(baseRateLimit, responseHeaders ?? null);
     rateLimitInfo = baseRateLimit;
+  } else if (responseHeaders) {
+    rateLimitInfo = {
+      limit: null,
+      cost: null,
+      remaining: null,
+      used: null,
+      resetAt: null,
+      headers: responseHeaders,
+      consistency: checkRateLimitConsistency(null, responseHeaders),
+    };
   }
 
   return {

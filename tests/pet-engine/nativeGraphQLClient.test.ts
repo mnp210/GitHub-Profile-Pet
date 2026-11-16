@@ -16,6 +16,7 @@ import {
   calculateBackoffWithJitter,
   classifyNativeGitHubError,
   executeWithRetry,
+  parseStrictHeaderInteger,
   setFetchImplementation,
   resetFetchImplementation,
 } from '../../src/features/pet-engine/contribution/nativeGraphQLClient.ts';
@@ -411,6 +412,57 @@ describe('Native GitHub GraphQL Client & Bounded Retry Suite', () => {
         },
         (err) => err instanceof GitHubServerError && err.status === 500
       );
+    });
+  });
+
+  describe('Strict Header Parsing & Rate-Limit Telemetry', () => {
+    it('parseStrictHeaderInteger strictly validates numeric integer tokens', () => {
+      assert.equal(parseStrictHeaderInteger('5000'), 5000);
+      assert.equal(parseStrictHeaderInteger('0'), 0);
+      assert.equal(parseStrictHeaderInteger('  1234  '), 1234);
+      assert.equal(parseStrictHeaderInteger('5000abc'), null);
+      assert.equal(parseStrictHeaderInteger('abc5000'), null);
+      assert.equal(parseStrictHeaderInteger('12.34'), null);
+      assert.equal(parseStrictHeaderInteger('-10'), null);
+      assert.equal(parseStrictHeaderInteger('+10'), null);
+      assert.equal(parseStrictHeaderInteger(''), null);
+      assert.equal(parseStrictHeaderInteger('   '), null);
+      assert.equal(parseStrictHeaderInteger(null), null);
+    });
+
+    it('captures raw and strictly parsed rate-limit headers in onResponseHeaders', async () => {
+      let capturedLimit: number | null = 1;
+      let capturedRawLimit: string | null = '';
+      let capturedRemaining: number | null = 0;
+      let capturedResource: string | null = '';
+
+      setFetchImplementation(async () => {
+        return new Response(JSON.stringify({ data: { user: { login: 'octocat' } } }), {
+          status: 200,
+          headers: {
+            'x-ratelimit-limit': '5000abc',
+            'x-ratelimit-remaining': '4999',
+            'x-ratelimit-used': '1',
+            'x-ratelimit-reset': '1794841239',
+            'x-ratelimit-resource': 'graphql',
+          },
+        });
+      });
+
+      const client = new NativeGitHubGraphQLClient();
+      await client.execute(SAMPLE_QUERY, {}, SAMPLE_TOKEN, {
+        onResponseHeaders: (h) => {
+          capturedLimit = h.limit;
+          capturedRawLimit = h.raw?.limit ?? null;
+          capturedRemaining = h.remaining;
+          capturedResource = h.resource;
+        },
+      });
+
+      assert.equal(capturedLimit, null); // rejected because '5000abc' is partially numeric
+      assert.equal(capturedRawLimit, '5000abc'); // raw string preserved for diagnostic discrepancy reporting
+      assert.equal(capturedRemaining, 4999);
+      assert.equal(capturedResource, 'graphql');
     });
   });
 });
