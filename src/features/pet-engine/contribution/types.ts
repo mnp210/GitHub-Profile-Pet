@@ -11,10 +11,27 @@ export interface ContributionCategoryCounts {
   calendarReportedTotal: number;
 }
 
+export interface RateLimitHeaders {
+  limit: number | null;
+  remaining: number | null;
+  used: number | null;
+  reset: number | null;
+  resource: string | null;
+}
+
+export interface RateLimitConsistencyCheck {
+  isConsistent: boolean;
+  discrepancies: string[];
+}
+
 export interface RateLimitInfo {
+  limit: number | null;
   cost: number;
   remaining: number;
+  used: number | null;
   resetAt: string;
+  headers?: RateLimitHeaders;
+  consistency?: RateLimitConsistencyCheck;
 }
 
 export interface GitHubContributionSnapshot {
@@ -54,8 +71,10 @@ export interface RawGraphQLContributionResponse {
     login: string;
   } | null;
   rateLimit?: {
+    limit?: number | null;
     cost: number;
     remaining: number;
+    used?: number | null;
     resetAt: string;
   } | null;
 }

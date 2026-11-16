@@ -114,21 +114,48 @@ async function main(): Promise<void> {
     verifyOwnerIdentity(snapshot, ledgerInfo.ownerDatabaseId);
     console.log('Identity Verification: PASSED (Immutable numeric ID verified)');
 
-    console.log('\n--- Public Contribution Category Breakdown ---');
+    console.log('\n--- Observed Public Contribution Categories (Planned Phase 3C2.2 Scope) ---');
     console.log(`  * Commits: ${snapshot.counts.commits}`);
     console.log(`  * Issues: ${snapshot.counts.issues}`);
     console.log(`  * Pull Requests: ${snapshot.counts.pullRequests}`);
     console.log(`  * Pull Request Reviews: ${snapshot.counts.pullRequestReviews}`);
     console.log(`  ---------------------------------------------`);
-    console.log(`  = Calculated Public Category Total: ${snapshot.counts.publicCategoryTotal}`);
-    console.log(`  * Calendar Reported Total: ${snapshot.counts.calendarReportedTotal}`);
-    console.log(`  * Restricted (Private) Excluded: ${snapshot.counts.restricted}`);
+    console.log(`  = Calculated Public Category Total: ${snapshot.counts.publicCategoryTotal} (Candidate sum for planned Phase 3C2.2)`);
+    console.log(`  * Calendar Reported Total: ${snapshot.counts.calendarReportedTotal} (Informational platform aggregate)`);
+    console.log(`  * Restricted (Private) Excluded: ${snapshot.counts.restricted} (Excluded from candidate rewards in Mode A)`);
+
+    let isTelemetryConsistent = true;
+    let telemetryDiscrepancies: string[] = [];
 
     if (snapshot.rateLimit) {
       console.log('\n--- GraphQL Rate Limit Telemetry ---');
+      console.log(`  * Pool Limit: ${snapshot.rateLimit.limit !== null ? snapshot.rateLimit.limit : 'unspecified'} points`);
       console.log(`  * Query Cost: ${snapshot.rateLimit.cost} point(s)`);
       console.log(`  * Remaining Points: ${snapshot.rateLimit.remaining}`);
+      console.log(`  * Used Points: ${snapshot.rateLimit.used !== null ? snapshot.rateLimit.used : 'unspecified'}`);
       console.log(`  * Reset At: ${snapshot.rateLimit.resetAt}`);
+
+      if (snapshot.rateLimit.headers) {
+        console.log('\n--- HTTP Response Headers (Rate Limit) ---');
+        console.log(`  * x-ratelimit-limit: ${snapshot.rateLimit.headers.limit}`);
+        console.log(`  * x-ratelimit-remaining: ${snapshot.rateLimit.headers.remaining}`);
+        console.log(`  * x-ratelimit-used: ${snapshot.rateLimit.headers.used}`);
+        console.log(`  * x-ratelimit-reset: ${snapshot.rateLimit.headers.reset}`);
+        console.log(`  * x-ratelimit-resource: ${snapshot.rateLimit.headers.resource}`);
+      }
+
+      if (snapshot.rateLimit.consistency) {
+        isTelemetryConsistent = snapshot.rateLimit.consistency.isConsistent;
+        telemetryDiscrepancies = snapshot.rateLimit.consistency.discrepancies;
+        if (isTelemetryConsistent) {
+          console.log('\nTelemetry Consistency Check: PASSED (GraphQL body and HTTP headers agree)');
+        } else {
+          console.error('\nTelemetry Consistency Check: FAILED (Discrepancy detected between GraphQL body and HTTP headers):');
+          for (const d of telemetryDiscrepancies) {
+            console.error(`  - ${d}`);
+          }
+        }
+      }
     }
 
     // 6. Generate Sanitized GitHub Step Summary
@@ -143,26 +170,42 @@ async function main(): Promise<void> {
 | **GraphQL Query Status** | ✅ **SUCCESS** |
 | **Query Latency** | ${snapshot.providerLatencyMs} ms |
 | **Identity Verification** | ✅ **PASSED** ${ledgerInfo.isInitialized ? '(Matches established ledger)' : '(Uninitialized ledger inspection)'} |
+| **Telemetry Consistency** | ${isTelemetryConsistent ? '✅ **PASSED** (GraphQL body matches HTTP headers)' : '❌ **FAILED** (Discrepancy detected)'} |
 
-#### 📊 Public Contribution Categories (${todayUtcStr})
+#### 📊 Observed Public Contribution Categories (${todayUtcStr})
 
 | Category | Count | Status |
 | :--- | :---: | :--- |
-| **Commits** | \`${snapshot.counts.commits}\` | Included in rewards |
-| **Issues** | \`${snapshot.counts.issues}\` | Included in rewards |
-| **Pull Requests** | \`${snapshot.counts.pullRequests}\` | Included in rewards |
-| **PR Reviews** | \`${snapshot.counts.pullRequestReviews}\` | Included in rewards |
-| **Public Category Total** | **\`${snapshot.counts.publicCategoryTotal}\`** | **Authoritative Reward Sum** |
-| **Calendar Reported Total** | \`${snapshot.counts.calendarReportedTotal}\` | Platform aggregate |
-| **Restricted (Private)** | \`${snapshot.counts.restricted}\` | 🚫 **Excluded from rewards (Mode A)** |
+| **Commits** | \`${snapshot.counts.commits}\` | Candidate for planned rewards (Phase 3C2.2) |
+| **Issues** | \`${snapshot.counts.issues}\` | Candidate for planned rewards (Phase 3C2.2) |
+| **Pull Requests** | \`${snapshot.counts.pullRequests}\` | Candidate for planned rewards (Phase 3C2.2) |
+| **PR Reviews** | \`${snapshot.counts.pullRequestReviews}\` | Candidate for planned rewards (Phase 3C2.2) |
+| **Public Category Total** | **\`${snapshot.counts.publicCategoryTotal}\`** | **Observed Public Total (Candidate sum for planned Phase 3C2.2)** |
+| **Calendar Reported Total** | \`${snapshot.counts.calendarReportedTotal}\` | Platform aggregate (Informational) |
+| **Restricted (Private)** | \`${snapshot.counts.restricted}\` | 🚫 **Excluded from candidate rewards (Public-only Mode A)** |
 
 ${
   snapshot.rateLimit
     ? `
-#### ⏱️ GraphQL Rate Limit Telemetry
-- **Actual Query Cost:** \`${snapshot.rateLimit.cost}\` point(s)
-- **Remaining Quota:** \`${snapshot.rateLimit.remaining}\` points
-- **Reset Timestamp:** \`${snapshot.rateLimit.resetAt}\`
+#### ⏱️ Rate Limit Telemetry Reconciliation
+
+| Metric | GraphQL Body | HTTP Header (\`x-ratelimit-*\`) | Status |
+| :--- | :---: | :---: | :--- |
+| **Pool Limit** | \`${snapshot.rateLimit.limit ?? 'N/A'}\` pts | \`${snapshot.rateLimit.headers?.limit ?? 'N/A'}\` pts | ${snapshot.rateLimit.limit === snapshot.rateLimit.headers?.limit ? '✅ Matches' : '⚠️ Discrepancy'} |
+| **Remaining Points** | \`${snapshot.rateLimit.remaining}\` pts | \`${snapshot.rateLimit.headers?.remaining ?? 'N/A'}\` pts | ${snapshot.rateLimit.remaining === snapshot.rateLimit.headers?.remaining ? '✅ Matches' : '⚠️ Discrepancy'} |
+| **Used Points** | \`${snapshot.rateLimit.used ?? 'N/A'}\` pts | \`${snapshot.rateLimit.headers?.used ?? 'N/A'}\` pts | ${snapshot.rateLimit.used === snapshot.rateLimit.headers?.used ? '✅ Matches' : '⚠️ Discrepancy'} |
+| **Query Cost** | \`${snapshot.rateLimit.cost}\` pt(s) | N/A (GraphQL only) | Measured query cost |
+| **Reset Timestamp** | \`${snapshot.rateLimit.resetAt}\` | \`${snapshot.rateLimit.headers?.reset ?? 'N/A'}\` | ${isTelemetryConsistent ? '✅ Consistent' : '⚠️ Discrepancy'} |
+| **Resource Pool** | N/A | \`${snapshot.rateLimit.headers?.resource ?? 'N/A'}\` | Transport header |
+
+${
+  !isTelemetryConsistent
+    ? `
+> ⚠️ **Telemetry Discrepancies Detected:**
+${telemetryDiscrepancies.map((d) => `> - ${d}`).join('\n')}
+`
+    : ''
+}
 `
     : ''
 }
@@ -171,6 +214,12 @@ ${
 `.trim();
 
     writeStepSummary(summaryMd);
+
+    if (!isTelemetryConsistent) {
+      console.error('\n❌ PROBE FAILED: Telemetry consistency check failed between GraphQL body and HTTP headers.');
+      process.exit(1);
+    }
+
     console.log('\nDiagnostic probe completed successfully with zero mutations.');
     process.exit(0);
   } catch (err: unknown) {

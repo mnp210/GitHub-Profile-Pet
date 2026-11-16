@@ -23,7 +23,9 @@ import {
   GitHubServerError,
   GitHubTimeoutError,
   GitHubGraphQLError,
+  checkRateLimitConsistency,
   type RawGraphQLContributionResponse,
+  type RateLimitHeaders,
 } from '../../src/features/pet-engine/contribution/index.ts';
 
 const SAMPLE_FROM = '2026-11-16T00:00:00.000Z';
@@ -56,8 +58,10 @@ function createValidRawResponse(overrides: Partial<RawGraphQLContributionRespons
       login: 'octocat',
     },
     rateLimit: {
+      limit: 5000,
       cost: 1,
-      remaining: 999,
+      remaining: 4999,
+      used: 1,
       resetAt: '2026-11-16T18:47:00Z',
     },
   };
@@ -92,8 +96,11 @@ describe('GitHub Contribution Provider & Immutable Identity Suite (Phase 3C2.1)'
     assert.equal(snapshot.toIso, SAMPLE_TO);
     assert.equal(snapshot.authenticationMode, 'mode_a_public');
     assert.ok(snapshot.providerLatencyMs >= 0);
+    assert.equal(snapshot.rateLimit?.limit, 5000);
     assert.equal(snapshot.rateLimit?.cost, 1);
-    assert.equal(snapshot.rateLimit?.remaining, 999);
+    assert.equal(snapshot.rateLimit?.remaining, 4999);
+    assert.equal(snapshot.rateLimit?.used, 1);
+    assert.equal(snapshot.rateLimit?.resetAt, '2026-11-16T18:47:00Z');
   });
 
   // 2. Correct calculation of the four-category public total
@@ -440,5 +447,161 @@ describe('GitHub Contribution Provider & Immutable Identity Suite (Phase 3C2.1)'
 
     assert.equal(petBefore, petAfter, 'pet/state/pet.json must remain byte-for-byte identical');
     assert.equal(ledgerBefore, ledgerAfter, 'pet/ledger/contributions.json must remain byte-for-byte identical');
+  });
+
+  // 21. Parse all 5 rateLimit fields from GraphQL body
+  it('TC-PROV-21: Rate-limit telemetry captures all 5 fields from GraphQL body (limit, cost, remaining, used, resetAt)', () => {
+    const raw: RawGraphQLContributionResponse = {
+      ...createValidRawResponse(),
+      rateLimit: {
+        limit: 5000,
+        cost: 1,
+        remaining: 4995,
+        used: 5,
+        resetAt: '2026-11-16T20:00:00Z',
+      },
+    };
+
+    const snapshot = parseAndValidateContributionResponse(raw, 'octocat', SAMPLE_FROM, SAMPLE_TO);
+    assert.ok(snapshot.rateLimit);
+    assert.equal(snapshot.rateLimit.limit, 5000);
+    assert.equal(snapshot.rateLimit.cost, 1);
+    assert.equal(snapshot.rateLimit.remaining, 4995);
+    assert.equal(snapshot.rateLimit.used, 5);
+    assert.equal(snapshot.rateLimit.resetAt, '2026-11-16T20:00:00Z');
+  });
+
+  // 22. Missing or malformed rateLimit telemetry falls back to safe zero defaults
+  it('TC-PROV-22: Missing or malformed rateLimit in GraphQL response defaults safely', () => {
+    const rawUndefined: RawGraphQLContributionResponse = {
+      ...createValidRawResponse(),
+      rateLimit: undefined,
+    };
+    const snapshotUndefined = parseAndValidateContributionResponse(rawUndefined, 'octocat', SAMPLE_FROM, SAMPLE_TO);
+    assert.equal(snapshotUndefined.rateLimit, undefined);
+
+    const rawEmpty: RawGraphQLContributionResponse = {
+      ...createValidRawResponse(),
+      rateLimit: {} as unknown as RawGraphQLContributionResponse['rateLimit'],
+    };
+    const snapshotEmpty = parseAndValidateContributionResponse(rawEmpty, 'octocat', SAMPLE_FROM, SAMPLE_TO);
+    assert.ok(snapshotEmpty.rateLimit);
+    assert.equal(snapshotEmpty.rateLimit.limit, null);
+    assert.equal(snapshotEmpty.rateLimit.cost, 1);
+    assert.equal(snapshotEmpty.rateLimit.remaining, 0);
+    assert.equal(snapshotEmpty.rateLimit.used, null);
+    assert.equal(snapshotEmpty.rateLimit.resetAt, '');
+  });
+
+  // 23. Capture all 5 HTTP response headers via provider execution
+  it('TC-PROV-23: Provider captures all 5 x-ratelimit-* response headers from HTTP transport', async () => {
+    const raw = createValidRawResponse();
+    const resetEpoch = Math.floor(new Date('2026-11-16T18:47:00Z').getTime() / 1000);
+
+    setFetchImplementation(async () => {
+      return new Response(JSON.stringify({ data: raw }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-ratelimit-limit': '5000',
+          'x-ratelimit-remaining': '4999',
+          'x-ratelimit-used': '1',
+          'x-ratelimit-reset': String(resetEpoch),
+          'x-ratelimit-resource': 'graphql',
+        },
+      });
+    });
+
+    const provider = new GitHubContributionProvider();
+    const snapshot = await provider.fetchUserContributionSnapshot('octocat', SAMPLE_FROM, SAMPLE_TO, SAMPLE_TOKEN);
+
+    assert.ok(snapshot.rateLimit?.headers);
+    assert.equal(snapshot.rateLimit.headers.limit, 5000);
+    assert.equal(snapshot.rateLimit.headers.remaining, 4999);
+    assert.equal(snapshot.rateLimit.headers.used, 1);
+    assert.equal(snapshot.rateLimit.headers.reset, resetEpoch);
+    assert.equal(snapshot.rateLimit.headers.resource, 'graphql');
+  });
+
+  // 24. Consistency check passes when GraphQL body and HTTP headers agree
+  it('TC-PROV-24: Consistency check reports isConsistent=true when payload and headers agree', () => {
+    const resetIso = '2026-11-16T19:00:00Z';
+    const resetEpoch = Math.floor(new Date(resetIso).getTime() / 1000);
+
+    const payload = {
+      limit: 5000,
+      cost: 1,
+      remaining: 4998,
+      used: 2,
+      resetAt: resetIso,
+    };
+
+    const headers: RateLimitHeaders = {
+      limit: 5000,
+      remaining: 4998,
+      used: 2,
+      reset: resetEpoch,
+      resource: 'graphql',
+    };
+
+    const consistency = checkRateLimitConsistency(payload, headers);
+    assert.equal(consistency.isConsistent, true);
+    assert.equal(consistency.discrepancies.length, 0);
+  });
+
+  // 25. Consistency check flags discrepancies when payload and headers disagree
+  it('TC-PROV-25: Consistency check flags limit, remaining, used, and reset discrepancies', () => {
+    const payload = {
+      limit: 5000,
+      cost: 1,
+      remaining: 4999,
+      used: 1,
+      resetAt: '2026-11-16T19:00:00Z',
+    };
+
+    // Header has conflicting limit (1000) and remaining (999)
+    const mismatchedHeaders: RateLimitHeaders = {
+      limit: 1000,
+      remaining: 999,
+      used: 1,
+      reset: Math.floor(new Date('2026-11-16T19:00:00Z').getTime() / 1000),
+      resource: 'graphql',
+    };
+
+    const consistency = checkRateLimitConsistency(payload, mismatchedHeaders);
+    assert.equal(consistency.isConsistent, false);
+    assert.ok(consistency.discrepancies.some((d) => d.toLowerCase().includes('limit mismatch')));
+    assert.ok(consistency.discrepancies.some((d) => d.toLowerCase().includes('remaining mismatch')));
+
+    // Missing headers
+    const nullConsistency = checkRateLimitConsistency(payload, null);
+    assert.equal(nullConsistency.isConsistent, false);
+    assert.ok(nullConsistency.discrepancies.some((d) => d.includes('Missing rate limit HTTP headers')));
+  });
+
+  // 26. Token redaction in rate-limit error telemetry
+  it('TC-PROV-26: Token redaction sanitizes secrets even if rate limit errors occur', async () => {
+    setFetchImplementation(async () => {
+      return new Response(JSON.stringify({ message: `API rate limit exceeded for token ${SAMPLE_TOKEN}` }), {
+        status: 403,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-ratelimit-remaining': '0',
+          'x-ratelimit-limit': '5000',
+          'x-ratelimit-used': '5000',
+          'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 60),
+        },
+      });
+    });
+
+    const provider = new GitHubContributionProvider();
+    await assert.rejects(
+      async () => provider.fetchUserContributionSnapshot('octocat', SAMPLE_FROM, SAMPLE_TO, SAMPLE_TOKEN),
+      (err: Error) => {
+        assert.ok(err instanceof GitHubRateLimitError);
+        assert.ok(!err.message.includes(SAMPLE_TOKEN));
+        return true;
+      }
+    );
   });
 });

@@ -1,6 +1,8 @@
 // src/features/pet-engine/contribution/nativeGraphQLClient.ts
 // Pure zero-dependency GitHub GraphQL client & bounded retry implementation for GitHub-native pet engine
 
+import type { RateLimitHeaders } from './types.ts';
+
 export class GitHubGraphQLError extends Error {
   public readonly errors: Array<{ message: string; type?: string; path?: unknown }>;
 
@@ -309,6 +311,7 @@ export interface GraphQLRequestOptions {
   sleepFn?: (ms: number) => Promise<void>;
   nowFn?: () => number;
   correlationId?: string;
+  onResponseHeaders?: (headers: RateLimitHeaders) => void;
 }
 
 export interface GitHubGraphQLClient {
@@ -409,11 +412,35 @@ export class NativeGitHubGraphQLClient implements GitHubGraphQLClient {
       throw new GitHubNetworkError(redactSensitiveData(errorObj.message, accessToken));
     }
 
+    const limitHeader = response.headers.get('x-ratelimit-limit');
     const remainingHeader = response.headers.get('x-ratelimit-remaining');
+    const usedHeader = response.headers.get('x-ratelimit-used');
     const resetHeader = response.headers.get('x-ratelimit-reset');
+    const resourceHeader = response.headers.get('x-ratelimit-resource');
     const retryAfterHeader = response.headers.get('retry-after');
 
-    const resetAt = resetHeader ? new Date(parseInt(resetHeader, 10) * 1000) : null;
+    const parsedLimit = limitHeader !== null ? parseInt(limitHeader, 10) : null;
+    const parsedRemaining = remainingHeader !== null ? parseInt(remainingHeader, 10) : null;
+    const parsedUsed = usedHeader !== null ? parseInt(usedHeader, 10) : null;
+    const parsedReset = resetHeader !== null ? parseInt(resetHeader, 10) : null;
+
+    const rateLimitHeaders: RateLimitHeaders = {
+      limit: Number.isInteger(parsedLimit) ? parsedLimit : null,
+      remaining: Number.isInteger(parsedRemaining) ? parsedRemaining : null,
+      used: Number.isInteger(parsedUsed) ? parsedUsed : null,
+      reset: Number.isInteger(parsedReset) ? parsedReset : null,
+      resource: resourceHeader,
+    };
+
+    if (options?.onResponseHeaders) {
+      try {
+        options.onResponseHeaders(rateLimitHeaders);
+      } catch {
+        // Callback errors must not interrupt GraphQL execution
+      }
+    }
+
+    const resetAt = parsedReset !== null ? new Date(parsedReset * 1000) : null;
     const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : null;
 
     if (response.status === 401) {

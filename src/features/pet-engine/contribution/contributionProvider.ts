@@ -14,6 +14,9 @@ import {
   UserNotFoundError,
   type GitHubContributionSnapshot,
   type RawGraphQLContributionResponse,
+  type RateLimitHeaders,
+  type RateLimitConsistencyCheck,
+  type RateLimitInfo,
 } from './types.ts';
 
 export const USER_CONTRIBUTION_SNAPSHOT_QUERY = `
@@ -40,8 +43,10 @@ query UserContributionSnapshot(
     }
   }
   rateLimit {
+    limit
     cost
     remaining
+    used
     resetAt
   }
 }
@@ -58,6 +63,59 @@ query CheckRepositoryOwnerType($login: String!) {
 `.trim();
 
 /**
+ * Cross-checks GraphQL body rateLimit telemetry against HTTP response headers.
+ * Detects discrepancies between upstream payload and transport headers.
+ */
+export function checkRateLimitConsistency(
+  payloadRateLimit?: RateLimitInfo | null,
+  headers?: RateLimitHeaders | null
+): RateLimitConsistencyCheck {
+  const discrepancies: string[] = [];
+  if (!payloadRateLimit) {
+    return { isConsistent: true, discrepancies: [] };
+  }
+  if (!headers) {
+    return {
+      isConsistent: false,
+      discrepancies: ['Missing rate limit HTTP headers: cannot cross-verify telemetry without transport headers.'],
+    };
+  }
+
+  if (payloadRateLimit.limit !== null && headers.limit !== null && payloadRateLimit.limit !== headers.limit) {
+    discrepancies.push(
+      `Limit mismatch: GraphQL body reports ${payloadRateLimit.limit}, HTTP header x-ratelimit-limit reports ${headers.limit}`
+    );
+  }
+
+  if (payloadRateLimit.remaining !== null && headers.remaining !== null && payloadRateLimit.remaining !== headers.remaining) {
+    discrepancies.push(
+      `Remaining mismatch: GraphQL body reports ${payloadRateLimit.remaining}, HTTP header x-ratelimit-remaining reports ${headers.remaining}`
+    );
+  }
+
+  if (payloadRateLimit.used !== null && headers.used !== null && payloadRateLimit.used !== headers.used) {
+    discrepancies.push(
+      `Used mismatch: GraphQL body reports ${payloadRateLimit.used}, HTTP header x-ratelimit-used reports ${headers.used}`
+    );
+  }
+
+  if (payloadRateLimit.resetAt && headers.reset !== null) {
+    const payloadResetEpoch = Math.floor(new Date(payloadRateLimit.resetAt).getTime() / 1000);
+    // Allow up to 2 seconds clock drift between ISO string conversion and Unix epoch seconds header
+    if (Math.abs(payloadResetEpoch - headers.reset) > 2) {
+      discrepancies.push(
+        `Reset mismatch: GraphQL body resetAt=${payloadRateLimit.resetAt} (${payloadResetEpoch}s), HTTP header x-ratelimit-reset=${headers.reset}s`
+      );
+    }
+  }
+
+  return {
+    isConsistent: discrepancies.length === 0,
+    discrepancies,
+  };
+}
+
+/**
  * Parses and validates raw GraphQL response data into a strict GitHubContributionSnapshot.
  * Validates numeric fields, detects organizations vs personal users, excludes restricted
  * contributions from the public category sum, and prevents incomplete data acceptance.
@@ -67,7 +125,8 @@ export function parseAndValidateContributionResponse(
   targetLogin: string,
   fromIso: string,
   toIso: string,
-  latencyMs: number = 0
+  latencyMs: number = 0,
+  responseHeaders?: RateLimitHeaders | null
 ): GitHubContributionSnapshot {
   if (!raw || typeof raw !== 'object') {
     throw new InvalidContributionDataError('Raw GraphQL payload is not a valid object.');
@@ -137,12 +196,29 @@ export function parseAndValidateContributionResponse(
   const publicCategoryTotal = commits + issues + pullRequests + pullRequestReviews;
 
   // 6. Parse rate limit info if available
-  let rateLimitInfo: GitHubContributionSnapshot['rateLimit'];
+  let rateLimitInfo: RateLimitInfo | undefined;
   if (raw.rateLimit && typeof raw.rateLimit === 'object') {
-    const cost = typeof raw.rateLimit.cost === 'number' ? raw.rateLimit.cost : 1;
-    const remaining = typeof raw.rateLimit.remaining === 'number' ? raw.rateLimit.remaining : 0;
-    const resetAt = typeof raw.rateLimit.resetAt === 'string' ? raw.rateLimit.resetAt : '';
-    rateLimitInfo = { cost, remaining, resetAt };
+    const rawRl = raw.rateLimit;
+    const limit = typeof rawRl.limit === 'number' && Number.isInteger(rawRl.limit) ? rawRl.limit : null;
+    const cost = typeof rawRl.cost === 'number' && Number.isInteger(rawRl.cost) ? rawRl.cost : 1;
+    const remaining = typeof rawRl.remaining === 'number' && Number.isInteger(rawRl.remaining) ? rawRl.remaining : 0;
+    const used = typeof rawRl.used === 'number' && Number.isInteger(rawRl.used) ? rawRl.used : null;
+    const resetAt = typeof rawRl.resetAt === 'string' ? rawRl.resetAt : '';
+
+    const baseRateLimit: RateLimitInfo = {
+      limit,
+      cost,
+      remaining,
+      used,
+      resetAt,
+      headers: responseHeaders ?? undefined,
+    };
+
+    if (responseHeaders) {
+      baseRateLimit.consistency = checkRateLimitConsistency(baseRateLimit, responseHeaders);
+    }
+
+    rateLimitInfo = baseRateLimit;
   }
 
   return {
@@ -198,6 +274,21 @@ export class GitHubContributionProvider {
     const normalizedLogin = login.trim();
     const startMs = Date.now();
 
+    let capturedHeaders: RateLimitHeaders | null = null;
+    const wrappedOptions: GraphQLRequestOptions = {
+      ...options,
+      onResponseHeaders: (headers) => {
+        capturedHeaders = headers;
+        if (options?.onResponseHeaders) {
+          try {
+            options.onResponseHeaders(headers);
+          } catch {
+            // Callback failure must not prevent response handling
+          }
+        }
+      },
+    };
+
     try {
       const rawData = await this.client.execute<RawGraphQLContributionResponse>(
         USER_CONTRIBUTION_SNAPSHOT_QUERY,
@@ -207,11 +298,18 @@ export class GitHubContributionProvider {
           to: toIso,
         },
         token,
-        options
+        wrappedOptions
       );
 
       const latencyMs = Date.now() - startMs;
-      return parseAndValidateContributionResponse(rawData, normalizedLogin, fromIso, toIso, latencyMs);
+      return parseAndValidateContributionResponse(
+        rawData,
+        normalizedLogin,
+        fromIso,
+        toIso,
+        latencyMs,
+        capturedHeaders
+      );
     } catch (err: unknown) {
       // If error is a GraphQL execution error indicating user could not be resolved,
       // probe repositoryOwner to accurately distinguish organization vs non-existent user.
