@@ -54,23 +54,25 @@ export interface GitHubContributionSnapshot {
   providerLatencyMs: number;
 }
 
+export interface RawGraphQLContributionCollection {
+  startedAt?: string;
+  endedAt?: string;
+  totalCommitContributions: number;
+  totalIssueContributions: number;
+  totalPullRequestContributions: number;
+  totalPullRequestReviewContributions: number;
+  restrictedContributionsCount: number;
+  contributionCalendar: {
+    totalContributions: number;
+  };
+}
+
 export interface RawGraphQLContributionResponse {
   user: {
     id: string;
     databaseId: number | null;
     login: string;
-    contributionsCollection: {
-      startedAt?: string;
-      endedAt?: string;
-      totalCommitContributions: number;
-      totalIssueContributions: number;
-      totalPullRequestContributions: number;
-      totalPullRequestReviewContributions: number;
-      restrictedContributionsCount: number;
-      contributionCalendar: {
-        totalContributions: number;
-      };
-    } | null;
+    contributionsCollection: RawGraphQLContributionCollection | null;
   } | null;
   repositoryOwner?: {
     __typename: 'User' | 'Organization';
@@ -84,6 +86,54 @@ export interface RawGraphQLContributionResponse {
     used?: number | null;
     resetAt?: string | null;
   } | null;
+}
+
+export interface RawGraphQL2DayContributionResponse {
+  repositoryOwner: {
+    __typename: string;
+    id: string;
+    login: string;
+  } | null;
+  user: {
+    id: string;
+    databaseId: number | null;
+    login: string;
+    yesterday: RawGraphQLContributionCollection | null;
+    today: RawGraphQLContributionCollection | null;
+  } | null;
+  rateLimit?: {
+    limit?: number | null;
+    cost?: number | null;
+    remaining?: number | null;
+    used?: number | null;
+    resetAt?: string | null;
+  } | null;
+}
+
+export interface TwoDayUtcWindows {
+  yesterday: {
+    date: string;     // YYYY-MM-DD
+    fromIso: string;  // YYYY-MM-DDT00:00:00.000Z
+    toIso: string;    // YYYY-MM-DDT23:59:59.999Z
+  };
+  today: {
+    date: string;     // YYYY-MM-DD
+    fromIso: string;  // YYYY-MM-DDT00:00:00.000Z
+    toIso: string;    // YYYY-MM-DDT23:59:59.999Z
+  };
+}
+
+export interface GitHub2DayContributionSnapshot {
+  ownerDatabaseId: number;
+  ownerLogin: string;
+  isPersonalAccount: boolean;
+  retrievedAtIso: string;
+  yesterday: GitHubContributionSnapshot;
+  today: GitHubContributionSnapshot;
+  snapshots: [GitHubContributionSnapshot, GitHubContributionSnapshot];
+  rateLimit?: RateLimitInfo;
+  authenticationMode: 'mode_a_public';
+  providerLatencyMs: number;
 }
 
 // ---------------------------------------------------------------------------

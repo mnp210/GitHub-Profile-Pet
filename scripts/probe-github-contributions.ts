@@ -1,5 +1,6 @@
 // scripts/probe-github-contributions.ts
 // Standalone diagnostic probe to verify GitHub GraphQL public contribution API access and immutable identity
+// using the Phase 3C2.2.3.1-R2 two-day contribution provider.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -9,6 +10,7 @@ import {
   verifyOwnerIdentity,
   redactSensitiveData,
   checkRateLimitConsistency,
+  compute2DayUtcWindows,
 } from '../src/features/pet-engine/contribution/index.ts';
 
 interface LedgerIdentityInspection {
@@ -51,7 +53,7 @@ function writeStepSummary(markdown: string): void {
 
 async function main(): Promise<void> {
   console.log('================================================================');
-  console.log('GitHub Profile Pet — Diagnostic Contribution & Identity Probe');
+  console.log('GitHub Profile Pet — Two-Day Contribution & Identity Probe');
   console.log('================================================================');
 
   const repoRoot = process.cwd();
@@ -86,72 +88,87 @@ async function main(): Promise<void> {
     console.log('Ledger is currently uninitialized (ownerDatabaseId is not yet locked).');
   }
 
-  // 3. Formulate UTC query window (Today: 00:00:00Z to 23:59:59.999Z)
-  const now = new Date();
-  const todayUtcStr = now.toISOString().slice(0, 10);
-  const fromIso = `${todayUtcStr}T00:00:00.000Z`;
-  const toIso = `${todayUtcStr}T23:59:59.999Z`;
-  console.log(`Querying UTC Date Window: [${fromIso} -> ${toIso}]`);
+  // 3. Formulate UTC query windows (Yesterday and Today)
+  const windows = compute2DayUtcWindows();
+  console.log('Computed UTC Date Windows:');
+  console.log(`  - Yesterday (${windows.yesterday.date}): [${windows.yesterday.fromIso} -> ${windows.yesterday.toIso}]`);
+  console.log(`  - Today     (${windows.today.date}): [${windows.today.fromIso} -> ${windows.today.toIso}]`);
 
-  // 4. Execute GraphQL Provider Query
+  // 4. Execute Two-Day GraphQL Provider Query
   const provider = new GitHubContributionProvider();
-  console.log(`Sending UserContributionSnapshot query to GitHub GraphQL API for "${targetOwner}"...`);
+  console.log(`Sending UserContribution2DaySnapshot query to GitHub GraphQL API for "${targetOwner}"...`);
 
   try {
-    const snapshot = await provider.fetchUserContributionSnapshot(
+    const snapshot2Day = await provider.fetchUserContributionSnapshot2Day(
       targetOwner,
-      fromIso,
-      toIso,
       token
     );
 
     console.log('GraphQL Query Succeeded!');
-    console.log(`  - Target Login: ${snapshot.ownerLogin}`);
-    console.log(`  - Numeric Database ID: ${snapshot.ownerDatabaseId}`);
-    console.log(`  - Account Type: Personal User Account`);
-    console.log(`  - Provider Latency: ${snapshot.providerLatencyMs}ms`);
+    console.log(`  - Target Login: ${snapshot2Day.ownerLogin}`);
+    console.log(`  - Numeric Database ID: ${snapshot2Day.ownerDatabaseId}`);
+    console.log(`  - Account Type: Personal User Account (${snapshot2Day.isPersonalAccount ? 'Personal' : 'Organization'})`);
+    console.log(`  - Provider Latency: ${snapshot2Day.providerLatencyMs}ms`);
 
     // 5. Verify Owner Identity against Established Ledger
-    verifyOwnerIdentity(snapshot, ledgerInfo.ownerDatabaseId);
+    verifyOwnerIdentity(snapshot2Day.today, ledgerInfo.ownerDatabaseId);
     console.log('Identity Verification: PASSED (Immutable numeric ID verified)');
 
-    console.log('\n--- Observed Public Contribution Categories (Planned Phase 3C2.2 Scope) ---');
-    console.log(`  * Commits: ${snapshot.counts.commits}`);
-    console.log(`  * Issues: ${snapshot.counts.issues}`);
-    console.log(`  * Pull Requests: ${snapshot.counts.pullRequests}`);
-    console.log(`  * Pull Request Reviews: ${snapshot.counts.pullRequestReviews}`);
-    console.log(`  ---------------------------------------------`);
-    console.log(`  = Calculated Public Category Total: ${snapshot.counts.publicCategoryTotal} (Candidate sum for planned Phase 3C2.2)`);
-    console.log(`  * Calendar Reported Total: ${snapshot.counts.calendarReportedTotal} (Informational platform aggregate)`);
-    console.log(`  * Restricted (Private) Excluded: ${snapshot.counts.restricted} (Excluded from candidate rewards in Mode A)`);
+    const yesterdayDate = snapshot2Day.yesterday.fromIso.slice(0, 10);
+    const todayDate = snapshot2Day.today.fromIso.slice(0, 10);
 
+    // 6. Log Category Breakdown for Both Windows
+    console.log(`\n--- Yesterday Public Contributions (${yesterdayDate}) ---`);
+    console.log(`  * Window: [${snapshot2Day.yesterday.fromIso} -> ${snapshot2Day.yesterday.toIso}]`);
+    console.log(`  * Commits: ${snapshot2Day.yesterday.counts.commits}`);
+    console.log(`  * Issues: ${snapshot2Day.yesterday.counts.issues}`);
+    console.log(`  * Pull Requests: ${snapshot2Day.yesterday.counts.pullRequests}`);
+    console.log(`  * Pull Request Reviews: ${snapshot2Day.yesterday.counts.pullRequestReviews}`);
+    console.log(`  ---------------------------------------------`);
+    console.log(`  = Calculated Public Category Total: ${snapshot2Day.yesterday.counts.publicCategoryTotal}`);
+    console.log(`  * Calendar Reported Total: ${snapshot2Day.yesterday.counts.calendarReportedTotal} (Informational platform aggregate)`);
+    console.log(`  * Restricted (Private) Excluded: ${snapshot2Day.yesterday.counts.restricted} (Excluded from candidate rewards in Mode A)`);
+
+    console.log(`\n--- Today Public Contributions (${todayDate}) ---`);
+    console.log(`  * Window: [${snapshot2Day.today.fromIso} -> ${snapshot2Day.today.toIso}]`);
+    console.log(`  * Commits: ${snapshot2Day.today.counts.commits}`);
+    console.log(`  * Issues: ${snapshot2Day.today.counts.issues}`);
+    console.log(`  * Pull Requests: ${snapshot2Day.today.counts.pullRequests}`);
+    console.log(`  * Pull Request Reviews: ${snapshot2Day.today.counts.pullRequestReviews}`);
+    console.log(`  ---------------------------------------------`);
+    console.log(`  = Calculated Public Category Total: ${snapshot2Day.today.counts.publicCategoryTotal}`);
+    console.log(`  * Calendar Reported Total: ${snapshot2Day.today.counts.calendarReportedTotal} (Informational platform aggregate)`);
+    console.log(`  * Restricted (Private) Excluded: ${snapshot2Day.today.counts.restricted} (Excluded from candidate rewards in Mode A)`);
+
+    // 7. Rate Limit Telemetry
     let isTelemetryConsistent = false;
     let telemetryDiscrepancies: string[] = [];
 
-    if (!snapshot.rateLimit) {
+    const rateLimit = snapshot2Day.rateLimit;
+    if (!rateLimit) {
       telemetryDiscrepancies.push('Missing GraphQL rateLimit telemetry in response payload.');
       console.error('\nTelemetry Consistency Check: FAILED (Missing GraphQL rateLimit in response payload)');
     } else {
       console.log('\n--- GraphQL Rate Limit Telemetry ---');
-      console.log(`  * Pool Limit: ${snapshot.rateLimit.limit !== null ? snapshot.rateLimit.limit : 'unspecified'} points`);
-      console.log(`  * Query Cost: ${snapshot.rateLimit.cost !== null ? snapshot.rateLimit.cost : 'unspecified'} point(s)`);
-      console.log(`  * Remaining Points: ${snapshot.rateLimit.remaining !== null ? snapshot.rateLimit.remaining : 'unspecified'}`);
-      console.log(`  * Used Points: ${snapshot.rateLimit.used !== null ? snapshot.rateLimit.used : 'unspecified'}`);
-      console.log(`  * Reset At: ${snapshot.rateLimit.resetAt !== null ? snapshot.rateLimit.resetAt : 'unspecified'}`);
+      console.log(`  * Pool Limit: ${rateLimit.limit !== null ? rateLimit.limit : 'unspecified'} points`);
+      console.log(`  * Query Cost: ${rateLimit.cost !== null ? rateLimit.cost : 'unspecified'} point(s)`);
+      console.log(`  * Remaining Points: ${rateLimit.remaining !== null ? rateLimit.remaining : 'unspecified'}`);
+      console.log(`  * Used Points: ${rateLimit.used !== null ? rateLimit.used : 'unspecified'}`);
+      console.log(`  * Reset At: ${rateLimit.resetAt !== null ? rateLimit.resetAt : 'unspecified'}`);
 
-      if (snapshot.rateLimit.headers) {
+      if (rateLimit.headers) {
         console.log('\n--- HTTP Response Headers (Rate Limit) ---');
-        console.log(`  * x-ratelimit-limit: ${snapshot.rateLimit.headers.limit !== null ? snapshot.rateLimit.headers.limit : (snapshot.rateLimit.headers.raw?.limit ?? 'missing')}`);
-        console.log(`  * x-ratelimit-remaining: ${snapshot.rateLimit.headers.remaining !== null ? snapshot.rateLimit.headers.remaining : (snapshot.rateLimit.headers.raw?.remaining ?? 'missing')}`);
-        console.log(`  * x-ratelimit-used: ${snapshot.rateLimit.headers.used !== null ? snapshot.rateLimit.headers.used : (snapshot.rateLimit.headers.raw?.used ?? 'missing')}`);
-        console.log(`  * x-ratelimit-reset: ${snapshot.rateLimit.headers.reset !== null ? snapshot.rateLimit.headers.reset : (snapshot.rateLimit.headers.raw?.reset ?? 'missing')}`);
-        console.log(`  * x-ratelimit-resource: ${snapshot.rateLimit.headers.resource ?? 'missing'}`);
+        console.log(`  * x-ratelimit-limit: ${rateLimit.headers.limit !== null ? rateLimit.headers.limit : (rateLimit.headers.raw?.limit ?? 'missing')}`);
+        console.log(`  * x-ratelimit-remaining: ${rateLimit.headers.remaining !== null ? rateLimit.headers.remaining : (rateLimit.headers.raw?.remaining ?? 'missing')}`);
+        console.log(`  * x-ratelimit-used: ${rateLimit.headers.used !== null ? rateLimit.headers.used : (rateLimit.headers.raw?.used ?? 'missing')}`);
+        console.log(`  * x-ratelimit-reset: ${rateLimit.headers.reset !== null ? rateLimit.headers.reset : (rateLimit.headers.raw?.reset ?? 'missing')}`);
+        console.log(`  * x-ratelimit-resource: ${rateLimit.headers.resource ?? 'missing'}`);
       } else {
         console.log('\n--- HTTP Response Headers (Rate Limit) ---');
         console.log('  * Headers: MISSING (Could not capture transport headers)');
       }
 
-      const consistency = snapshot.rateLimit.consistency ?? checkRateLimitConsistency(snapshot.rateLimit, snapshot.rateLimit.headers ?? null);
+      const consistency = rateLimit.consistency ?? checkRateLimitConsistency(rateLimit, rateLimit.headers ?? null);
       isTelemetryConsistent = consistency.isConsistent;
       telemetryDiscrepancies = consistency.discrepancies;
 
@@ -165,45 +182,61 @@ async function main(): Promise<void> {
       }
     }
 
-    // 6. Generate Sanitized GitHub Step Summary
+    // 8. Generate Sanitized GitHub Step Summary
     const summaryMd = `
-### 🐾 GitHub Profile Pet — Public Contribution Probe Result
+### 🐾 GitHub Profile Pet — Two-Day Contribution & Identity Probe Result
 
 | Parameter | Value |
 | :--- | :--- |
-| **Resolved Login** | \`${snapshot.ownerLogin}\` (${ownerSource}) |
-| **Numeric GitHub ID** | \`${snapshot.ownerDatabaseId}\` |
-| **Account Type** | Individual Personal User |
+| **Resolved Login** | \`${snapshot2Day.ownerLogin}\` (${ownerSource}) |
+| **Numeric GitHub ID** | \`${snapshot2Day.ownerDatabaseId}\` |
+| **Account Type** | Individual Personal User (\`User\`) |
 | **GraphQL Query Status** | ✅ **SUCCESS** |
-| **Query Latency** | ${snapshot.providerLatencyMs} ms |
+| **Query Latency** | ${snapshot2Day.providerLatencyMs} ms |
 | **Identity Verification** | ✅ **PASSED** ${ledgerInfo.isInitialized ? '(Matches established ledger)' : '(Uninitialized ledger inspection)'} |
 | **Telemetry Consistency** | ${isTelemetryConsistent ? '✅ **PASSED** (GraphQL body matches HTTP headers)' : '❌ **FAILED** (Discrepancy detected)'} |
 
-#### 📊 Observed Public Contribution Categories (${todayUtcStr})
+#### 📅 Query Windows (UTC)
+- **Yesterday:** \`${yesterdayDate}\` (\`${snapshot2Day.yesterday.fromIso}\` &rarr; \`${snapshot2Day.yesterday.toIso}\`)
+- **Today:** \`${todayDate}\` (\`${snapshot2Day.today.fromIso}\` &rarr; \`${snapshot2Day.today.toIso}\`)
+
+#### 📊 Yesterday Public Contributions (${yesterdayDate})
 
 | Category | Count | Status |
 | :--- | :---: | :--- |
-| **Commits** | \`${snapshot.counts.commits}\` | Candidate for planned rewards (Phase 3C2.2) |
-| **Issues** | \`${snapshot.counts.issues}\` | Candidate for planned rewards (Phase 3C2.2) |
-| **Pull Requests** | \`${snapshot.counts.pullRequests}\` | Candidate for planned rewards (Phase 3C2.2) |
-| **PR Reviews** | \`${snapshot.counts.pullRequestReviews}\` | Candidate for planned rewards (Phase 3C2.2) |
-| **Public Category Total** | **\`${snapshot.counts.publicCategoryTotal}\`** | **Observed Public Total (Candidate sum for planned Phase 3C2.2)** |
-| **Calendar Reported Total** | \`${snapshot.counts.calendarReportedTotal}\` | Platform aggregate (Informational) |
-| **Restricted (Private)** | \`${snapshot.counts.restricted}\` | 🚫 **Excluded from candidate rewards (Public-only Mode A)** |
+| **Commits** | \`${snapshot2Day.yesterday.counts.commits}\` | Candidate for planned accounting |
+| **Issues** | \`${snapshot2Day.yesterday.counts.issues}\` | Candidate for planned accounting |
+| **Pull Requests** | \`${snapshot2Day.yesterday.counts.pullRequests}\` | Candidate for planned accounting |
+| **PR Reviews** | \`${snapshot2Day.yesterday.counts.pullRequestReviews}\` | Candidate for planned accounting |
+| **Public Category Total** | **\`${snapshot2Day.yesterday.counts.publicCategoryTotal}\`** | **Observed Public Total (Yesterday)** |
+| **Calendar Reported Total** | \`${snapshot2Day.yesterday.counts.calendarReportedTotal}\` | Platform aggregate (Informational) |
+| **Restricted (Private)** | \`${snapshot2Day.yesterday.counts.restricted}\` | 🚫 **Excluded from candidate rewards (Public-only Mode A)** |
+
+#### 📊 Today Public Contributions (${todayDate})
+
+| Category | Count | Status |
+| :--- | :---: | :--- |
+| **Commits** | \`${snapshot2Day.today.counts.commits}\` | Candidate for planned accounting |
+| **Issues** | \`${snapshot2Day.today.counts.issues}\` | Candidate for planned accounting |
+| **Pull Requests** | \`${snapshot2Day.today.counts.pullRequests}\` | Candidate for planned accounting |
+| **PR Reviews** | \`${snapshot2Day.today.counts.pullRequestReviews}\` | Candidate for planned accounting |
+| **Public Category Total** | **\`${snapshot2Day.today.counts.publicCategoryTotal}\`** | **Observed Public Total (Today)** |
+| **Calendar Reported Total** | \`${snapshot2Day.today.counts.calendarReportedTotal}\` | Platform aggregate (Informational) |
+| **Restricted (Private)** | \`${snapshot2Day.today.counts.restricted}\` | 🚫 **Excluded from candidate rewards (Public-only Mode A)** |
 
 ${
-  snapshot.rateLimit
+  rateLimit
     ? `
 #### ⏱️ Rate Limit Telemetry Reconciliation
 
 | Metric | GraphQL Body | HTTP Header (\`x-ratelimit-*\`) | Status |
 | :--- | :---: | :---: | :--- |
-| **Pool Limit** | \`${snapshot.rateLimit.limit ?? 'N/A'}\` pts | \`${snapshot.rateLimit.headers?.limit ?? (snapshot.rateLimit.headers?.raw?.limit ?? 'N/A')}\` pts | ${snapshot.rateLimit.limit !== null && snapshot.rateLimit.limit === snapshot.rateLimit.headers?.limit ? '✅ Matches' : '⚠️ Discrepancy'} |
-| **Remaining Points** | \`${snapshot.rateLimit.remaining ?? 'N/A'}\` pts | \`${snapshot.rateLimit.headers?.remaining ?? (snapshot.rateLimit.headers?.raw?.remaining ?? 'N/A')}\` pts | ${snapshot.rateLimit.remaining !== null && snapshot.rateLimit.remaining === snapshot.rateLimit.headers?.remaining ? '✅ Matches' : '⚠️ Discrepancy'} |
-| **Used Points** | \`${snapshot.rateLimit.used ?? 'N/A'}\` pts | \`${snapshot.rateLimit.headers?.used ?? (snapshot.rateLimit.headers?.raw?.used ?? 'N/A')}\` pts | ${snapshot.rateLimit.used !== null && snapshot.rateLimit.used === snapshot.rateLimit.headers?.used ? '✅ Matches' : '⚠️ Discrepancy'} |
-| **Query Cost** | \`${snapshot.rateLimit.cost ?? 'N/A'}\` pt(s) | N/A (GraphQL only) | ${snapshot.rateLimit.cost !== null && snapshot.rateLimit.cost > 0 ? 'Measured query cost' : '⚠️ Invalid cost'} |
-| **Reset Timestamp** | \`${snapshot.rateLimit.resetAt ?? 'N/A'}\` | \`${snapshot.rateLimit.headers?.reset ?? (snapshot.rateLimit.headers?.raw?.reset ?? 'N/A')}\` | ${isTelemetryConsistent ? '✅ Consistent' : '⚠️ Discrepancy'} |
-| **Resource Pool** | N/A | \`${snapshot.rateLimit.headers?.resource ?? 'N/A'}\` | ${snapshot.rateLimit.headers?.resource === 'graphql' ? '✅ graphql' : '⚠️ Invalid resource'} |
+| **Pool Limit** | \`${rateLimit.limit ?? 'N/A'}\` pts | \`${rateLimit.headers?.limit ?? (rateLimit.headers?.raw?.limit ?? 'N/A')}\` pts | ${rateLimit.limit !== null && rateLimit.limit === rateLimit.headers?.limit ? '✅ Matches' : '⚠️ Discrepancy'} |
+| **Remaining Points** | \`${rateLimit.remaining ?? 'N/A'}\` pts | \`${rateLimit.headers?.remaining ?? (rateLimit.headers?.raw?.remaining ?? 'N/A')}\` pts | ${rateLimit.remaining !== null && rateLimit.remaining === rateLimit.headers?.remaining ? '✅ Matches' : '⚠️ Discrepancy'} |
+| **Used Points** | \`${rateLimit.used ?? 'N/A'}\` pts | \`${rateLimit.headers?.used ?? (rateLimit.headers?.raw?.used ?? 'N/A')}\` pts | ${rateLimit.used !== null && rateLimit.used === rateLimit.headers?.used ? '✅ Matches' : '⚠️ Discrepancy'} |
+| **Query Cost** | \`${rateLimit.cost ?? 'N/A'}\` pt(s) | N/A (GraphQL only) | ${rateLimit.cost !== null && rateLimit.cost > 0 ? 'Measured query cost' : '⚠️ Invalid cost'} |
+| **Reset Timestamp** | \`${rateLimit.resetAt ?? 'N/A'}\` | \`${rateLimit.headers?.reset ?? (rateLimit.headers?.raw?.reset ?? 'N/A')}\` | ${isTelemetryConsistent ? '✅ Consistent' : '⚠️ Discrepancy'} |
+| **Resource Pool** | N/A | \`${rateLimit.headers?.resource ?? 'N/A'}\` | ${rateLimit.headers?.resource === 'graphql' ? '✅ graphql' : '⚠️ Invalid resource'} |
 
 ${
   !isTelemetryConsistent

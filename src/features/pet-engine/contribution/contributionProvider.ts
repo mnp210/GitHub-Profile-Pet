@@ -10,10 +10,15 @@ import {
 } from './nativeGraphQLClient.ts';
 import {
   InvalidContributionDataError,
+  IdentityMismatchError,
   OrganizationAccountError,
   UserNotFoundError,
   type GitHubContributionSnapshot,
+  type GitHub2DayContributionSnapshot,
   type RawGraphQLContributionResponse,
+  type RawGraphQL2DayContributionResponse,
+  type TwoDayUtcWindows,
+  type ContributionCategoryCounts,
   type RateLimitHeaders,
   type RateLimitConsistencyCheck,
   type RateLimitInfo,
@@ -30,6 +35,58 @@ query UserContributionSnapshot(
     databaseId
     login
     contributionsCollection(from: $from, to: $to) {
+      startedAt
+      endedAt
+      totalCommitContributions
+      totalIssueContributions
+      totalPullRequestContributions
+      totalPullRequestReviewContributions
+      restrictedContributionsCount
+      contributionCalendar {
+        totalContributions
+      }
+    }
+  }
+  rateLimit {
+    limit
+    cost
+    remaining
+    used
+    resetAt
+  }
+}
+`.trim();
+
+export const USER_CONTRIBUTION_2DAY_SNAPSHOT_QUERY = `
+query UserContributionSnapshot2Day(
+  $login: String!
+  $yesterdayFrom: DateTime!
+  $yesterdayTo: DateTime!
+  $todayFrom: DateTime!
+  $todayTo: DateTime!
+) {
+  repositoryOwner(login: $login) {
+    __typename
+    id
+    login
+  }
+  user(login: $login) {
+    id
+    databaseId
+    login
+    yesterday: contributionsCollection(from: $yesterdayFrom, to: $yesterdayTo) {
+      startedAt
+      endedAt
+      totalCommitContributions
+      totalIssueContributions
+      totalPullRequestContributions
+      totalPullRequestReviewContributions
+      restrictedContributionsCount
+      contributionCalendar {
+        totalContributions
+      }
+    }
+    today: contributionsCollection(from: $todayFrom, to: $todayTo) {
       startedAt
       endedAt
       totalCommitContributions
@@ -337,6 +394,12 @@ export function parseAndValidateContributionResponse(
     throw new InvalidContributionDataError(`Missing or invalid login field in user response for "${targetLogin}".`);
   }
 
+  if (user.login.toLowerCase() !== targetLogin.toLowerCase()) {
+    throw new IdentityMismatchError(
+      `Queried GitHub login "${user.login}" does not match target login "${targetLogin}".`
+    );
+  }
+
   if (typeof user.databaseId !== 'number' || !Number.isInteger(user.databaseId) || user.databaseId <= 0) {
     throw new InvalidContributionDataError(
       `Invalid or missing numeric databaseId for user "${user.login}": expected positive integer.`
@@ -432,6 +495,299 @@ export function parseAndValidateContributionResponse(
       publicCategoryTotal,
       calendarReportedTotal,
     },
+    rateLimit: rateLimitInfo,
+    authenticationMode: 'mode_a_public',
+    providerLatencyMs: Math.max(0, latencyMs),
+  };
+}
+
+/**
+ * Computes strict UTC date windows for yesterday and today.
+ * Both windows start at 00:00:00.000Z and end at 23:59:59.999Z.
+ * Handles month and leap-year boundaries deterministically using Date.UTC.
+ */
+export function compute2DayUtcWindows(now: number | Date = Date.now()): TwoDayUtcWindows {
+  const dateObj = typeof now === 'number' ? new Date(now) : now;
+  const year = dateObj.getUTCFullYear();
+  const month = dateObj.getUTCMonth();
+  const day = dateObj.getUTCDate();
+
+  const todayUtc = new Date(Date.UTC(year, month, day));
+  const yesterdayUtc = new Date(Date.UTC(year, month, day - 1));
+
+  const todayDate = todayUtc.toISOString().slice(0, 10);
+  const yesterdayDate = yesterdayUtc.toISOString().slice(0, 10);
+
+  return {
+    yesterday: {
+      date: yesterdayDate,
+      fromIso: `${yesterdayDate}T00:00:00.000Z`,
+      toIso: `${yesterdayDate}T23:59:59.999Z`,
+    },
+    today: {
+      date: todayDate,
+      fromIso: `${todayDate}T00:00:00.000Z`,
+      toIso: `${todayDate}T23:59:59.999Z`,
+    },
+  };
+}
+
+export interface Fetch2DayOptions extends GraphQLRequestOptions {
+  now?: number | Date;
+  yesterdayFrom?: string;
+  yesterdayTo?: string;
+  todayFrom?: string;
+  todayTo?: string;
+  expectedOwnerDatabaseId?: number;
+  requireStrictRateLimitConsistency?: boolean;
+}
+
+function parseAliasedCategoryCounts(
+  coll: unknown,
+  userLogin: string,
+  windowLabel: string
+): ContributionCategoryCounts {
+  if (!coll || typeof coll !== 'object') {
+    throw new InvalidContributionDataError(
+      `Missing or null "${windowLabel}" contributionsCollection in GraphQL response for user "${userLogin}".`
+    );
+  }
+
+  const c = coll as Record<string, unknown>;
+
+  const validateNonNegativeInteger = (val: unknown, fieldName: string): number => {
+    if (typeof val !== 'number' || !Number.isInteger(val) || val < 0) {
+      throw new InvalidContributionDataError(
+        `Field "${fieldName}" in "${windowLabel}" for user "${userLogin}" must be a non-negative integer, received: ${String(val)}.`
+      );
+    }
+    return val;
+  };
+
+  const commits = validateNonNegativeInteger(c.totalCommitContributions, 'totalCommitContributions');
+  const issues = validateNonNegativeInteger(c.totalIssueContributions, 'totalIssueContributions');
+  const pullRequests = validateNonNegativeInteger(c.totalPullRequestContributions, 'totalPullRequestContributions');
+  const pullRequestReviews = validateNonNegativeInteger(
+    c.totalPullRequestReviewContributions,
+    'totalPullRequestReviewContributions'
+  );
+  const restricted = validateNonNegativeInteger(c.restrictedContributionsCount, 'restrictedContributionsCount');
+
+  if (!c.contributionCalendar || typeof c.contributionCalendar !== 'object') {
+    throw new InvalidContributionDataError(
+      `contributionCalendar is null or missing in "${windowLabel}" for user "${userLogin}".`
+    );
+  }
+
+  const cal = c.contributionCalendar as Record<string, unknown>;
+  const calendarReportedTotal = validateNonNegativeInteger(
+    cal.totalContributions,
+    'contributionCalendar.totalContributions'
+  );
+
+  // Four eligible public categories: commits, issues, PRs, reviews
+  // Restricted contributions are explicitly EXCLUDED from publicCategoryTotal
+  const publicCategoryTotal = commits + issues + pullRequests + pullRequestReviews;
+
+  return {
+    commits,
+    issues,
+    pullRequests,
+    pullRequestReviews,
+    restricted,
+    publicCategoryTotal,
+    calendarReportedTotal,
+  };
+}
+
+/**
+ * Parses and validates raw 2-day GraphQL aliased response into a strict GitHub2DayContributionSnapshot.
+ * Validates immutable identity, category totals, rate limit telemetry, and excludes restricted counts.
+ * Query cost is captured directly from raw response telemetry without assuming or hardcoding 1 point.
+ */
+export function parseAndValidate2DayContributionResponse(
+  raw: RawGraphQL2DayContributionResponse,
+  targetLogin: string,
+  windows: TwoDayUtcWindows,
+  latencyMs: number = 0,
+  responseHeaders?: RateLimitHeaders | null,
+  options?: {
+    expectedOwnerDatabaseId?: number;
+    requireStrictRateLimitConsistency?: boolean;
+  }
+): GitHub2DayContributionSnapshot {
+  if (!raw || typeof raw !== 'object') {
+    throw new InvalidContributionDataError('Raw GraphQL payload is not a valid object.');
+  }
+
+  // 1. Account existence and repositoryOwner validation
+  if (raw.repositoryOwner === null && raw.user === null) {
+    throw new UserNotFoundError(`GitHub user "${targetLogin}" was not found.`);
+  }
+
+  if (raw.repositoryOwner === undefined || raw.repositoryOwner === null || typeof raw.repositoryOwner !== 'object') {
+    throw new InvalidContributionDataError(
+      `Missing or malformed repositoryOwner in GraphQL response for "${targetLogin}".`
+    );
+  }
+
+  const repoOwner = raw.repositoryOwner;
+
+  if (typeof repoOwner.__typename !== 'string' || repoOwner.__typename.trim().length === 0) {
+    throw new InvalidContributionDataError(
+      `Missing __typename on repositoryOwner in GraphQL response for "${targetLogin}".`
+    );
+  }
+
+  if (repoOwner.__typename !== 'User' && repoOwner.__typename !== 'Organization') {
+    throw new InvalidContributionDataError(
+      `Unknown __typename on repositoryOwner for "${targetLogin}": received "${repoOwner.__typename}". Expected "User" or "Organization".`
+    );
+  }
+
+  if (repoOwner.__typename === 'Organization') {
+    throw new OrganizationAccountError(
+      `Configured account "${targetLogin}" is an Organization. Profile Pet requires an individual personal user account.`
+    );
+  }
+
+  if (typeof repoOwner.login !== 'string' || repoOwner.login.trim().length === 0) {
+    throw new InvalidContributionDataError(
+      `Missing or empty login on repositoryOwner in GraphQL response for "${targetLogin}".`
+    );
+  }
+
+  if (repoOwner.login.toLowerCase() !== targetLogin.toLowerCase()) {
+    throw new IdentityMismatchError(
+      `Repository owner login "${repoOwner.login}" does not match target login "${targetLogin}".`
+    );
+  }
+
+  // 2. Personal user validation
+  if (!raw.user || typeof raw.user !== 'object') {
+    throw new InvalidContributionDataError(
+      `Repository owner for "${targetLogin}" is a User, but user contribution details object is null or missing.`
+    );
+  }
+
+  const user = raw.user;
+
+  if (typeof user.login !== 'string' || user.login.trim().length === 0) {
+    throw new InvalidContributionDataError(
+      `Missing or invalid login field in user response for "${targetLogin}".`
+    );
+  }
+
+  if (user.login.toLowerCase() !== targetLogin.toLowerCase()) {
+    throw new IdentityMismatchError(
+      `Queried GitHub user login "${user.login}" does not match target login "${targetLogin}".`
+    );
+  }
+
+  if (user.login.toLowerCase() !== repoOwner.login.toLowerCase()) {
+    throw new IdentityMismatchError(
+      `User login "${user.login}" does not match repositoryOwner login "${repoOwner.login}".`
+    );
+  }
+
+  if (typeof user.databaseId !== 'number' || !Number.isInteger(user.databaseId) || user.databaseId <= 0) {
+    throw new InvalidContributionDataError(
+      `Invalid or missing numeric databaseId for user "${user.login}": expected positive integer.`
+    );
+  }
+
+  if (options?.expectedOwnerDatabaseId !== undefined) {
+    if (user.databaseId !== options.expectedOwnerDatabaseId) {
+      throw new IdentityMismatchError(
+        `Queried GitHub databaseId (${user.databaseId}) does not match expected ownerDatabaseId (${options.expectedOwnerDatabaseId}).`
+      );
+    }
+  }
+
+  // 3. Validate both aliased collections
+  const yesterdayCounts = parseAliasedCategoryCounts(user.yesterday, user.login, 'yesterday');
+  const todayCounts = parseAliasedCategoryCounts(user.today, user.login, 'today');
+
+  // 4. Rate limit parsing & validation (cost measured directly from response, not assumed or hardcoded)
+  let rateLimitInfo: RateLimitInfo | undefined;
+  if (raw.rateLimit && typeof raw.rateLimit === 'object') {
+    const rawRl = raw.rateLimit;
+    const limit = typeof rawRl.limit === 'number' && Number.isInteger(rawRl.limit) ? rawRl.limit : null;
+    const cost = typeof rawRl.cost === 'number' && Number.isInteger(rawRl.cost) ? rawRl.cost : null;
+    const remaining = typeof rawRl.remaining === 'number' && Number.isInteger(rawRl.remaining) ? rawRl.remaining : null;
+    const used = typeof rawRl.used === 'number' && Number.isInteger(rawRl.used) ? rawRl.used : null;
+    const resetAt = typeof rawRl.resetAt === 'string' && rawRl.resetAt.trim().length > 0 ? rawRl.resetAt.trim() : null;
+
+    const baseRateLimit: RateLimitInfo = {
+      limit,
+      cost,
+      remaining,
+      used,
+      resetAt,
+      headers: responseHeaders ?? null,
+    };
+
+    baseRateLimit.consistency = checkRateLimitConsistency(baseRateLimit, responseHeaders ?? null);
+    if (options?.requireStrictRateLimitConsistency && !baseRateLimit.consistency.isConsistent) {
+      throw new InvalidContributionDataError(
+        `Rate limit telemetry consistency validation failed: ${baseRateLimit.consistency.discrepancies.join('; ')}`
+      );
+    }
+    rateLimitInfo = baseRateLimit;
+  } else if (responseHeaders) {
+    const consistency = checkRateLimitConsistency(null, responseHeaders);
+    if (options?.requireStrictRateLimitConsistency && !consistency.isConsistent) {
+      throw new InvalidContributionDataError(
+        `Rate limit telemetry consistency validation failed: ${consistency.discrepancies.join('; ')}`
+      );
+    }
+    rateLimitInfo = {
+      limit: null,
+      cost: null,
+      remaining: null,
+      used: null,
+      resetAt: null,
+      headers: responseHeaders,
+      consistency,
+    };
+  }
+
+  const retrievedAtIso = new Date().toISOString();
+
+  const yesterdaySnapshot: GitHubContributionSnapshot = {
+    ownerDatabaseId: user.databaseId,
+    ownerLogin: user.login,
+    isPersonalAccount: true,
+    fromIso: windows.yesterday.fromIso,
+    toIso: windows.yesterday.toIso,
+    retrievedAtIso,
+    counts: yesterdayCounts,
+    rateLimit: rateLimitInfo,
+    authenticationMode: 'mode_a_public',
+    providerLatencyMs: Math.max(0, latencyMs),
+  };
+
+  const todaySnapshot: GitHubContributionSnapshot = {
+    ownerDatabaseId: user.databaseId,
+    ownerLogin: user.login,
+    isPersonalAccount: true,
+    fromIso: windows.today.fromIso,
+    toIso: windows.today.toIso,
+    retrievedAtIso,
+    counts: todayCounts,
+    rateLimit: rateLimitInfo,
+    authenticationMode: 'mode_a_public',
+    providerLatencyMs: Math.max(0, latencyMs),
+  };
+
+  return {
+    ownerDatabaseId: user.databaseId,
+    ownerLogin: user.login,
+    isPersonalAccount: true,
+    retrievedAtIso,
+    yesterday: yesterdaySnapshot,
+    today: todaySnapshot,
+    snapshots: [yesterdaySnapshot, todaySnapshot],
     rateLimit: rateLimitInfo,
     authenticationMode: 'mode_a_public',
     providerLatencyMs: Math.max(0, latencyMs),
@@ -544,6 +900,132 @@ export class GitHubContributionProvider {
 
       const errorObj = err as Error;
       // Guarantee token is redacted in any error thrown or rethrown
+      const sanitizedMessage = redactSensitiveData(errorObj.message, token);
+      errorObj.message = sanitizedMessage;
+      throw errorObj;
+    }
+  }
+
+  /**
+   * Fetches the 2-day public contribution snapshot for a personal user using GraphQL aliases.
+   * Queries strictly two UTC date windows: yesterday and today (00:00:00.000Z to 23:59:59.999Z).
+   * Validates numeric identity, eligible categories, rate limit telemetry, and redacts secrets.
+   */
+  public async fetchUserContributionSnapshot2Day(
+    login: string,
+    token: string,
+    options?: Fetch2DayOptions
+  ): Promise<GitHub2DayContributionSnapshot> {
+    if (!token || typeof token !== 'string' || token.trim().length === 0) {
+      throw new InvalidContributionDataError('GitHub token must be provided.');
+    }
+
+    if (!login || typeof login !== 'string' || login.trim().length === 0) {
+      throw new InvalidContributionDataError('Target GitHub login must be a non-empty string.');
+    }
+
+    const normalizedLogin = login.trim();
+    const windows = compute2DayUtcWindows(options?.now ?? Date.now());
+
+    const yesterdayFrom = options?.yesterdayFrom ?? windows.yesterday.fromIso;
+    const yesterdayTo = options?.yesterdayTo ?? windows.yesterday.toIso;
+    const todayFrom = options?.todayFrom ?? windows.today.fromIso;
+    const todayTo = options?.todayTo ?? windows.today.toIso;
+
+    // Validate that windows are valid ISO strings with explicit timezones
+    if (
+      !isValidIsoDateTimeWithExplicitTimezone(yesterdayFrom) ||
+      !isValidIsoDateTimeWithExplicitTimezone(yesterdayTo) ||
+      !isValidIsoDateTimeWithExplicitTimezone(todayFrom) ||
+      !isValidIsoDateTimeWithExplicitTimezone(todayTo)
+    ) {
+      throw new InvalidContributionDataError(
+        'Date window boundaries must be complete ISO-8601 date-time strings with explicit timezones.'
+      );
+    }
+
+    const effectiveWindows: TwoDayUtcWindows = {
+      yesterday: {
+        date: yesterdayFrom.slice(0, 10),
+        fromIso: yesterdayFrom,
+        toIso: yesterdayTo,
+      },
+      today: {
+        date: todayFrom.slice(0, 10),
+        fromIso: todayFrom,
+        toIso: todayTo,
+      },
+    };
+
+    const startMs = Date.now();
+    let capturedHeaders: RateLimitHeaders | null = null;
+    const wrappedOptions: GraphQLRequestOptions = {
+      ...options,
+      onResponseHeaders: (headers) => {
+        capturedHeaders = headers;
+        if (options?.onResponseHeaders) {
+          try {
+            options.onResponseHeaders(headers);
+          } catch {
+            // Callback failure must not prevent response handling
+          }
+        }
+      },
+    };
+
+    try {
+      const rawData = await this.client.execute<RawGraphQL2DayContributionResponse>(
+        USER_CONTRIBUTION_2DAY_SNAPSHOT_QUERY,
+        {
+          login: normalizedLogin,
+          yesterdayFrom,
+          yesterdayTo,
+          todayFrom,
+          todayTo,
+        },
+        token,
+        wrappedOptions
+      );
+
+      const latencyMs = Date.now() - startMs;
+      return parseAndValidate2DayContributionResponse(
+        rawData,
+        normalizedLogin,
+        effectiveWindows,
+        latencyMs,
+        capturedHeaders,
+        {
+          expectedOwnerDatabaseId: options?.expectedOwnerDatabaseId,
+          requireStrictRateLimitConsistency: options?.requireStrictRateLimitConsistency,
+        }
+      );
+    } catch (err: unknown) {
+      if (err instanceof GitHubGraphQLError) {
+        // Primary query carries repositoryOwner in partialData if GraphQL execution produced partial data with errors
+        const partial = err.partialData as RawGraphQL2DayContributionResponse | undefined;
+        if (partial && typeof partial === 'object') {
+          if (partial.repositoryOwner?.__typename === 'Organization') {
+            throw new OrganizationAccountError(
+              `Configured account "${normalizedLogin}" is an Organization. Profile Pet requires an individual personal user account.`
+            );
+          }
+          if (partial.repositoryOwner === null && partial.user === null) {
+            throw new UserNotFoundError(`GitHub user "${normalizedLogin}" was not found.`);
+          }
+        }
+
+        const isUserNotFound = err.errors.some(
+          (e) =>
+            e.type === 'NOT_FOUND' ||
+            e.message.toLowerCase().includes('could not resolve to a user')
+        );
+
+        if (isUserNotFound) {
+          throw new UserNotFoundError(`GitHub user "${normalizedLogin}" was not found.`);
+        }
+      }
+
+      const errorObj = err as Error;
       const sanitizedMessage = redactSensitiveData(errorObj.message, token);
       errorObj.message = sanitizedMessage;
       throw errorObj;

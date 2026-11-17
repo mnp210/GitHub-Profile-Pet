@@ -1,27 +1,91 @@
 /**
- * GitHub Profile Pet - Contribution Accounting Engine
- * Enforces monotonic HWM, 5-slice hourly throttle, daily 300 XP cap, 48-hour expiration,
- * and the fundamental conservation invariant:
- * observedUnits = rewardedUnits + forfeitedUnits + pendingUnits + expiredUnits
+ * GitHub Profile Pet - Deterministic Contribution Accounting Engine (Phase 3C2.2.1)
+ *
+ * Implements:
+ * - Per-date Monotonic High-Water Marks (dailyHwm)
+ * - Independent Durable Reward Ordinals (dailyRewardOrdinal)
+ * - Installation Baseline Lifecycle (zero retroactive XP, baseline does not consume ordinals)
+ * - Diminishing Activity Reward Schedule (25, 15, 10, 5, 5 XP; 10, 5, 2, 1, 1 Satiety)
+ * - 5 Individual Increments per UTC Hour Processing Throttle
+ * - Daily 300 Activity XP Cap with Whole-Increment Forfeiture Policy
+ * - 48-Hour Pending Expiration Boundary (syncDate midnight + 48h UTC)
+ * - Fundamental Accounting Conservation Invariant:
+ *     total_contributions_recorded = rewarded + forfeited + pending + expired
+ * - Fail-Closed Security on Corrupt Accounting State or Identity Mismatch
  */
 
 import {
   CONTRIBUTION_SLICE_EXPIRY_MS,
   DAILY_CONTRIBUTION_XP_CAP,
-  HOURLY_THROTTLE_MAX_SLICES,
-  SATIETY_PER_CONTRIBUTION_UNIT,
-  XP_PER_CONTRIBUTION_UNIT,
+  MAX_INCREMENTS_PER_HOUR,
 } from '../domain/constants.ts';
 import type {
   ContributionLedgerDocument,
   ContributionSlice,
+  InstallationBaselineMetadata,
+  MonthlyHistoricalSummary,
   PetStateDocument,
+  SyncReceipt,
 } from '../domain/types.ts';
+import type { GitHubContributionSnapshot } from '../contribution/types.ts';
 import {
   applyExperience,
   clampVital,
   derivePetMoodFromVitals,
 } from '../transitions/progressionEngine.ts';
+
+// ---------------------------------------------------------------------------
+// Error Classes
+// ---------------------------------------------------------------------------
+
+export class CorruptOrdinalError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CorruptOrdinalError';
+  }
+}
+
+export class CorruptHwmError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CorruptHwmError';
+  }
+}
+
+export class InvalidSnapshotError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidSnapshotError';
+  }
+}
+
+export class IdentityMismatchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'IdentityMismatchError';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Interfaces & Types
+// ---------------------------------------------------------------------------
+
+export interface DailySnapshotInput {
+  date: string; // YYYY-MM-DD UTC
+  observedTotal: number; // public category sum: commits + issues + PRs + reviews
+}
+
+export interface ContributionReconciliationParams {
+  pet: PetStateDocument;
+  ledger: ContributionLedgerDocument;
+  observedPublicTotal?: number;
+  syncDateOverride?: string;
+  snapshots?: Array<DailySnapshotInput | GitHubContributionSnapshot>;
+  snapshot?: GitHubContributionSnapshot;
+  ownerDatabaseId?: number;
+  ownerLogin?: string;
+  nowMs: number;
+}
 
 export interface ContributionReconciliationResult {
   nextPetState: PetStateDocument;
@@ -31,8 +95,25 @@ export interface ContributionReconciliationResult {
   totalSatietyAwarded: number;
   newSlicesCreated: number;
   pendingSlicesExpired: number;
+  incrementsEvaluatedThisRun: number;
   invariantSatisfied: boolean;
 }
+
+export interface InvariantVerificationResult {
+  satisfied: boolean;
+  totalObserved: number;
+  sumCategorized: number;
+  breakdown: {
+    rewarded: number;
+    forfeited: number;
+    pending: number;
+    expired: number;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Helper Functions
+// ---------------------------------------------------------------------------
 
 export function computeExpiryAtForSyncDate(syncDate: string): string {
   const midnightMs = new Date(`${syncDate}T00:00:00.000Z`).getTime();
@@ -40,20 +121,25 @@ export function computeExpiryAtForSyncDate(syncDate: string): string {
 }
 
 export function getUtcDateString(timestampMs: number): string {
-  const d = new Date(timestampMs);
-  return d.toISOString().split('T')[0];
+  return new Date(timestampMs).toISOString().split('T')[0];
 }
 
 export function getUtcHourKey(timestampMs: number): string {
-  const d = new Date(timestampMs);
-  return d.toISOString().substring(0, 13); // e.g. "2026-11-15T14"
+  return new Date(timestampMs).toISOString().substring(0, 13); // e.g. "2026-11-16T14"
 }
 
-export function verifyAccountingInvariant(ledger: ContributionLedgerDocument): {
-  satisfied: boolean;
-  totalObserved: number;
-  sumCategorized: number;
-} {
+export function getRewardForOrdinal(ordinal: number): { xp: number; satiety: number } {
+  if (typeof ordinal !== 'number' || !Number.isInteger(ordinal) || ordinal < 1) {
+    throw new Error(`Invalid reward ordinal: ${String(ordinal)}. Ordinals must be integers >= 1.`);
+  }
+  if (ordinal === 1) return { xp: 25, satiety: 10 };
+  if (ordinal === 2) return { xp: 15, satiety: 5 };
+  if (ordinal === 3) return { xp: 10, satiety: 2 };
+  if (ordinal === 4) return { xp: 5, satiety: 1 };
+  return { xp: 5, satiety: 1 };
+}
+
+export function verifyAccountingInvariant(ledger: ContributionLedgerDocument): InvariantVerificationResult {
   let observed = 0;
   let rewarded = 0;
   let forfeited = 0;
@@ -80,305 +166,497 @@ export function verifyAccountingInvariant(ledger: ContributionLedgerDocument): {
     satisfied: observed === sumCategorized,
     totalObserved: observed,
     sumCategorized,
+    breakdown: {
+      rewarded,
+      forfeited,
+      pending,
+      expired,
+    },
   };
 }
 
-export function reconcileContributions(params: {
-  pet: PetStateDocument;
-  ledger: ContributionLedgerDocument;
-  observedPublicTotal: number;
-  nowMs: number;
-  syncDateOverride?: string;
-}): ContributionReconciliationResult {
-  const { pet, ledger, observedPublicTotal, nowMs } = params;
-  const syncDate = params.syncDateOverride || getUtcDateString(nowMs);
-  const hourKey = getUtcHourKey(nowMs);
-  const nowIso = new Date(nowMs).toISOString();
+// ---------------------------------------------------------------------------
+// Normalization & Validation of Incoming Snapshots
+// ---------------------------------------------------------------------------
 
-  // 1. Monotonic High-Water Mark Calculation
-  const currentHwm = ledger.monotonicPublicHwm;
-  const deltaObserved = Math.max(0, observedPublicTotal - currentHwm);
-  const nextHwm = Math.max(currentHwm, observedPublicTotal);
+function normalizeSnapshots(params: ContributionReconciliationParams): {
+  snapshots: DailySnapshotInput[];
+  ownerDatabaseId?: number;
+  ownerLogin?: string;
+} {
+  const normalized: DailySnapshotInput[] = [];
+  let ownerDatabaseId = params.ownerDatabaseId;
+  let ownerLogin = params.ownerLogin;
 
-  const updatedSlices: ContributionSlice[] = [];
-  let pendingExpiredCount = 0;
-  let totalXpAwarded = 0;
-  let totalSatietyAwarded = 0;
-
-  // Clone mutable tracking records
-  const dailyAccruedXp = { ...ledger.dailyAccruedXp };
-  const hourlySliceUsage = { ...ledger.hourlySliceUsage };
-  if (dailyAccruedXp[syncDate] === undefined) {
-    dailyAccruedXp[syncDate] = 0;
-  }
-  if (hourlySliceUsage[hourKey] === undefined) {
-    hourlySliceUsage[hourKey] = 0;
+  if (params.snapshot) {
+    const snap = params.snapshot;
+    if (snap.isPersonalAccount === false) {
+      throw new InvalidSnapshotError('Organization accounts are ineligible for contribution rewards.');
+    }
+    ownerDatabaseId = ownerDatabaseId ?? snap.ownerDatabaseId;
+    ownerLogin = ownerLogin ?? snap.ownerLogin;
+    const date = snap.fromIso.substring(0, 10);
+    normalized.push({
+      date,
+      observedTotal: snap.counts.publicCategoryTotal,
+    });
   }
 
-  // 2. Process existing pending slices (check 48h expiration or claim eligibility)
-  for (const slice of ledger.slices) {
-    if (slice.status === 'pending') {
-      const expiryMs = new Date(slice.expiryAt).getTime();
-      if (nowMs >= expiryMs) {
-        // Expired!
-        updatedSlices.push({
-          ...slice,
-          status: 'expired',
-          evaluatedAt: nowIso,
-        });
-        pendingExpiredCount++;
-      } else {
-        // Check if can be rewarded now
-        const hourlyUsed = hourlySliceUsage[hourKey] || 0;
-        const currentDailyXp = dailyAccruedXp[syncDate] || 0;
-        const roomInDailyCap = Math.max(0, DAILY_CONTRIBUTION_XP_CAP - currentDailyXp);
-
-        if (hourlyUsed < HOURLY_THROTTLE_MAX_SLICES && roomInDailyCap > 0) {
-          const potentialXp = slice.units * XP_PER_CONTRIBUTION_UNIT;
-          const potentialSatiety = Math.round(slice.units * SATIETY_PER_CONTRIBUTION_UNIT);
-
-          if (potentialXp <= roomInDailyCap) {
-            updatedSlices.push({
-              ...slice,
-              status: 'rewarded',
-              rewardedXp: potentialXp,
-              rewardedSatiety: potentialSatiety,
-              evaluatedAt: nowIso,
-            });
-            dailyAccruedXp[syncDate] = currentDailyXp + potentialXp;
-            hourlySliceUsage[hourKey] = hourlyUsed + 1;
-            totalXpAwarded += potentialXp;
-            totalSatietyAwarded += potentialSatiety;
-          } else {
-            // Partial room: split slice to maintain exact unit accounting
-            const unitsCanReward = Math.floor(roomInDailyCap / XP_PER_CONTRIBUTION_UNIT);
-            if (unitsCanReward > 0) {
-              const rewardedXp = unitsCanReward * XP_PER_CONTRIBUTION_UNIT;
-              const rewardedSatiety = Math.round(unitsCanReward * SATIETY_PER_CONTRIBUTION_UNIT);
-              updatedSlices.push({
-                ...slice,
-                sliceId: `${slice.sliceId}_r`,
-                units: unitsCanReward,
-                status: 'rewarded',
-                rewardedXp,
-                rewardedSatiety,
-                evaluatedAt: nowIso,
-              });
-              dailyAccruedXp[syncDate] = currentDailyXp + rewardedXp;
-              hourlySliceUsage[hourKey] = hourlyUsed + 1;
-              totalXpAwarded += rewardedXp;
-              totalSatietyAwarded += rewardedSatiety;
-
-              const remainingUnits = slice.units - unitsCanReward;
-              updatedSlices.push({
-                ...slice,
-                sliceId: `${slice.sliceId}_f`,
-                units: remainingUnits,
-                status: 'forfeited',
-                rewardedXp: 0,
-                rewardedSatiety: 0,
-                evaluatedAt: nowIso,
-              });
-            } else {
-              // Zero room left today, forfeits
-              updatedSlices.push({
-                ...slice,
-                status: 'forfeited',
-                rewardedXp: 0,
-                rewardedSatiety: 0,
-                evaluatedAt: nowIso,
-              });
-            }
-          }
-        } else if (hourlyUsed >= HOURLY_THROTTLE_MAX_SLICES) {
-          // Keep pending
-          updatedSlices.push({ ...slice });
-        } else {
-          // Daily cap completely exhausted for this sync date
-          updatedSlices.push({
-            ...slice,
-            status: 'forfeited',
-            rewardedXp: 0,
-            rewardedSatiety: 0,
-            evaluatedAt: nowIso,
-          });
+  if (params.snapshots && Array.isArray(params.snapshots)) {
+    for (const item of params.snapshots) {
+      if ('counts' in item) {
+        // GitHubContributionSnapshot
+        const snap = item as GitHubContributionSnapshot;
+        if (snap.isPersonalAccount === false) {
+          throw new InvalidSnapshotError('Organization accounts are ineligible for contribution rewards.');
         }
+        ownerDatabaseId = ownerDatabaseId ?? snap.ownerDatabaseId;
+        ownerLogin = ownerLogin ?? snap.ownerLogin;
+        const date = snap.fromIso.substring(0, 10);
+        normalized.push({
+          date,
+          observedTotal: snap.counts.publicCategoryTotal,
+        });
+      } else {
+        // DailySnapshotInput
+        const input = item as DailySnapshotInput;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
+          throw new InvalidSnapshotError(`Invalid snapshot date format: ${input.date}`);
+        }
+        if (typeof input.observedTotal !== 'number' || !Number.isInteger(input.observedTotal) || input.observedTotal < 0) {
+          throw new InvalidSnapshotError(`Invalid observedTotal for ${input.date}: ${String(input.observedTotal)}`);
+        }
+        normalized.push(input);
       }
-    } else {
-      updatedSlices.push({ ...slice });
     }
   }
 
-  // 3. Process Newly Observed Contribution Units (deltaObserved)
-  let remainingUnits = deltaObserved;
+  // Fallback for legacy / scalar test signatures: observedPublicTotal
+  if (normalized.length === 0 && typeof params.observedPublicTotal === 'number') {
+    if (!Number.isInteger(params.observedPublicTotal) || params.observedPublicTotal < 0) {
+      throw new InvalidSnapshotError(`Invalid observedPublicTotal: ${String(params.observedPublicTotal)}`);
+    }
+    const date = params.syncDateOverride || getUtcDateString(params.nowMs);
+    normalized.push({
+      date,
+      observedTotal: params.observedPublicTotal,
+    });
+  }
+
+  return { snapshots: normalized, ownerDatabaseId, ownerLogin };
+}
+
+// ---------------------------------------------------------------------------
+// Core Deterministic Reconciliation Engine
+// ---------------------------------------------------------------------------
+
+export function reconcileContributions(
+  params: ContributionReconciliationParams
+): ContributionReconciliationResult {
+  const { pet, ledger, nowMs } = params;
+  const nowIso = new Date(nowMs).toISOString();
+  const hourKey = getUtcHourKey(nowMs);
+
+  // 1. Normalize and validate inputs
+  const { snapshots, ownerDatabaseId, ownerLogin } = normalizeSnapshots(params);
+
+  // Identity validation: fail closed if snapshot identity disagrees with established ledger
+  if (ledger.ownerDatabaseId !== undefined && ownerDatabaseId !== undefined) {
+    if (ledger.ownerDatabaseId !== ownerDatabaseId) {
+      throw new IdentityMismatchError(
+        `Immutable Owner Database ID Mismatch: Ledger owned by ${ledger.ownerDatabaseId}, snapshot provided ${ownerDatabaseId}.`
+      );
+    }
+  }
+
+  const isBaselineCompleted = ledger.installationBaseline?.completed === true;
+
+  // -------------------------------------------------------------------------
+  // Path A: Installation Baseline Initialization (Zero Retroactive Rewards)
+  // -------------------------------------------------------------------------
+  if (!isBaselineCompleted) {
+    // If ledger has slices or non-empty history, missing baseline is an integrity failure
+    if (ledger.slices.length > 0) {
+      throw new CorruptOrdinalError(
+        'Class B Fatal Local Integrity Failure: Established ledger contains recorded slices but is missing installationBaseline.'
+      );
+    }
+
+    const todayDate = getUtcDateString(nowMs);
+    const yesterdayDate = getUtcDateString(nowMs - 86400000);
+
+    const initialHwm: Record<string, number> = {};
+    const initialOrdinals: Record<string, number> = {};
+
+    let yesterdayCount = 0;
+    let todayCount = 0;
+
+    for (const snap of snapshots) {
+      initialHwm[snap.date] = snap.observedTotal;
+      initialOrdinals[snap.date] = 0; // Ordinal starts strictly at 0
+      if (snap.date === yesterdayDate) yesterdayCount = snap.observedTotal;
+      if (snap.date === todayDate) todayCount = snap.observedTotal;
+    }
+
+    // Default yesterday and today in HWM if not explicitly present in snapshots
+    if (initialHwm[yesterdayDate] === undefined) {
+      initialHwm[yesterdayDate] = yesterdayCount;
+      initialOrdinals[yesterdayDate] = 0;
+    }
+    if (initialHwm[todayDate] === undefined) {
+      initialHwm[todayDate] = todayCount;
+      initialOrdinals[todayDate] = 0;
+    }
+
+    const baselineMeta: InstallationBaselineMetadata = {
+      completed: true,
+      installedAt: nowIso,
+      baselineDateUtc: todayDate,
+      initialCounts: {
+        yesterday: yesterdayCount,
+        today: todayCount,
+      },
+    };
+
+    const receipt: SyncReceipt = {
+      timestamp: nowIso,
+      status: 'success',
+      incrementsProcessed: 0,
+      notes: 'Installation baseline recorded. Historical contributions baseline established with zero rewards.',
+    };
+
+    const nextContributionLedger: ContributionLedgerDocument = {
+      schemaVersion: ledger.schemaVersion,
+      generation: ledger.generation + 1,
+      ownerDatabaseId: ownerDatabaseId ?? ledger.ownerDatabaseId,
+      ownerLogin: ownerLogin ?? ledger.ownerLogin,
+      installationBaseline: baselineMeta,
+      dailyHwm: initialHwm,
+      dailyRewardOrdinal: initialOrdinals,
+      lastSyncReceipt: receipt,
+      dailyAccruedXp: { ...ledger.dailyAccruedXp },
+      hourlyIncrementUsage: { ...(ledger.hourlyIncrementUsage || {}) },
+      hourlySliceUsage: { ...(ledger.hourlySliceUsage || {}) },
+      monotonicPublicHwm: Math.max(...Object.values(initialHwm), 0),
+      slices: [],
+      monthlyHistoricalSummary: [...ledger.monthlyHistoricalSummary],
+    };
+
+    const invariant = verifyAccountingInvariant(nextContributionLedger);
+
+    return {
+      nextPetState: { ...pet },
+      nextContributionLedger,
+      deltaObserved: 0,
+      totalXpAwarded: 0,
+      totalSatietyAwarded: 0,
+      newSlicesCreated: 0,
+      pendingSlicesExpired: 0,
+      incrementsEvaluatedThisRun: 0,
+      invariantSatisfied: invariant.satisfied,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Path B: Established Ledger Reconciliation
+  // -------------------------------------------------------------------------
+
+  // Validate integrity of established counters
+  if (!ledger.dailyHwm || typeof ledger.dailyHwm !== 'object') {
+    throw new CorruptHwmError('Class B Fatal Local Integrity Failure: Established ledger is missing dailyHwm object.');
+  }
+  if (!ledger.dailyRewardOrdinal || typeof ledger.dailyRewardOrdinal !== 'object') {
+    throw new CorruptOrdinalError(
+      'Class B Fatal Local Integrity Failure: Established ledger is missing dailyRewardOrdinal object.'
+    );
+  }
+
+  // Clone mutable tracking records
+  const dailyHwm: Record<string, number> = { ...ledger.dailyHwm };
+  const dailyRewardOrdinal: Record<string, number> = { ...ledger.dailyRewardOrdinal };
+  const dailyAccruedXp: Record<string, number> = { ...ledger.dailyAccruedXp };
+  const hourlyIncrementUsage: Record<string, number> = { ...(ledger.hourlyIncrementUsage || {}) };
+  if (hourlyIncrementUsage[hourKey] === undefined) {
+    hourlyIncrementUsage[hourKey] = 0;
+  }
+
+  let totalDeltaObserved = 0;
   let newSlicesCreated = 0;
-  const expiryAt = computeExpiryAtForSyncDate(syncDate);
+  const newPendingSlices: ContributionSlice[] = [];
 
-  let sliceIndex = updatedSlices.length + 1;
-  while (remainingUnits > 0) {
-    const unitsInSlice = Math.min(remainingUnits, 5);
-    remainingUnits -= unitsInSlice;
-    newSlicesCreated++;
+  // Sort snapshots by date ascending for deterministic processing
+  const sortedSnapshots = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
 
-    const sliceId = `slice_${syncDate}_${nowMs}_${sliceIndex++}`;
-    const hourlyUsed = hourlySliceUsage[hourKey] || 0;
+  for (const snap of sortedSnapshots) {
+    const { date, observedTotal } = snap;
 
-    if (hourlyUsed >= HOURLY_THROTTLE_MAX_SLICES) {
-      // Throttle exceeded: enters pending
-      updatedSlices.push({
-        sliceId,
-        syncDate,
-        discoveredAt: nowIso,
-        units: unitsInSlice,
-        status: 'pending',
-        rewardedXp: 0,
-        rewardedSatiety: 0,
-        expiryAt,
-        evaluatedAt: nowIso,
-      });
+    // Verify counter integrity for active date
+    if (date in dailyHwm) {
+      const hwm = dailyHwm[date];
+      if (typeof hwm !== 'number' || !Number.isInteger(hwm) || hwm < 0) {
+        throw new CorruptHwmError(
+          `Class B Fatal Local Integrity Failure: Corrupt dailyHwm for date ${date}: ${String(hwm)}`
+        );
+      }
     } else {
-      // Within hourly throttle: check daily cap
-      const currentDailyXp = dailyAccruedXp[syncDate] || 0;
-      const roomInDailyCap = Math.max(0, DAILY_CONTRIBUTION_XP_CAP - currentDailyXp);
+      // Subsequent date default
+      dailyHwm[date] = 0;
+    }
 
-      if (roomInDailyCap <= 0) {
-        // Daily cap completely exhausted: forfeited
-        updatedSlices.push({
-          sliceId,
-          syncDate,
+    if (date in dailyRewardOrdinal) {
+      const ord = dailyRewardOrdinal[date];
+      if (typeof ord !== 'number' || !Number.isInteger(ord) || ord < 0) {
+        throw new CorruptOrdinalError(
+          `Class B Fatal Local Integrity Failure: Corrupt dailyRewardOrdinal for date ${date}: ${String(ord)}`
+        );
+      }
+    } else {
+      // Subsequent date default
+      dailyRewardOrdinal[date] = 0;
+    }
+
+    const currentHwm = dailyHwm[date];
+    const currentOrdinal = dailyRewardOrdinal[date];
+
+    // Monotonic High-Water Mark calculation
+    const delta = Math.max(0, observedTotal - currentHwm);
+    const nextHwm = Math.max(currentHwm, observedTotal);
+
+    dailyHwm[date] = nextHwm;
+    totalDeltaObserved += delta;
+
+    if (delta > 0) {
+      const expiryAt = computeExpiryAtForSyncDate(date);
+      for (let k = 1; k <= delta; k++) {
+        const assignedOrdinal = currentOrdinal + k;
+        const slice: ContributionSlice = {
+          sliceId: `slice_${date}_ord_${assignedOrdinal}`,
+          syncDate: date,
+          dailyOrdinal: assignedOrdinal,
           discoveredAt: nowIso,
-          units: unitsInSlice,
-          status: 'forfeited',
+          units: 1, // Strictly 1 unit per increment
+          status: 'pending',
           rewardedXp: 0,
           rewardedSatiety: 0,
           expiryAt,
-          evaluatedAt: nowIso,
-        });
-      } else {
-        const potentialXp = unitsInSlice * XP_PER_CONTRIBUTION_UNIT;
-        const potentialSatiety = Math.round(unitsInSlice * SATIETY_PER_CONTRIBUTION_UNIT);
-
-        if (potentialXp <= roomInDailyCap) {
-          // Full slice rewarded
-          updatedSlices.push({
-            sliceId,
-            syncDate,
-            discoveredAt: nowIso,
-            units: unitsInSlice,
-            status: 'rewarded',
-            rewardedXp: potentialXp,
-            rewardedSatiety: potentialSatiety,
-            expiryAt,
-            evaluatedAt: nowIso,
-          });
-          dailyAccruedXp[syncDate] = currentDailyXp + potentialXp;
-          hourlySliceUsage[hourKey] = hourlyUsed + 1;
-          totalXpAwarded += potentialXp;
-          totalSatietyAwarded += potentialSatiety;
-        } else {
-          // Partial room available: split into rewarded and forfeited to preserve exact units
-          const unitsCanReward = Math.floor(roomInDailyCap / XP_PER_CONTRIBUTION_UNIT);
-          if (unitsCanReward > 0) {
-            const rewardedXp = unitsCanReward * XP_PER_CONTRIBUTION_UNIT;
-            const rewardedSatiety = Math.round(unitsCanReward * SATIETY_PER_CONTRIBUTION_UNIT);
-            updatedSlices.push({
-              sliceId: `${sliceId}_r`,
-              syncDate,
-              discoveredAt: nowIso,
-              units: unitsCanReward,
-              status: 'rewarded',
-              rewardedXp,
-              rewardedSatiety,
-              expiryAt,
-              evaluatedAt: nowIso,
-            });
-            dailyAccruedXp[syncDate] = currentDailyXp + rewardedXp;
-            hourlySliceUsage[hourKey] = hourlyUsed + 1;
-            totalXpAwarded += rewardedXp;
-            totalSatietyAwarded += rewardedSatiety;
-
-            const forfeitedUnits = unitsInSlice - unitsCanReward;
-            updatedSlices.push({
-              sliceId: `${sliceId}_f`,
-              syncDate,
-              discoveredAt: nowIso,
-              units: forfeitedUnits,
-              status: 'forfeited',
-              rewardedXp: 0,
-              rewardedSatiety: 0,
-              expiryAt,
-              evaluatedAt: nowIso,
-            });
-          } else {
-            updatedSlices.push({
-              sliceId,
-              syncDate,
-              discoveredAt: nowIso,
-              units: unitsInSlice,
-              status: 'forfeited',
-              rewardedXp: 0,
-              rewardedSatiety: 0,
-              expiryAt,
-              evaluatedAt: nowIso,
-            });
-          }
-        }
+          evaluatedAt: null,
+        };
+        newPendingSlices.push(slice);
+        newSlicesCreated++;
       }
+      // Advance daily reward ordinal monotonically and atomically with HWM
+      dailyRewardOrdinal[date] = currentOrdinal + delta;
     }
   }
 
-  // 4. Update Pet State with Rewarded XP & Satiety
-  const progResult = applyExperience(pet.level, pet.xp, totalXpAwarded);
-  const newHunger = clampVital(pet.hunger + totalSatietyAwarded);
-  const newMood = derivePetMoodFromVitals({
-    energy: pet.energy,
-    hunger: newHunger,
-    happiness: pet.happiness,
+  // -------------------------------------------------------------------------
+  // 3. Process Pending Queue: Expiration, Throttle, and Daily Cap
+  // -------------------------------------------------------------------------
+
+  // Collect all existing non-pending slices and existing pending slices
+  const finalizedSlices: ContributionSlice[] = [];
+  const activePendingSlices: ContributionSlice[] = [];
+
+  for (const s of ledger.slices) {
+    if (s.status === 'pending') {
+      activePendingSlices.push({ ...s });
+    } else {
+      finalizedSlices.push({ ...s });
+    }
+  }
+
+  // Combine existing pending slices and newly created pending slices
+  const combinedPending = [...activePendingSlices, ...newPendingSlices];
+
+  // Invariant 6: Sort strictly by (syncDate ASC, dailyOrdinal ASC)
+  combinedPending.sort((a, b) => {
+    const dateCmp = a.syncDate.localeCompare(b.syncDate);
+    if (dateCmp !== 0) return dateCmp;
+    return (a.dailyOrdinal || 0) - (b.dailyOrdinal || 0);
   });
 
-  const nextPetState: PetStateDocument = {
-    ...pet,
-    generation: pet.generation + 1,
-    level: progResult.newLevel,
-    xp: progResult.newXp,
-    maxExp: progResult.newMaxExp,
-    evolutionStage: progResult.newEvolutionStage,
-    hunger: newHunger,
-    mood: newMood,
-    updatedAt: nowIso,
+  let remainingHourlyQuota = Math.max(0, MAX_INCREMENTS_PER_HOUR - (hourlyIncrementUsage[hourKey] || 0));
+  let pendingSlicesExpired = 0;
+  let incrementsEvaluatedThisRun = 0;
+  let totalXpAwarded = 0;
+  let totalSatietyAwarded = 0;
+
+  const processedSlices: ContributionSlice[] = [];
+
+  for (const slice of combinedPending) {
+    const expiryMs = new Date(slice.expiryAt).getTime();
+
+    // 3.1 Expiration Check (now >= expiry_at)
+    if (nowMs >= expiryMs) {
+      slice.status = 'expired';
+      slice.evaluatedAt = nowIso;
+      slice.rewardedXp = 0;
+      slice.rewardedSatiety = 0;
+      pendingSlicesExpired++;
+      processedSlices.push(slice);
+      continue;
+    }
+
+    const sliceDate = slice.syncDate;
+    if (dailyAccruedXp[sliceDate] === undefined) {
+      dailyAccruedXp[sliceDate] = 0;
+    }
+
+    const currentDailyXp = dailyAccruedXp[sliceDate];
+
+    // 3.2 Immediate Daily-Cap Exhaustion Forfeiture (Phase 3C2.2.1-R2 Policy)
+    // When dailyAccruedXp[syncDate] reaches 300 XP, immediately transition every remaining
+    // pending increment for that UTC date to 'forfeited' with reason 'daily_cap_exhausted'.
+    // These bulk-forfeited increments:
+    // - Must NOT consume the five-increment-per-hour evaluation quota (remainingHourlyQuota untouched)
+    // - Must NOT increment hourlyIncrementUsage[hourKey]
+    // - Must receive zero XP and zero satiety
+    // - Must retain their original syncDate and dailyOrdinal
+    // - Must be permanently terminal
+    // - Must NOT block subsequent pending increments from newer UTC dates whose daily cap has not been reached.
+    if (currentDailyXp >= DAILY_CONTRIBUTION_XP_CAP) {
+      slice.status = 'forfeited';
+      slice.forfeitureReason = 'daily_cap_exhausted';
+      slice.evaluatedAt = nowIso;
+      slice.rewardedXp = 0;
+      slice.rewardedSatiety = 0;
+      processedSlices.push(slice);
+      continue;
+    }
+
+    // 3.3 Hourly Throttle Check (Max 5 increments/hour for ordinary evaluation)
+    if (remainingHourlyQuota <= 0) {
+      // Retain in pending queue with original date, ordinal, and expiry
+      processedSlices.push(slice);
+      continue;
+    }
+
+    // 3.4 Increment Evaluation (Room in daily cap > 0)
+    const roomInDailyCap = Math.max(0, DAILY_CONTRIBUTION_XP_CAP - currentDailyXp);
+    const ordinal = slice.dailyOrdinal || 1;
+    const reward = getRewardForOrdinal(ordinal);
+
+    if (reward.xp <= roomInDailyCap) {
+      // Complete increment fits within remaining daily cap allowance
+      slice.status = 'rewarded';
+      slice.evaluatedAt = nowIso;
+      slice.rewardedXp = reward.xp;
+      slice.rewardedSatiety = reward.satiety;
+      dailyAccruedXp[sliceDate] = currentDailyXp + reward.xp;
+      totalXpAwarded += reward.xp;
+      totalSatietyAwarded += reward.satiety;
+      hourlyIncrementUsage[hourKey] = (hourlyIncrementUsage[hourKey] || 0) + 1;
+      remainingHourlyQuota--;
+      incrementsEvaluatedThisRun++;
+      processedSlices.push(slice);
+    } else {
+      // Whole-increment forfeiture policy:
+      // Increment's complete reward exceeds remaining allowance -> forfeited permanently!
+      // Never partially award an increment. Forfeiture permanently consumes ordinal.
+      // Daily accrued XP is not incremented, so subsequent smaller increments may still fit!
+      slice.status = 'forfeited';
+      slice.forfeitureReason = 'whole_increment_overflow';
+      slice.evaluatedAt = nowIso;
+      slice.rewardedXp = 0;
+      slice.rewardedSatiety = 0;
+      hourlyIncrementUsage[hourKey] = (hourlyIncrementUsage[hourKey] || 0) + 1;
+      remainingHourlyQuota--;
+      incrementsEvaluatedThisRun++;
+      processedSlices.push(slice);
+    }
+  }
+
+  // All slices: previously finalized + newly evaluated / remaining pending
+  const allSlices = [...finalizedSlices, ...processedSlices];
+
+  // Calculate overall scalar peak for backward compatibility
+  const scalarHwm = Math.max(...Object.values(dailyHwm), 0);
+
+  const receipt: SyncReceipt = {
+    timestamp: nowIso,
+    status: 'success',
+    incrementsProcessed: incrementsEvaluatedThisRun,
+    notes: `Reconciled ${snapshots.length} snapshot(s). Observed delta: ${totalDeltaObserved}. Evaluated: ${incrementsEvaluatedThisRun}.`,
   };
 
   const nextContributionLedger: ContributionLedgerDocument = {
     schemaVersion: ledger.schemaVersion,
     generation: ledger.generation + 1,
-    monotonicPublicHwm: nextHwm,
+    ownerDatabaseId: ownerDatabaseId ?? ledger.ownerDatabaseId,
+    ownerLogin: ownerLogin ?? ledger.ownerLogin,
+    installationBaseline: ledger.installationBaseline,
+    dailyHwm,
+    dailyRewardOrdinal,
+    lastSyncReceipt: receipt,
     dailyAccruedXp,
-    hourlySliceUsage,
-    slices: updatedSlices,
+    hourlyIncrementUsage,
+    hourlySliceUsage: { ...(ledger.hourlySliceUsage || {}) },
+    monotonicPublicHwm: scalarHwm,
+    slices: allSlices,
     monthlyHistoricalSummary: [...ledger.monthlyHistoricalSummary],
   };
 
-  const invariantCheck = verifyAccountingInvariant(nextContributionLedger);
+  // -------------------------------------------------------------------------
+  // 4. Update Pet State Vitals and XP
+  // -------------------------------------------------------------------------
+  let nextPetState: PetStateDocument = { ...pet };
+
+  if (totalXpAwarded > 0 || totalSatietyAwarded > 0) {
+    const progResult = applyExperience(pet.level, pet.xp, totalXpAwarded);
+    const newHunger = clampVital(pet.hunger + totalSatietyAwarded);
+    const newMood = derivePetMoodFromVitals({
+      energy: pet.energy,
+      hunger: newHunger,
+      happiness: pet.happiness,
+    });
+
+    nextPetState = {
+      ...pet,
+      generation: pet.generation + 1,
+      level: progResult.newLevel,
+      xp: progResult.newXp,
+      maxExp: progResult.newMaxExp,
+      evolutionStage: progResult.newEvolutionStage,
+      hunger: newHunger,
+      mood: newMood,
+      updatedAt: nowIso,
+    };
+  } else {
+    // If no XP/satiety was awarded, keep generation in lockstep with ledger
+    nextPetState = {
+      ...pet,
+      generation: pet.generation + 1,
+      updatedAt: nowIso,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // 5. Verify Accounting Conservation Invariant
+  // -------------------------------------------------------------------------
+  const invariant = verifyAccountingInvariant(nextContributionLedger);
+  if (!invariant.satisfied) {
+    throw new Error(
+      `Accounting Conservation Invariant Violated: totalObserved (${invariant.totalObserved}) !== sumCategorized (${invariant.sumCategorized}).`
+    );
+  }
 
   return {
     nextPetState,
     nextContributionLedger,
-    deltaObserved,
+    deltaObserved: totalDeltaObserved,
     totalXpAwarded,
     totalSatietyAwarded,
     newSlicesCreated,
-    pendingSlicesExpired: pendingExpiredCount,
-    invariantSatisfied: invariantCheck.satisfied,
+    pendingSlicesExpired,
+    incrementsEvaluatedThisRun,
+    invariantSatisfied: invariant.satisfied,
   };
 }
 
-/**
- * Compacts finalized contribution slices older than cutoffTimestampMs into monthlyHistoricalSummary records.
- * Slices in 'pending' status are NEVER compacted until they are rewarded or expired.
- * Slices newer than cutoff remain active in slices array.
- * Mathematical conservation is strictly preserved:
- * observedUnits = rewardedUnits + forfeitedUnits + pendingUnits + expiredUnits
- */
+// ---------------------------------------------------------------------------
+// Historical Slices Compaction
+// ---------------------------------------------------------------------------
+
 export function compactContributionLedger(
   ledger: ContributionLedgerDocument,
   cutoffTimestampMs: number
@@ -399,27 +677,14 @@ export function compactContributionLedger(
     return { ...ledger };
   }
 
-  // Group compacted slices by month (YYYY-MM)
-  const monthlyMap = new Map<
-    string,
-    {
-      month: string;
-      totalObservedUnits: number;
-      rewardedUnits: number;
-      forfeitedUnits: number;
-      expiredUnits: number;
-      rewardedXp: number;
-    }
-  >();
+  const monthlyMap = new Map<string, MonthlyHistoricalSummary>();
 
-  // Populate from existing historical summaries
   for (const s of ledger.monthlyHistoricalSummary) {
     monthlyMap.set(s.month, { ...s });
   }
 
-  // Aggregate newly compacted slices
   for (const slice of slicesToCompact) {
-    const month = slice.syncDate.substring(0, 7); // e.g. "2026-11"
+    const month = slice.syncDate.substring(0, 7); // e.g. "2026-10"
     const entry = monthlyMap.get(month) || {
       month,
       totalObservedUnits: 0,
@@ -427,6 +692,7 @@ export function compactContributionLedger(
       forfeitedUnits: 0,
       expiredUnits: 0,
       rewardedXp: 0,
+      rewardedSatiety: 0,
     };
 
     entry.totalObservedUnits += slice.units;
@@ -435,12 +701,11 @@ export function compactContributionLedger(
     else if (slice.status === 'expired') entry.expiredUnits += slice.units;
 
     entry.rewardedXp += slice.rewardedXp;
+    entry.rewardedSatiety = (entry.rewardedSatiety || 0) + slice.rewardedSatiety;
     monthlyMap.set(month, entry);
   }
 
-  const updatedSummaries = Array.from(monthlyMap.values()).sort((a, b) =>
-    a.month.localeCompare(b.month)
-  );
+  const updatedSummaries = Array.from(monthlyMap.values()).sort((a, b) => a.month.localeCompare(b.month));
 
   const compactedLedger: ContributionLedgerDocument = {
     ...ledger,

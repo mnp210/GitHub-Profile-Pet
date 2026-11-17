@@ -5,12 +5,14 @@ import type { RateLimitHeaders } from './types.ts';
 
 export class GitHubGraphQLError extends Error {
   public readonly errors: Array<{ message: string; type?: string; path?: unknown }>;
+  public readonly partialData?: unknown;
 
-  constructor(errors: Array<{ message: string; type?: string; path?: unknown }>) {
+  constructor(errors: Array<{ message: string; type?: string; path?: unknown }>, partialData?: unknown) {
     const summary = errors.map((e) => e.message).join('; ');
     super(`GitHub GraphQL execution error: ${summary}`);
     this.name = 'GitHubGraphQLError';
     this.errors = errors;
+    this.partialData = partialData;
   }
 }
 
@@ -557,7 +559,7 @@ export class NativeGitHubGraphQLClient implements GitHubGraphQLClient {
         ...e,
         message: redactSensitiveData(e.message, accessToken),
       }));
-      throw new GitHubGraphQLError(sanitizedErrors);
+      throw new GitHubGraphQLError(sanitizedErrors, payload.data);
     }
 
     if (!payload.data) {

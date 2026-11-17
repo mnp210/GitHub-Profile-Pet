@@ -15,6 +15,7 @@ import { isValidIsoDateString, type ValidationResult } from './stateValidator.ts
 
 const VALID_ACTIONS: Set<CareActionType> = new Set(['feed', 'train', 'rest', 'pet']);
 const VALID_SLICE_STATUSES: Set<SliceStatus> = new Set(['rewarded', 'forfeited', 'pending', 'expired']);
+const VALID_FORFEITURE_REASONS: Set<string> = new Set(['daily_cap_exhausted', 'whole_increment_overflow']);
 
 export function validateContributionLedger(data: unknown): ValidationResult {
   const errors: string[] = [];
@@ -33,12 +34,83 @@ export function validateContributionLedger(data: unknown): ValidationResult {
     errors.push(`generation must be a positive integer.`);
   }
 
-  if (
-    typeof obj.monotonicPublicHwm !== 'number' ||
-    !Number.isInteger(obj.monotonicPublicHwm) ||
-    obj.monotonicPublicHwm < 0
-  ) {
-    errors.push(`monotonicPublicHwm must be a non-negative integer.`);
+  if (obj.monotonicPublicHwm !== undefined) {
+    if (
+      typeof obj.monotonicPublicHwm !== 'number' ||
+      !Number.isInteger(obj.monotonicPublicHwm) ||
+      obj.monotonicPublicHwm < 0
+    ) {
+      errors.push(`monotonicPublicHwm must be a non-negative integer.`);
+    }
+  }
+
+  // Phase 3C2: dailyHwm validation
+  if (obj.dailyHwm !== undefined) {
+    if (typeof obj.dailyHwm !== 'object' || obj.dailyHwm === null || Array.isArray(obj.dailyHwm)) {
+      errors.push(`dailyHwm must be a record mapping date string to high-water mark count.`);
+    } else {
+      for (const [date, hwm] of Object.entries(obj.dailyHwm as Record<string, unknown>)) {
+        if (typeof hwm !== 'number' || !Number.isInteger(hwm) || hwm < 0) {
+          errors.push(`dailyHwm for ${date} must be a non-negative integer, received: ${String(hwm)}.`);
+        }
+      }
+    }
+  }
+
+  // Phase 3C2: dailyRewardOrdinal validation
+  if (obj.dailyRewardOrdinal !== undefined) {
+    if (
+      typeof obj.dailyRewardOrdinal !== 'object' ||
+      obj.dailyRewardOrdinal === null ||
+      Array.isArray(obj.dailyRewardOrdinal)
+    ) {
+      errors.push(`dailyRewardOrdinal must be a record mapping date string to reward ordinal counter.`);
+    } else {
+      for (const [date, ord] of Object.entries(obj.dailyRewardOrdinal as Record<string, unknown>)) {
+        if (typeof ord !== 'number' || !Number.isInteger(ord) || ord < 0) {
+          errors.push(`dailyRewardOrdinal for ${date} must be a non-negative integer, received: ${String(ord)}.`);
+        }
+      }
+    }
+  }
+
+  // Phase 3C2: installationBaseline validation
+  if (obj.installationBaseline !== undefined) {
+    if (typeof obj.installationBaseline !== 'object' || obj.installationBaseline === null) {
+      errors.push(`installationBaseline must be an object.`);
+    } else {
+      const base = obj.installationBaseline as Record<string, unknown>;
+      if (typeof base.completed !== 'boolean') {
+        errors.push(`installationBaseline.completed must be a boolean.`);
+      }
+      if (typeof base.installedAt !== 'string' || !isValidIsoDateString(base.installedAt)) {
+        errors.push(`installationBaseline.installedAt must be a valid ISO-8601 date string.`);
+      }
+      if (typeof base.baselineDateUtc !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(base.baselineDateUtc)) {
+        errors.push(`installationBaseline.baselineDateUtc must be a valid YYYY-MM-DD date string.`);
+      }
+      if (typeof base.initialCounts !== 'object' || base.initialCounts === null) {
+        errors.push(`installationBaseline.initialCounts must be an object with yesterday and today counts.`);
+      } else {
+        const counts = base.initialCounts as Record<string, unknown>;
+        if (typeof counts.yesterday !== 'number' || !Number.isInteger(counts.yesterday) || counts.yesterday < 0) {
+          errors.push(`installationBaseline.initialCounts.yesterday must be a non-negative integer.`);
+        }
+        if (typeof counts.today !== 'number' || !Number.isInteger(counts.today) || counts.today < 0) {
+          errors.push(`installationBaseline.initialCounts.today must be a non-negative integer.`);
+        }
+      }
+
+      // If baseline is marked completed, dailyHwm and dailyRewardOrdinal are strictly required
+      if (base.completed === true) {
+        if (typeof obj.dailyHwm !== 'object' || obj.dailyHwm === null) {
+          errors.push(`Established ledger with completed installationBaseline must contain dailyHwm.`);
+        }
+        if (typeof obj.dailyRewardOrdinal !== 'object' || obj.dailyRewardOrdinal === null) {
+          errors.push(`Established ledger with completed installationBaseline must contain dailyRewardOrdinal.`);
+        }
+      }
+    }
   }
 
   if (typeof obj.dailyAccruedXp !== 'object' || obj.dailyAccruedXp === null || Array.isArray(obj.dailyAccruedXp)) {
@@ -51,12 +123,30 @@ export function validateContributionLedger(data: unknown): ValidationResult {
     }
   }
 
-  if (
-    typeof obj.hourlySliceUsage !== 'object' ||
-    obj.hourlySliceUsage === null ||
-    Array.isArray(obj.hourlySliceUsage)
-  ) {
-    errors.push(`hourlySliceUsage must be a record mapping hour string to slice counts.`);
+  if (obj.hourlyIncrementUsage !== undefined) {
+    if (
+      typeof obj.hourlyIncrementUsage !== 'object' ||
+      obj.hourlyIncrementUsage === null ||
+      Array.isArray(obj.hourlyIncrementUsage)
+    ) {
+      errors.push(`hourlyIncrementUsage must be a record mapping hour string to evaluated increment counts.`);
+    } else {
+      for (const [hour, count] of Object.entries(obj.hourlyIncrementUsage as Record<string, unknown>)) {
+        if (typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > 5) {
+          errors.push(`hourlyIncrementUsage for ${hour} must be an integer between 0 and 5, received: ${String(count)}.`);
+        }
+      }
+    }
+  }
+
+  if (obj.hourlySliceUsage !== undefined) {
+    if (
+      typeof obj.hourlySliceUsage !== 'object' ||
+      obj.hourlySliceUsage === null ||
+      Array.isArray(obj.hourlySliceUsage)
+    ) {
+      errors.push(`hourlySliceUsage must be a record mapping hour string to slice counts.`);
+    }
   }
 
   if (!Array.isArray(obj.slices)) {
@@ -83,6 +173,12 @@ export function validateContributionLedger(data: unknown): ValidationResult {
         errors.push(`Slice at index ${i} has invalid syncDate (expected YYYY-MM-DD).`);
       }
 
+      if (slice.dailyOrdinal !== undefined) {
+        if (typeof slice.dailyOrdinal !== 'number' || !Number.isInteger(slice.dailyOrdinal) || slice.dailyOrdinal < 1) {
+          errors.push(`Slice at index ${i} dailyOrdinal must be an integer >= 1.`);
+        }
+      }
+
       if (!isValidIsoDateString(slice.discoveredAt)) {
         errors.push(`Slice at index ${i} has invalid discoveredAt date.`);
       }
@@ -106,8 +202,17 @@ export function validateContributionLedger(data: unknown): ValidationResult {
         errors.push(`Slice at index ${i} has invalid expiryAt date.`);
       }
 
-      if (!isValidIsoDateString(slice.evaluatedAt)) {
+      if (slice.evaluatedAt !== null && !isValidIsoDateString(slice.evaluatedAt)) {
         errors.push(`Slice at index ${i} has invalid evaluatedAt date.`);
+      }
+
+      if (slice.forfeitureReason !== undefined) {
+        if (typeof slice.forfeitureReason !== 'string' || !VALID_FORFEITURE_REASONS.has(slice.forfeitureReason)) {
+          errors.push(`Slice at index ${i} has invalid forfeitureReason: ${String(slice.forfeitureReason)}.`);
+        }
+        if (slice.status !== 'forfeited') {
+          errors.push(`Slice at index ${i} has forfeitureReason but status is ${slice.status} (expected 'forfeited').`);
+        }
       }
     }
 

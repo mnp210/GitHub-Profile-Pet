@@ -42,16 +42,37 @@ export interface PetStateDocument {
 
 export type SliceStatus = 'rewarded' | 'forfeited' | 'pending' | 'expired';
 
+export type ForfeitureReason = 'daily_cap_exhausted' | 'whole_increment_overflow';
+
+export interface InstallationBaselineMetadata {
+  completed: boolean;
+  installedAt: string;     // ISO-8601 UTC
+  baselineDateUtc: string; // YYYY-MM-DD UTC
+  initialCounts: {
+    yesterday: number;
+    today: number;
+  };
+}
+
+export interface SyncReceipt {
+  timestamp: string;       // ISO-8601 UTC
+  status: 'success' | 'noop' | 'provider_failure' | 'rate_limited';
+  incrementsProcessed: number;
+  notes?: string;
+}
+
 export interface ContributionSlice {
   sliceId: string;
   syncDate: string;        // YYYY-MM-DD UTC
+  dailyOrdinal?: number;   // 1-based sequential increment ordinal within syncDate
   discoveredAt: string;    // ISO-8601 UTC
-  units: number;           // Observed units in this slice
+  units: number;           // Observed units in this slice (strictly 1 for Phase 3C2 increments)
   status: SliceStatus;
   rewardedXp: number;
   rewardedSatiety: number;
   expiryAt: string;        // ISO-8601 UTC (syncDate midnight + 48h)
-  evaluatedAt: string;     // ISO-8601 UTC
+  evaluatedAt: string | null; // ISO-8601 UTC or null if not yet evaluated
+  forfeitureReason?: ForfeitureReason;
 }
 
 export interface MonthlyHistoricalSummary {
@@ -61,14 +82,22 @@ export interface MonthlyHistoricalSummary {
   forfeitedUnits: number;
   expiredUnits: number;
   rewardedXp: number;
+  rewardedSatiety?: number;
 }
 
 export interface ContributionLedgerDocument {
   schemaVersion: number;
   generation: number;
-  monotonicPublicHwm: number;
-  dailyAccruedXp: Record<string, number>;    // YYYY-MM-DD -> XP accrued
-  hourlySliceUsage: Record<string, number>;  // YYYY-MM-DDTHH -> slices rewarded
+  ownerDatabaseId?: number;
+  ownerLogin?: string;
+  installationBaseline?: InstallationBaselineMetadata;
+  dailyHwm?: Record<string, number>;           // YYYY-MM-DD -> peak public contribution count
+  dailyRewardOrdinal?: Record<string, number>;  // YYYY-MM-DD -> monotonic post-installation ordinal counter
+  lastSyncReceipt?: SyncReceipt;
+  dailyAccruedXp: Record<string, number>;      // YYYY-MM-DD -> XP accrued (max 300)
+  hourlyIncrementUsage?: Record<string, number>; // YYYY-MM-DDTHH -> evaluated increments (max 5)
+  hourlySliceUsage?: Record<string, number>;    // Legacy backward-compat: YYYY-MM-DDTHH -> slices rewarded
+  monotonicPublicHwm?: number;                 // Legacy backward-compat: scalar lifetime HWM
   slices: ContributionSlice[];
   monthlyHistoricalSummary: MonthlyHistoricalSummary[];
 }

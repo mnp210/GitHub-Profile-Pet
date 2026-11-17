@@ -57,10 +57,21 @@ export const BASE_ACTION_REWARDS = {
 
 // Contribution Accounting Constraints
 export const DAILY_CONTRIBUTION_XP_CAP = 300; // Max 300 XP per calendar UTC day
-export const HOURLY_THROTTLE_MAX_SLICES = 5;  // Max 5 rewarded slices per UTC hour
+export const HOURLY_THROTTLE_MAX_SLICES = 5;  // Max 5 rewarded slices per UTC hour (legacy)
+export const MAX_INCREMENTS_PER_HOUR = 5;     // Phase 3C2: Max 5 individual increments evaluated per UTC hour
 export const CONTRIBUTION_SLICE_EXPIRY_MS = 48 * 3600 * 1000; // 48 hours = 172,800,000 ms
 
-// 5-increment calculation constants
+// Phase 3C2 Diminishing Contribution Reward Schedule
+export const CONTRIBUTION_REWARD_SCHEDULE: Record<number, { xp: number; satiety: number }> = {
+  1: { xp: 25, satiety: 10 },
+  2: { xp: 15, satiety: 5 },
+  3: { xp: 10, satiety: 2 },
+  4: { xp: 5, satiety: 1 },
+} as const;
+
+export const CONTRIBUTION_REWARD_DEFAULT = { xp: 5, satiety: 1 } as const;
+
+// 5-increment calculation constants (legacy reference)
 // 1 unit = 12 XP and 3.8 satiety -> 5 units = 60 XP and 19 satiety
 export const XP_PER_CONTRIBUTION_UNIT = 12;
 export const SATIETY_PER_CONTRIBUTION_UNIT = 3.8;
