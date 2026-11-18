@@ -28,15 +28,22 @@ import type {
   SyncReceipt,
 } from '../domain/types.ts';
 import type { GitHubContributionSnapshot } from '../contribution/types.ts';
+import { IdentityMismatchError } from '../contribution/types.ts';
 import {
   applyExperience,
   clampVital,
   derivePetMoodFromVitals,
 } from '../transitions/progressionEngine.ts';
+import {
+  isPristineContributionLedger,
+  LedgerIntegrityError,
+} from '../validation/ledgerValidator.ts';
 
 // ---------------------------------------------------------------------------
 // Error Classes
 // ---------------------------------------------------------------------------
+
+export { LedgerIntegrityError, isPristineContributionLedger, IdentityMismatchError };
 
 export class CorruptOrdinalError extends Error {
   constructor(message: string) {
@@ -56,13 +63,6 @@ export class InvalidSnapshotError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'InvalidSnapshotError';
-  }
-}
-
-export class IdentityMismatchError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'IdentityMismatchError';
   }
 }
 
@@ -275,10 +275,48 @@ export function reconcileContributions(
   // Path A: Installation Baseline Initialization (Zero Retroactive Rewards)
   // -------------------------------------------------------------------------
   if (!isBaselineCompleted) {
-    // If ledger has slices or non-empty history, missing baseline is an integrity failure
-    if (ledger.slices.length > 0) {
+    // Class 3: Partially initialized baseline detected
+    if (ledger.installationBaseline !== undefined) {
+      throw new LedgerIntegrityError(
+        'Class B Fatal Local Integrity Failure: Partially initialized installationBaseline detected.'
+      );
+    }
+
+    // Class 6: Contradictory sync receipt present without established baseline
+    if (ledger.lastSyncReceipt !== undefined) {
+      throw new LedgerIntegrityError(
+        'Class B Fatal Local Integrity Failure: Contradictory sync receipt present without established baseline.'
+      );
+    }
+
+    // Class 4: Established ledger contains recorded slices or history but lacks baseline
+    if (ledger.slices.length > 0 || ledger.monthlyHistoricalSummary.length > 0) {
       throw new CorruptOrdinalError(
-        'Class B Fatal Local Integrity Failure: Established ledger contains recorded slices but is missing installationBaseline.'
+        'Class B Fatal Local Integrity Failure: Established ledger contains recorded slices but lacks baseline.'
+      );
+    }
+
+    // Class 5: Uninitialized ledger contains unexpected HWM or ordinal entries
+    if (
+      (ledger.dailyHwm !== undefined && Object.keys(ledger.dailyHwm).length > 0) ||
+      (ledger.dailyRewardOrdinal !== undefined && Object.keys(ledger.dailyRewardOrdinal).length > 0)
+    ) {
+      throw new CorruptHwmError(
+        'Class B Fatal Local Integrity Failure: Uninitialized ledger contains unexpected HWM entries.'
+      );
+    }
+
+    // Unexpected accrued XP in uninitialized ledger
+    if (ledger.dailyAccruedXp !== undefined && Object.keys(ledger.dailyAccruedXp).length > 0) {
+      throw new LedgerIntegrityError(
+        'Class B Fatal Local Integrity Failure: Uninitialized ledger contains unexpected accrued XP entries.'
+      );
+    }
+
+    // Strict pristine predicate verification
+    if (!isPristineContributionLedger(ledger, ownerDatabaseId)) {
+      throw new LedgerIntegrityError(
+        'Class B Fatal Local Integrity Failure: Ledger fails strict pristine predicate.'
       );
     }
 
@@ -390,19 +428,7 @@ export function reconcileContributions(
   for (const snap of sortedSnapshots) {
     const { date, observedTotal } = snap;
 
-    // Verify counter integrity for active date
-    if (date in dailyHwm) {
-      const hwm = dailyHwm[date];
-      if (typeof hwm !== 'number' || !Number.isInteger(hwm) || hwm < 0) {
-        throw new CorruptHwmError(
-          `Class B Fatal Local Integrity Failure: Corrupt dailyHwm for date ${date}: ${String(hwm)}`
-        );
-      }
-    } else {
-      // Subsequent date default
-      dailyHwm[date] = 0;
-    }
-
+    // 1. Verify ordinal integrity if present
     if (date in dailyRewardOrdinal) {
       const ord = dailyRewardOrdinal[date];
       if (typeof ord !== 'number' || !Number.isInteger(ord) || ord < 0) {
@@ -410,8 +436,37 @@ export function reconcileContributions(
           `Class B Fatal Local Integrity Failure: Corrupt dailyRewardOrdinal for date ${date}: ${String(ord)}`
         );
       }
-    } else {
-      // Subsequent date default
+    }
+
+    // 2. Verify HWM integrity if present
+    if (date in dailyHwm) {
+      const hwm = dailyHwm[date];
+      if (typeof hwm !== 'number' || !Number.isInteger(hwm) || hwm < 0) {
+        throw new CorruptHwmError(
+          `Class B Fatal Local Integrity Failure: Corrupt dailyHwm for date ${date}: ${String(hwm)}`
+        );
+      }
+    }
+
+    // 3. Counter cross-consistency for established dates
+    const hasHwm = date in dailyHwm;
+    const hasOrdinal = date in dailyRewardOrdinal;
+
+    if (hasHwm && !hasOrdinal) {
+      throw new CorruptOrdinalError(
+        `Class B Fatal Local Integrity Failure: Established date ${date} is present in dailyHwm but missing from dailyRewardOrdinal.`
+      );
+    }
+    if (hasOrdinal && !hasHwm) {
+      throw new CorruptHwmError(
+        `Class B Fatal Local Integrity Failure: Established date ${date} is present in dailyRewardOrdinal but missing from dailyHwm.`
+      );
+    }
+
+    if (!hasHwm) {
+      dailyHwm[date] = 0;
+    }
+    if (!hasOrdinal) {
       dailyRewardOrdinal[date] = 0;
     }
 

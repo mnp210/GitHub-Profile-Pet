@@ -332,6 +332,36 @@ export function validateActionLedger(data: unknown): ValidationResult {
     }
   }
 
+  if (obj.pendingFeedback !== undefined) {
+    if (!Array.isArray(obj.pendingFeedback)) {
+      errors.push(`pendingFeedback must be an array when present.`);
+    } else {
+      for (let i = 0; i < obj.pendingFeedback.length; i++) {
+        const rec = obj.pendingFeedback[i];
+        if (typeof rec !== 'object' || rec === null) {
+          errors.push(`pendingFeedback[${i}] must be an object.`);
+          continue;
+        }
+        const r = rec as Record<string, unknown>;
+        if (typeof r.issueNumber !== 'number' || !Number.isInteger(r.issueNumber) || r.issueNumber <= 0) {
+          errors.push(`pendingFeedback[${i}].issueNumber must be a positive integer.`);
+        }
+        if (typeof r.requestId !== 'string' || !r.requestId) {
+          errors.push(`pendingFeedback[${i}].requestId must be a non-empty string.`);
+        }
+        if (typeof r.feedbackDelivered !== 'boolean') {
+          errors.push(`pendingFeedback[${i}].feedbackDelivered must be a boolean.`);
+        }
+        if (r.deliveredAt !== undefined && (typeof r.deliveredAt !== 'string' || !isValidIsoDateString(r.deliveredAt))) {
+          errors.push(`pendingFeedback[${i}].deliveredAt must be a valid ISO date string when present.`);
+        }
+        if (r.closureConfirmed !== undefined && typeof r.closureConfirmed !== 'boolean') {
+          errors.push(`pendingFeedback[${i}].closureConfirmed must be a boolean when present.`);
+        }
+      }
+    }
+  }
+
   return {
     valid: errors.length === 0,
     errors,
@@ -351,3 +381,76 @@ export function assertValidActionLedger(data: unknown): asserts data is ActionLe
     throw new Error(`Action ledger validation failed:\n - ${result.errors.join('\n - ')}`);
   }
 }
+
+export class LedgerIntegrityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LedgerIntegrityError';
+  }
+}
+
+/**
+ * Strict pristine ledger predicate derived from the accepted runtime architecture.
+ * A contribution ledger is pristine uninitialized if and only if all 12 conditions hold.
+ */
+export function isPristineContributionLedger(
+  ledger: unknown,
+  verifiedOwnerDatabaseId?: number
+): boolean {
+  if (typeof ledger !== 'object' || ledger === null || Array.isArray(ledger)) {
+    return false;
+  }
+  const L = ledger as Record<string, unknown>;
+
+  if (L.schemaVersion !== 1) return false;
+  if (typeof L.generation !== 'number' || !Number.isInteger(L.generation) || L.generation < 1) return false;
+  if (L.installationBaseline !== undefined) return false;
+  if (!Array.isArray(L.slices) || L.slices.length !== 0) return false;
+  if (!Array.isArray(L.monthlyHistoricalSummary) || L.monthlyHistoricalSummary.length !== 0) return false;
+
+  if (
+    L.dailyHwm !== undefined &&
+    (typeof L.dailyHwm !== 'object' || L.dailyHwm === null || Object.keys(L.dailyHwm).length > 0)
+  ) {
+    return false;
+  }
+
+  if (
+    L.dailyRewardOrdinal !== undefined &&
+    (typeof L.dailyRewardOrdinal !== 'object' || L.dailyRewardOrdinal === null || Object.keys(L.dailyRewardOrdinal).length > 0)
+  ) {
+    return false;
+  }
+
+  if (
+    L.dailyAccruedXp !== undefined &&
+    (typeof L.dailyAccruedXp !== 'object' || L.dailyAccruedXp === null || Object.keys(L.dailyAccruedXp).length > 0)
+  ) {
+    return false;
+  }
+
+  if (L.lastSyncReceipt !== undefined) return false;
+
+  if (
+    L.hourlyIncrementUsage !== undefined &&
+    (typeof L.hourlyIncrementUsage !== 'object' || L.hourlyIncrementUsage === null || Object.keys(L.hourlyIncrementUsage).length > 0)
+  ) {
+    return false;
+  }
+
+  if (
+    L.hourlySliceUsage !== undefined &&
+    (typeof L.hourlySliceUsage !== 'object' || L.hourlySliceUsage === null || Object.keys(L.hourlySliceUsage).length > 0)
+  ) {
+    return false;
+  }
+
+  if (L.monotonicPublicHwm !== undefined && L.monotonicPublicHwm !== 0) return false;
+
+  if (L.ownerDatabaseId !== undefined && verifiedOwnerDatabaseId !== undefined) {
+    if (L.ownerDatabaseId !== verifiedOwnerDatabaseId) return false;
+  }
+
+  return true;
+}
+
