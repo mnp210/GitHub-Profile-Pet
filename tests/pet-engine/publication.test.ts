@@ -70,8 +70,12 @@ describe('GitHub Actions Runtime & Safe SVG Publication (Phase 3A)', () => {
     // Triggers
     assert(content.includes('schedule:'), 'Workflow must include a schedule trigger');
     assert(
-      content.includes("cron: '23 */6 * * *'"),
-      'Workflow schedule must run every 6 hours offset from minute zero to mitigate load delays'
+      content.includes("cron: '47 * * * *'"),
+      'Workflow schedule must run hourly at offset minute 47 to mitigate top-of-hour GitHub Actions spikes'
+    );
+    assert(
+      !content.includes("cron: '23 */6 * * *'"),
+      'Workflow schedule must not include obsolete 6-hour cron (F-04 schedule cleanup)'
     );
     assert(content.includes('workflow_dispatch:'), 'Workflow must support manual workflow_dispatch');
 
@@ -346,25 +350,32 @@ describe('GitHub Actions Runtime & Safe SVG Publication (Phase 3A)', () => {
     );
   });
 
-  // 9. Safe handling of concurrent repository changes and retry boundaries
-  it('TC-PUB-09: Push retry algorithm enforces maximum attempts, safe rebase, and never force-pushes', async () => {
+  // 9. Safe publication contract: atomic fast-forward-only push without unsafe rebase or force-push
+  it('TC-PUB-09: Publication workflow delegates to safe publish-pipeline and never uses unsafe fetch, rebase, or force-push', async () => {
     // Verify the workflow push script contract
     const workflowPath = path.join(process.cwd(), '.github', 'workflows', 'pet-publisher.yml');
     const content = await fs.readFile(workflowPath, 'utf-8');
 
-    // Asserts maximum 3 retries
-    assert(content.includes('MAX_RETRIES=3'), 'Must define bounded retry limit of 3');
-
-    // Asserts git rebase --abort on conflict
+    // Asserts invocation of safe publish-pipeline
     assert(
-      content.includes('git rebase --abort'),
-      'Must abort rebase on conflict to prevent corrupting working tree'
+      content.includes('publish-pipeline.ts'),
+      'Workflow must invoke scripts/publish-pipeline.ts'
     );
 
-    // Asserts exit 1 on failure
+    // Asserts complete elimination of unsafe git rebase and fetch loops
     assert(
-      content.includes('exit 1'),
-      'Must exit with non-zero code on push exhaustion'
+      !content.includes('git rebase'),
+      'Workflow must strictly eliminate unsafe git rebase retry loops'
+    );
+    assert(
+      !content.includes('git fetch'),
+      'Workflow must not fetch and reconcile remote state mid-pipeline'
+    );
+
+    // Asserts strictly never force-pushing
+    assert(
+      !content.includes('--force'),
+      'Workflow must strictly never use --force or --force-with-lease'
     );
   });
 

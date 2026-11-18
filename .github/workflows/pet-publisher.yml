@@ -4,9 +4,6 @@ on:
   schedule:
     # Hourly background simulation & publication sweep at minute 47 (offset from top of hour)
     - cron: '47 * * * *'
-    # Periodic refresh: run every 6 hours at minute 23 (00:23, 06:23, 12:23, 18:23 UTC)
-    # Offset from minute zero to reduce runner queue latency during top-of-the-hour high-load spikes
-    - cron: '23 */6 * * *'
   workflow_dispatch:
     inputs:
       force_render:
@@ -41,63 +38,11 @@ jobs:
         with:
           node-version: 22
 
-      - name: Run Passive Simulation & Publication
-        run: |
-          node --experimental-strip-types scripts/simulate-pet.ts
-          node --experimental-strip-types scripts/publish-pet.ts
-
-      - name: Commit & Publish Pet Artifacts (Idempotent)
+      # The unified publish-pipeline orchestrates passive simulation (scripts/simulate-pet.ts),
+      # SVG badge rendering (scripts/publish-pet.ts), state persistence (pet/state/pet.json),
+      # ledger tracking, manifest validation, [skip ci] commits, and atomic fast-forward-only Git publication.
+      - name: Run Safe Git Publication Pipeline
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 1. Configure standard bot author identity
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # 2. Check for unstaged changes in published artifacts and state
-          if git diff --quiet public/pet.svg README.md pet/state/pet.json; then
-            echo "No changes detected in public/pet.svg, README.md, or pet/state/pet.json. Skipping publication commit."
-            exit 0
-          fi
-
-          # 3. Stage published files and updated state
-          git add public/pet.svg pet/state/pet.json
-          if [ -f README.md ]; then
-            git add README.md
-          fi
-
-          if git diff --staged --quiet; then
-            echo "No staged changes to commit. Exiting cleanly."
-            exit 0
-          fi
-
-          # 4. Commit changes (standard bot author; [skip ci] convention for external CI systems)
-          git commit -m "pet: update state and visual badge [skip ci]"
-
-          # 5. Safe fast-forward push with conflict retry loop (max 3 attempts)
-          MAX_RETRIES=3
-          RETRY=0
-          PUSHED=false
-
-          while [ $RETRY -lt $MAX_RETRIES ]; do
-            if git push origin HEAD:${{ github.ref_name }}; then
-              PUSHED=true
-              echo "Successfully pushed published pet visual badge."
-              break
-            else
-              echo "Remote branch moved. Fetching and attempting safe fast-forward / rebase..."
-              git fetch origin ${{ github.ref_name }}
-              if git rebase origin/${{ github.ref_name }}; then
-                RETRY=$((RETRY + 1))
-              else
-                echo "::error::Rebase conflict detected during push retry. Aborting rebase to protect repository state."
-                git rebase --abort
-                exit 1
-              fi
-            fi
-          done
-
-          if [ "$PUSHED" = false ]; then
-            echo "::error::Unable to push after $MAX_RETRIES retry attempts."
-            exit 1
-          fi
+          node --experimental-strip-types scripts/publish-pipeline.ts --ref "${{ github.ref_name }}"

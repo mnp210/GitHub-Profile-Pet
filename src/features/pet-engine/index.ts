@@ -16,3 +16,7 @@ export * from './persistence/stateRepository.ts';
 export * from './rendering/index.ts';
 export * from './publication/index.ts';
 export * from './inbox/index.ts';
+export * from './contribution/index.ts';
+export * from './simulation/index.ts';
+export * from './sync/index.ts';
+

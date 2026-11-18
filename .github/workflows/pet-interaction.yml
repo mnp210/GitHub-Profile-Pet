@@ -46,68 +46,13 @@ jobs:
         with:
           node-version: 22
 
-      - name: Drain Action Inbox & Execute State Transitions
+      # Safe Inbox Publication Pipeline (Phase 3C2.3-B0):
+      # Evaluates actions, persists generation G_0 + 1, verifies 5-file manifest,
+      # performs atomic fast-forward-only push with remote generation fence (NO git rebase),
+      # and delivers post-publication feedback comments with deterministic idempotency markers.
+      - name: Drain Action Inbox & Publish State Transitions
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          node --experimental-strip-types scripts/process-inbox.ts
-
-      - name: Commit State & Published Artifacts (Idempotent)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # 1. Configure standard bot author identity
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # 2. Check for unstaged changes in repository state or public assets
-          if git diff --quiet pet/ public/pet.svg README.md; then
-            echo "No changes detected in pet state, ledgers, or published assets. Skipping commit."
-            exit 0
-          fi
-
-          # 3. Stage state documents, ledgers, and published SVG
-          git add pet/state/pet.json pet/ledger/actions.json pet/ledger/contributions.json
-          if [ -f public/pet.svg ]; then
-            git add public/pet.svg
-          fi
-          if [ -f README.md ]; then
-            git add README.md
-          fi
-
-          if git diff --staged --quiet; then
-            echo "No staged changes to commit. Exiting cleanly."
-            exit 0
-          fi
-
-          # 4. Commit changes (standard bot author; [skip ci] convention for external CI systems)
-          git commit -m "pet: process care actions [skip ci]"
-
-          # 5. Safe fast-forward push with conflict retry loop (max 3 attempts)
-          MAX_RETRIES=3
-          RETRY=0
-          PUSHED=false
-
-          while [ $RETRY -lt $MAX_RETRIES ]; do
-            if git push origin HEAD:${{ github.ref_name }}; then
-              PUSHED=true
-              echo "Successfully pushed committed pet state and artifacts."
-              break
-            else
-              echo "Remote branch moved. Fetching and attempting safe fast-forward / rebase..."
-              git fetch origin ${{ github.ref_name }}
-              if git rebase origin/${{ github.ref_name }}; then
-                RETRY=$((RETRY + 1))
-              else
-                echo "::error::Rebase conflict detected during push retry. Aborting rebase to protect repository state."
-                git rebase --abort
-                exit 1
-              fi
-            fi
-          done
-
-          if [ "$PUSHED" = false ]; then
-            echo "::error::Unable to push after $MAX_RETRIES retry attempts."
-            exit 1
-          fi
+          node --experimental-strip-types scripts/process-inbox.ts --ref "${{ github.ref_name }}"
