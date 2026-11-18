@@ -287,6 +287,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       nowMs,
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     assert.equal(result.status, 'baseline_established');
@@ -328,6 +329,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       nowMs,
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     // 2. Post-baseline increment: today increases by 1 (5 -> 6 commits)
@@ -383,6 +385,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       nowMs,
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     // 2. Both yesterday (+1) and today (+2) receive new contributions
@@ -432,6 +435,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       nowMs,
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     // 2. Duplicate snapshot identical to baseline
@@ -464,6 +468,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       token: 'fake-token',
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     assert.equal(result.status, 'provider_failed');
@@ -484,6 +489,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       token: 'fake-token',
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     assert.equal(result.status, 'provider_failed');
@@ -512,6 +518,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       nowMs,
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     // 2 public commits and 100 private/restricted contributions
@@ -617,10 +624,11 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       token: 'fake-token',
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     assert.equal(result.status, 'integrity_failed');
-    assert.match(result.notes, /Partially initialized installationBaseline/);
+    assert.match(result.notes, /partially initialized/i);
   });
 
   it('10. Five-increment hourly quota is enforced and excess increments remain pending (AC-13)', async () => {
@@ -641,6 +649,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       nowMs,
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     // 7 increments arrive in one hour
@@ -694,6 +703,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       nowMs: syncTime,
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     // 2. Generate 7 increments -> 5 rewarded, 2 pending
@@ -755,6 +765,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       nowMs,
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     // Manually set daily accrued XP to 290
@@ -843,6 +854,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       remoteFenceCheck: mockRemoteFence,
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     assert.equal(result.status, 'conflict');
@@ -851,10 +863,29 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
 
   it('15. Provider failure allows passive simulation to run independently (AC-19)', async () => {
     const mockProvider = new MockContributionProvider();
+    const baseNow = new Date('2026-11-15T00:00:00.000Z').getTime();
+
+    // 1. Establish baseline
+    mockProvider.mockResponse = createMock2DaySnapshot({
+      yesterdayDate: '2026-11-14',
+      todayDate: '2026-11-15',
+      yesterdayCounts: { commits: 0 },
+      todayCounts: { commits: 0 },
+    });
+    await syncContributions({
+      baseDir: tempBaseDir,
+      provider: mockProvider,
+      token: 'fake-token',
+      nowMs: baseNow,
+      skipSimulation: true,
+      env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
+    });
+
+    // 2. Provider fails with timeout during runtime sync
     mockProvider.mockError = new GitHubTimeoutError(10000);
 
     // Clock advanced by 24 hours (86400s) -> hunger decays, happiness decays, lastSimulatedAt advances
-    const baseNow = new Date('2026-11-15T00:00:00.000Z').getTime();
     const futureNow = baseNow + 86400 * 1000;
 
     const result = await syncContributions({
@@ -867,14 +898,13 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
     });
 
     assert.equal(result.status, 'provider_failed');
-    assert.equal(result.savedGeneration, 2);
+    assert.equal(result.savedGeneration, 3);
 
     const loaded = await loadRepositoryState(tempBaseDir);
-    assert.equal(loaded.generation, 2);
+    assert.equal(loaded.generation, 3);
     // Simulation advanced vitals
     assert.ok(loaded.pet.hunger < 50);
     // But contribution ledger had ZERO contribution accounting changes
-    assert.equal(loaded.contributions.installationBaseline, undefined);
     assert.equal(loaded.contributions.slices.length, 0);
   });
 
@@ -895,6 +925,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       token: 'fake-token',
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     assert.equal(result.status, 'deferred');
@@ -927,6 +958,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
         GITHUB_REPOSITORY_OWNER: 'acme-organization',
         PET_OWNER_LOGIN: 'personal-user',
       },
+      mode: 'baseline_only',
     });
 
     assert.equal(result.status, 'baseline_established');
@@ -955,6 +987,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       nowMs,
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'legit-user' },
+      mode: 'baseline_only',
     });
 
     // 2. Subsequent sync returns different database ID (22222)
@@ -998,6 +1031,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       token: 'fake-token',
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     const loaded = await loadRepositoryState(tempBaseDir);
@@ -1024,6 +1058,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       nowMs: new Date('2026-11-10T12:00:00.000Z').getTime(),
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     // 7 days later (outage > 48h): sync returns [2026-11-16, 2026-11-17]
@@ -1072,6 +1107,7 @@ describe('Phase 3C2.2.3.3: Contribution Synchronization Runtime Integration Suit
       nowMs,
       skipSimulation: true,
       env: { PET_OWNER_LOGIN: 'mnp210' },
+      mode: 'baseline_only',
     });
 
     // 2. Second run with same counts

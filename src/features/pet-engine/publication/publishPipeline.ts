@@ -31,9 +31,20 @@ import { promisify } from 'node:util';
 import {
   syncContributions,
   type ContributionSyncResult,
+  type SyncExecutionMode,
+  MissingBaselineError,
+  BaselineAlreadyEstablishedError,
 } from '../sync/index.ts';
 import type { GitHubContributionProvider } from '../contribution/index.ts';
 import { redactSensitiveData } from '../contribution/index.ts';
+import { isPristineContributionLedger } from '../validation/ledgerValidator.ts';
+import type { ContributionLedgerDocument } from '../domain/types.ts';
+
+export {
+  type SyncExecutionMode,
+  MissingBaselineError,
+  BaselineAlreadyEstablishedError,
+};
 
 const execFileAsync = promisify(execFile);
 
@@ -68,6 +79,8 @@ export type PublicationPipelineStatus =
   | 'missing_authoritative_file'
   | 'integrity_failed'
   | 'provider_failed'
+  | 'baseline_missing'
+  | 'baseline_refused'
   | 'error';
 
 export interface PublicationPipelineOptions {
@@ -87,6 +100,8 @@ export interface PublicationPipelineOptions {
   skipCleanPreflight?: boolean;
   skipBranchCheck?: boolean;
   skipAuthoritativeFileCheck?: boolean;
+  mode?: SyncExecutionMode;
+  expectedOwnerDatabaseId?: number;
 }
 
 export interface PublicationPipelineResult {
@@ -361,7 +376,121 @@ export async function executePublicationPipeline(
     }
   }
 
-  // 5. Execute ContributionSyncService
+  // 5. Preflight Check: Installation Baseline Guard (F-04)
+  const mode: SyncExecutionMode = options.mode ?? 'runtime';
+  const expectedOwnerDatabaseId =
+    options.expectedOwnerDatabaseId ??
+    (options.env?.PET_OWNER_DATABASE_ID
+      ? parseInt(options.env.PET_OWNER_DATABASE_ID, 10)
+      : process.env.PET_OWNER_DATABASE_ID
+        ? parseInt(process.env.PET_OWNER_DATABASE_ID, 10)
+        : undefined);
+
+  const contribPath = path.join(baseDir, 'pet', 'ledger', 'contributions.json');
+  let contribDoc: ContributionLedgerDocument | null = null;
+  try {
+    const rawContent = await fs.readFile(contribPath, 'utf-8');
+    contribDoc = JSON.parse(rawContent);
+  } catch (err: unknown) {
+    return {
+      success: false,
+      status: 'integrity_failed',
+      sourceCommitSha,
+      destinationRef: targetBranch,
+      details: `Preflight Check Failed (F-04): Could not read contribution ledger at ${contribPath}: ${(err as Error).message}`,
+      error: err as Error,
+    };
+  }
+
+  if (!contribDoc) {
+    return {
+      success: false,
+      status: 'integrity_failed',
+      sourceCommitSha,
+      destinationRef: targetBranch,
+      details: `Preflight Check Failed (F-04): Contribution ledger document is empty at ${contribPath}`,
+      error: new Error('Empty contribution ledger document'),
+    };
+  }
+
+  if (mode === 'runtime') {
+    if (!contribDoc.installationBaseline || contribDoc.installationBaseline.completed !== true) {
+      return {
+        success: false,
+        status: 'baseline_missing',
+        sourceCommitSha,
+        destinationRef: targetBranch,
+        details: 'Baseline Prerequisite Failed (F-04): Installation baseline is absent or incomplete. Ordinary publication cannot initialize baseline. Run with --baseline-only to establish baseline.',
+        error: new MissingBaselineError(),
+      };
+    }
+
+    const isValidLedgerOwnerId =
+      typeof contribDoc.ownerDatabaseId === 'number' &&
+      Number.isInteger(contribDoc.ownerDatabaseId) &&
+      contribDoc.ownerDatabaseId > 0;
+
+    if (!isValidLedgerOwnerId) {
+      return {
+        success: false,
+        status: 'integrity_failed',
+        sourceCommitSha,
+        destinationRef: targetBranch,
+        details: `Preflight Check Failed (F-04): Established contribution ledger has absent or invalid ownerDatabaseId (${String(contribDoc.ownerDatabaseId)}). Runtime publication requires a valid positive integer ownerDatabaseId.`,
+        error: new Error(
+          `Established contribution ledger has absent or invalid ownerDatabaseId: ${String(contribDoc.ownerDatabaseId)}`
+        ),
+      };
+    }
+
+    if (expectedOwnerDatabaseId !== undefined) {
+      if (!Number.isInteger(expectedOwnerDatabaseId) || expectedOwnerDatabaseId <= 0) {
+        return {
+          success: false,
+          status: 'integrity_failed',
+          sourceCommitSha,
+          destinationRef: targetBranch,
+          details: `Preflight Check Failed (F-04): Configured expected owner database ID is invalid (${String(expectedOwnerDatabaseId)}). Expected a positive integer.`,
+          error: new Error(`Invalid expected owner database ID: ${String(expectedOwnerDatabaseId)}`),
+        };
+      }
+      if (contribDoc.ownerDatabaseId !== expectedOwnerDatabaseId) {
+        return {
+          success: false,
+          status: 'integrity_failed',
+          sourceCommitSha,
+          destinationRef: targetBranch,
+          details: `Preflight Check Failed (F-04): Expected owner database ID (${expectedOwnerDatabaseId}) does not match established ledger ownerDatabaseId (${contribDoc.ownerDatabaseId}).`,
+          error: new Error(
+            `Owner ID mismatch: expected ${expectedOwnerDatabaseId}, ledger has ${contribDoc.ownerDatabaseId}`
+          ),
+        };
+      }
+    }
+  } else if (mode === 'baseline_only') {
+    if (contribDoc.installationBaseline?.completed === true) {
+      return {
+        success: false,
+        status: 'baseline_refused',
+        sourceCommitSha,
+        destinationRef: targetBranch,
+        details: 'Baseline Refused (F-04): Installation baseline has already been established and cannot be overwritten.',
+        error: new BaselineAlreadyEstablishedError(),
+      };
+    }
+    if (!isPristineContributionLedger(contribDoc)) {
+      return {
+        success: false,
+        status: 'integrity_failed',
+        sourceCommitSha,
+        destinationRef: targetBranch,
+        details: 'Baseline Refused (F-04): Contribution ledger is not in a valid pristine state (partially initialized or corrupt).',
+        error: new Error('Contribution ledger is not in a valid pristine state.'),
+      };
+    }
+  }
+
+  // 6. Execute ContributionSyncService
   let syncResult: ContributionSyncResult | undefined;
   try {
     syncResult = await syncContributions({
@@ -373,6 +502,8 @@ export async function executePublicationPipeline(
       sourceCommitSha,
       provider: options.provider,
       remoteFenceCheck: options.remoteFenceCheck,
+      mode,
+      expectedOwnerDatabaseId,
     });
   } catch (err: unknown) {
     return {
@@ -385,7 +516,31 @@ export async function executePublicationPipeline(
     };
   }
 
-  // 6. Stage 1 Remote Generation Fence Conflict Check
+  if (syncResult.status === 'baseline_missing') {
+    return {
+      success: false,
+      status: 'baseline_missing',
+      sourceCommitSha,
+      destinationRef: targetBranch,
+      details: 'Baseline Prerequisite Failed: Installation baseline is absent or incomplete. Ordinary publication cannot proceed. Run with --baseline-only to establish baseline.',
+      error: syncResult.error ?? new MissingBaselineError(),
+      syncResult,
+    };
+  }
+
+  if (syncResult.status === 'baseline_refused') {
+    return {
+      success: false,
+      status: 'baseline_refused',
+      sourceCommitSha,
+      destinationRef: targetBranch,
+      details: 'Baseline Refused: Installation baseline has already been established and cannot be overwritten.',
+      error: syncResult.error ?? new BaselineAlreadyEstablishedError(),
+      syncResult,
+    };
+  }
+
+  // 7. Stage 1 Remote Generation Fence Conflict Check
   if (syncResult.status === 'conflict') {
     // Stage 1 fence failed: remote moved after checkout. Clean working tree and abort immediately.
     await execGit(['checkout', '--', ...PUBLICATION_MANIFEST_PATHS]).catch(() => {});

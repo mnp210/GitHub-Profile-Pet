@@ -29,6 +29,7 @@ import {
   REQUIRED_AUTHORITATIVE_PATHS,
   verifyRequiredAuthoritativeFiles,
 } from '../../src/features/pet-engine/publication/publishPipeline.ts';
+import { parseArgs as parsePublishPipelineArgs } from '../../scripts/publish-pipeline.ts';
 import { GitHubContributionProvider } from '../../src/features/pet-engine/contribution/index.ts';
 import type {
   GitHub2DayContributionSnapshot,
@@ -96,6 +97,38 @@ function createPristineContributionLedger(generation: number = 1): ContributionL
     generation,
     monotonicPublicHwm: 0,
     dailyAccruedXp: {},
+    hourlySliceUsage: {},
+    slices: [],
+    monthlyHistoricalSummary: [],
+  };
+}
+
+function createEstablishedContributionLedger(generation: number = 1): ContributionLedgerDocument {
+  return {
+    schemaVersion: 1,
+    generation,
+    ownerDatabaseId: 298821706,
+    ownerLogin: 'mnp210',
+    installationBaseline: {
+      completed: true,
+      installedAt: '2026-11-15T00:00:00.000Z',
+      baselineDateUtc: '2026-11-15',
+      initialCounts: {
+        yesterday: 10,
+        today: 5,
+      },
+    },
+    dailyHwm: {
+      '2026-11-14': 10,
+      '2026-11-15': 5,
+    },
+    dailyRewardOrdinal: {
+      '2026-11-14': 0,
+      '2026-11-15': 0,
+    },
+    monotonicPublicHwm: 10,
+    dailyAccruedXp: {},
+    hourlyIncrementUsage: {},
     hourlySliceUsage: {},
     slices: [],
     monthlyHistoricalSummary: [],
@@ -237,7 +270,7 @@ describe('Safe Git Publication Workflow Integration (Phase 3C2.2.4)', () => {
     // Seed valid manifest files in working repo
     await saveRepositoryState(workRepoDir, {
       pet: createInitialPetState(1),
-      contributions: createPristineContributionLedger(1),
+      contributions: createEstablishedContributionLedger(1),
       actions: createInitialActionLedger(1),
     });
 
@@ -414,6 +447,16 @@ describe('Safe Git Publication Workflow Integration (Phase 3C2.2.4)', () => {
 
   // TC-PUSH-04: Next fresh checkout recalculates against new HEAD without duplicate XP
   it('TC-PUSH-04: Next fresh checkout recalculates against new HEAD without duplicate XP', async () => {
+    // Reset to pristine ledger to test baseline establishment under concurrent advance
+    await saveRepositoryState(workRepoDir, {
+      pet: createInitialPetState(1),
+      contributions: createPristineContributionLedger(1),
+      actions: createInitialActionLedger(1),
+    });
+    await git(['add', ...PUBLICATION_MANIFEST_PATHS], workRepoDir);
+    await git(['commit', '-m', 'Reset to pristine ledger for baseline test'], workRepoDir);
+    await git(['push', 'origin', 'main'], workRepoDir);
+
     // Step 1: Work repo 1 attempts push and is rejected
     const cloneDir = path.join(tempBaseDir, 'concurrent-advance');
     await git(['clone', '-b', 'main', remoteRepoDir, cloneDir], tempBaseDir);
@@ -440,6 +483,7 @@ describe('Safe Git Publication Workflow Integration (Phase 3C2.2.4)', () => {
       token: 'test-token',
       env: TEST_ENV,
       provider,
+      mode: 'baseline_only',
       remoteFenceCheck: async () => ({ matches: true, currentRemoteSha: 'dummy' }),
     });
     assert.equal(run1.success, false);
@@ -458,6 +502,7 @@ describe('Safe Git Publication Workflow Integration (Phase 3C2.2.4)', () => {
       token: 'test-token',
       env: TEST_ENV,
       provider,
+      mode: 'baseline_only',
     });
 
     assert.equal(run2.success, true);
@@ -1219,5 +1264,88 @@ describe('Safe Git Publication Workflow Integration (Phase 3C2.2.4)', () => {
     } finally {
       await fs.rm(emptyTestDir, { recursive: true, force: true });
     }
+  });
+
+  it('TC-PUSH-ID-01: publish-pipeline CLI argument parsing parses --owner-id correctly', () => {
+    const parsed = parsePublishPipelineArgs([
+      '--ref',
+      'main',
+      '--remote',
+      'origin',
+      '--base-dir',
+      '/tmp/test',
+      '--dry-run',
+      '--skip-push',
+      '--owner-id',
+      '298821706',
+    ]);
+
+    assert.equal(parsed.refName, 'main');
+    assert.equal(parsed.gitRemote, 'origin');
+    assert.equal(parsed.baseDir, '/tmp/test');
+    assert.equal(parsed.dryRun, true);
+    assert.equal(parsed.skipPush, true);
+    assert.equal(parsed.expectedOwnerDatabaseId, 298821706);
+  });
+
+  it('TC-PUSH-ID-02: executePublicationPipeline fails closed when expectedOwnerDatabaseId mismatches established ledger', async () => {
+    const result = await executePublicationPipeline({
+      baseDir: workRepoDir,
+      refName: 'main',
+      gitRemote: 'origin',
+      dryRun: true,
+      skipCleanPreflight: true,
+      skipBranchCheck: true,
+      expectedOwnerDatabaseId: 9999999, // Mismatched ID vs established ledger 298821706
+      env: TEST_ENV,
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(result.status, 'integrity_failed');
+    assert.match(result.details, /Preflight Check Failed \(F-04\): Expected owner database ID/);
+  });
+
+  it('TC-PUSH-ID-03: executePublicationPipeline fails closed at Preflight F-04 when established ledger has missing ownerDatabaseId', async () => {
+    const contribPath = path.join(workRepoDir, 'pet', 'ledger', 'contributions.json');
+    const raw = JSON.parse(await fs.readFile(contribPath, 'utf-8'));
+    delete raw.ownerDatabaseId;
+    await fs.writeFile(contribPath, JSON.stringify(raw, null, 2), 'utf-8');
+
+    const result = await executePublicationPipeline({
+      baseDir: workRepoDir,
+      refName: 'main',
+      gitRemote: 'origin',
+      dryRun: true,
+      skipCleanPreflight: true,
+      skipBranchCheck: true,
+      expectedOwnerDatabaseId: 298821706,
+      env: TEST_ENV,
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(result.status, 'integrity_failed');
+    assert.match(result.details, /Preflight Check Failed \(F-04\): Established contribution ledger has absent or invalid ownerDatabaseId/);
+  });
+
+  it('TC-PUSH-ID-04: executePublicationPipeline fails closed at Preflight F-04 when established ledger has zero or invalid ownerDatabaseId', async () => {
+    const contribPath = path.join(workRepoDir, 'pet', 'ledger', 'contributions.json');
+    const raw = JSON.parse(await fs.readFile(contribPath, 'utf-8'));
+    raw.ownerDatabaseId = 0; // Invalid zero ID
+    await fs.writeFile(contribPath, JSON.stringify(raw, null, 2), 'utf-8');
+
+    const result = await executePublicationPipeline({
+      baseDir: workRepoDir,
+      refName: 'main',
+      gitRemote: 'origin',
+      dryRun: true,
+      skipCleanPreflight: true,
+      skipBranchCheck: true,
+      expectedOwnerDatabaseId: 298821706,
+      env: TEST_ENV,
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(result.status, 'integrity_failed');
+    assert.match(result.details, /Preflight Check Failed \(F-04\): Established contribution ledger has absent or invalid ownerDatabaseId/);
   });
 });

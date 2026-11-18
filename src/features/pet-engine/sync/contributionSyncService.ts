@@ -14,6 +14,7 @@
  * 10. Stage 1 pre-push remote generation fencing check.
  */
 
+import * as fs from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import {
@@ -21,6 +22,8 @@ import {
   resolveTargetOwner,
   verifyOwnerIdentity,
   redactSensitiveData,
+  IdentityMismatchError,
+  MissingOwnerConfigurationError,
 } from '../contribution/index.ts';
 import type { GitHub2DayContributionSnapshot } from '../contribution/types.ts';
 import {
@@ -36,7 +39,7 @@ import {
 } from '../persistence/stateRepository.ts';
 import { publishPetSvg } from '../publication/index.ts';
 import { applyInactivitySimulation } from '../transitions/simulationTransitions.ts';
-import { isPristineContributionLedger } from '../validation/ledgerValidator.ts';
+import { isPristineContributionLedger, assertValidContributionLedger } from '../validation/ledgerValidator.ts';
 import type {
   ActionLedgerDocument,
   ContributionLedgerDocument,
@@ -48,6 +51,26 @@ const execFileAsync = promisify(execFile);
 export const DEFAULT_PLANNING_CEILING_POINTS = 1000;
 export const DEFAULT_DEFER_THRESHOLD_POINTS = 50;
 
+export class MissingBaselineError extends Error {
+  constructor(
+    message = 'Installation baseline has not been established. Runtime contribution synchronization cannot proceed until explicit one-time baseline initialization is performed.'
+  ) {
+    super(message);
+    this.name = 'MissingBaselineError';
+  }
+}
+
+export class BaselineAlreadyEstablishedError extends Error {
+  constructor(
+    message = 'Installation baseline has already been established and cannot be overwritten.'
+  ) {
+    super(message);
+    this.name = 'BaselineAlreadyEstablishedError';
+  }
+}
+
+export type SyncExecutionMode = 'runtime' | 'baseline_only';
+
 export type ContributionSyncStatus =
   | 'completed'
   | 'baseline_established'
@@ -55,7 +78,9 @@ export type ContributionSyncStatus =
   | 'deferred'
   | 'provider_failed'
   | 'integrity_failed'
-  | 'conflict';
+  | 'conflict'
+  | 'baseline_missing'
+  | 'baseline_refused';
 
 export interface ContributionSyncOptions {
   baseDir?: string;
@@ -71,6 +96,8 @@ export interface ContributionSyncOptions {
   provider?: GitHubContributionProvider;
   skipSimulation?: boolean;
   targetOwnerLogin?: string;
+  mode?: SyncExecutionMode;
+  expectedOwnerDatabaseId?: number;
 }
 
 export interface ContributionSyncResult {
@@ -129,6 +156,69 @@ export async function syncContributions(
   const isDryRun = options.dryRun === true;
   const deferThreshold = options.deferThresholdPoints ?? DEFAULT_DEFER_THRESHOLD_POINTS;
   const planningCeiling = options.planningCeilingPoints ?? DEFAULT_PLANNING_CEILING_POINTS;
+  const mode: SyncExecutionMode = options.mode ?? 'runtime';
+
+  // 0. Preflight Baseline Guard Check (Zero network calls, zero simulation, zero state mutation)
+  const paths = getStatePaths(baseDir);
+  let localLedgerRaw: ContributionLedgerDocument | null = null;
+  try {
+    const rawContent = await fs.readFile(paths.contributionsPath, 'utf-8');
+    localLedgerRaw = JSON.parse(rawContent) as ContributionLedgerDocument;
+    assertValidContributionLedger(localLedgerRaw);
+  } catch (err: unknown) {
+    const error = err as Error;
+    return {
+      status: 'integrity_failed',
+      incrementsEvaluated: 0,
+      xpAwarded: 0,
+      satietyAwarded: 0,
+      deltaObserved: 0,
+      svgPublished: false,
+      notes: `Failed to read contribution ledger document: ${error.message}`,
+      error,
+    };
+  }
+
+  if (mode === 'runtime') {
+    if (!localLedgerRaw.installationBaseline || localLedgerRaw.installationBaseline.completed !== true) {
+      return {
+        status: 'baseline_missing',
+        incrementsEvaluated: 0,
+        xpAwarded: 0,
+        satietyAwarded: 0,
+        deltaObserved: 0,
+        svgPublished: false,
+        notes: 'Installation baseline has not been established. Runtime contribution synchronization cannot proceed until explicit one-time baseline initialization is performed.',
+        error: new MissingBaselineError(),
+      };
+    }
+  } else if (mode === 'baseline_only') {
+    if (localLedgerRaw.installationBaseline?.completed === true) {
+      return {
+        status: 'baseline_refused',
+        incrementsEvaluated: 0,
+        xpAwarded: 0,
+        satietyAwarded: 0,
+        deltaObserved: 0,
+        svgPublished: false,
+        notes: 'Installation baseline has already been established and cannot be overwritten.',
+        error: new BaselineAlreadyEstablishedError(),
+      };
+    }
+
+    if (!isPristineContributionLedger(localLedgerRaw)) {
+      return {
+        status: 'integrity_failed',
+        incrementsEvaluated: 0,
+        xpAwarded: 0,
+        satietyAwarded: 0,
+        deltaObserved: 0,
+        svgPublished: false,
+        notes: 'Contribution ledger is not in a valid pristine state (partially initialized or corrupt). Baseline initialization refused.',
+        error: new Error('Contribution ledger is not in a valid pristine state.'),
+      };
+    }
+  }
 
   // 1. Resolve Target Owner Identity
   let targetOwner: string;
@@ -153,11 +243,88 @@ export async function syncContributions(
     };
   }
 
+  // 1b. Resolve and Validate Immutable Numeric Owner Identity
+  let expectedOwnerDatabaseId: number | undefined =
+    options.expectedOwnerDatabaseId ??
+    (env.PET_OWNER_DATABASE_ID ? parseInt(env.PET_OWNER_DATABASE_ID, 10) : undefined);
+
+  if (expectedOwnerDatabaseId !== undefined && (!Number.isInteger(expectedOwnerDatabaseId) || expectedOwnerDatabaseId <= 0)) {
+    return {
+      status: 'integrity_failed',
+      incrementsEvaluated: 0,
+      xpAwarded: 0,
+      satietyAwarded: 0,
+      deltaObserved: 0,
+      svgPublished: false,
+      notes: `Invalid expectedOwnerDatabaseId (${String(options.expectedOwnerDatabaseId ?? env.PET_OWNER_DATABASE_ID)}). Expected a positive integer.`,
+      error: new MissingOwnerConfigurationError('Invalid expectedOwnerDatabaseId: must be a positive integer.'),
+    };
+  }
+
+  if (mode === 'runtime') {
+    const isValidLedgerOwnerId =
+      typeof localLedgerRaw.ownerDatabaseId === 'number' &&
+      Number.isInteger(localLedgerRaw.ownerDatabaseId) &&
+      localLedgerRaw.ownerDatabaseId > 0;
+
+    if (!isValidLedgerOwnerId) {
+      return {
+        status: 'integrity_failed',
+        incrementsEvaluated: 0,
+        xpAwarded: 0,
+        satietyAwarded: 0,
+        deltaObserved: 0,
+        svgPublished: false,
+        notes: `Established contribution ledger has absent or invalid ownerDatabaseId (${String(localLedgerRaw.ownerDatabaseId)}). Runtime contribution synchronization requires a valid positive integer ownerDatabaseId in the established ledger.`,
+        error: new IdentityMismatchError(
+          `Established contribution ledger has absent or invalid ownerDatabaseId: ${String(localLedgerRaw.ownerDatabaseId)}`
+        ),
+      };
+    }
+
+    if (expectedOwnerDatabaseId !== undefined) {
+      if (expectedOwnerDatabaseId !== localLedgerRaw.ownerDatabaseId) {
+        return {
+          status: 'integrity_failed',
+          incrementsEvaluated: 0,
+          xpAwarded: 0,
+          satietyAwarded: 0,
+          deltaObserved: 0,
+          svgPublished: false,
+          notes: `Immutable owner ID mismatch: expectedOwnerDatabaseId (${expectedOwnerDatabaseId}) does not match established ledger ownerDatabaseId (${localLedgerRaw.ownerDatabaseId}). Synchronization aborted.`,
+          error: new IdentityMismatchError(
+            `Expected owner database ID (${expectedOwnerDatabaseId}) does not match established ledger ownerDatabaseId (${localLedgerRaw.ownerDatabaseId}).`
+          ),
+        };
+      }
+    } else {
+      // Intentional and explicitly documented behavior:
+      // When expectedOwnerDatabaseId is not explicitly injected via options or PET_OWNER_DATABASE_ID,
+      // runtime contribution sync adopts the immutable numeric ownerDatabaseId already persisted in the established ledger.
+      // Because the ledger's ownerDatabaseId was validated as a positive integer above,
+      // this is guaranteed to be an immutable numeric ID and can never be confused with a mutable login.
+      expectedOwnerDatabaseId = localLedgerRaw.ownerDatabaseId;
+    }
+  }
+
   // 2. Token Resolution & Unlocked Network Request
   // Rule: Network calls are NEVER made while holding local mutex locks (AC-18).
   const token = (options.token ?? env.GITHUB_TOKEN)?.trim();
   if (!token) {
-    // Missing token: skip accounting with zero ledger mutation.
+    if (mode === 'baseline_only') {
+      return {
+        status: 'provider_failed',
+        incrementsEvaluated: 0,
+        xpAwarded: 0,
+        satietyAwarded: 0,
+        deltaObserved: 0,
+        svgPublished: false,
+        notes: 'GITHUB_TOKEN is missing. Baseline initialization skipped; zero ledger mutation.',
+        error: new Error('GITHUB_TOKEN environment variable is required for contribution baseline initialization.'),
+      };
+    }
+
+    // Missing token in runtime mode: skip accounting with zero ledger mutation.
     // Passive simulation may proceed independently if conditions permit (AC-19).
     let simSvgPublished = false;
     let simSavedGen: number | undefined;
@@ -192,13 +359,42 @@ export async function syncContributions(
     snapshot2Day = await provider.fetchUserContributionSnapshot2Day(
       targetOwner,
       token,
-      { now: nowMs }
+      {
+        now: nowMs,
+        expectedOwnerDatabaseId,
+      }
     );
   } catch (err: unknown) {
     const error = err as Error;
     const sanitizedMsg = redactSensitiveData(error.message, token);
 
-    // If provider fails, accounting is skipped with zero ledger mutation.
+    if (error instanceof IdentityMismatchError) {
+      return {
+        status: 'integrity_failed',
+        incrementsEvaluated: 0,
+        xpAwarded: 0,
+        satietyAwarded: 0,
+        deltaObserved: 0,
+        svgPublished: false,
+        notes: `Immutable owner identity mismatch: ${sanitizedMsg}`,
+        error,
+      };
+    }
+
+    if (mode === 'baseline_only') {
+      return {
+        status: 'provider_failed',
+        incrementsEvaluated: 0,
+        xpAwarded: 0,
+        satietyAwarded: 0,
+        deltaObserved: 0,
+        svgPublished: false,
+        notes: `Baseline provider query failed: ${sanitizedMsg}. Baseline initialization skipped; zero ledger mutation.`,
+        error,
+      };
+    }
+
+    // If provider fails in runtime mode, accounting is skipped with zero ledger mutation.
     // Passive simulation proceeds independently (AC-19).
     let simSvgPublished = false;
     let simSavedGen: number | undefined;
@@ -261,7 +457,6 @@ export async function syncContributions(
   }
 
   // 4. Local Mutex Lock Acquisition
-  const paths = getStatePaths(baseDir);
   const releaseLock = isDryRun ? null : await acquireLock(paths.lockPath);
 
   try {
@@ -279,15 +474,92 @@ export async function syncContributions(
     // 6. Strict Pristine Predicate vs. Established Identity Verification
     const isPristine = isPristineContributionLedger(
       state.contributions,
-      snapshot2Day.ownerDatabaseId
+      expectedOwnerDatabaseId ?? snapshot2Day.ownerDatabaseId
     );
 
     const isBaselineCompleted =
       state.contributions.installationBaseline?.completed === true;
 
-    if (!isPristine && isBaselineCompleted) {
+    if (mode === 'runtime') {
+      if (!isBaselineCompleted) {
+        return {
+          status: 'baseline_missing',
+          incrementsEvaluated: 0,
+          xpAwarded: 0,
+          satietyAwarded: 0,
+          deltaObserved: 0,
+          svgPublished: false,
+          notes: 'Installation baseline has not been established. Runtime synchronization cannot proceed until explicit one-time baseline initialization is performed.',
+          error: new MissingBaselineError(),
+        };
+      }
+      if (!state.contributions.ownerDatabaseId || state.contributions.ownerDatabaseId <= 0) {
+        return {
+          status: 'integrity_failed',
+          incrementsEvaluated: 0,
+          xpAwarded: 0,
+          satietyAwarded: 0,
+          deltaObserved: 0,
+          svgPublished: false,
+          notes: 'Established contribution ledger is missing immutable numeric ownerDatabaseId. Accounting aborted.',
+          error: new IdentityMismatchError('Missing established ownerDatabaseId in contribution ledger.'),
+        };
+      }
+      if (expectedOwnerDatabaseId && state.contributions.ownerDatabaseId !== expectedOwnerDatabaseId) {
+        return {
+          status: 'integrity_failed',
+          incrementsEvaluated: 0,
+          xpAwarded: 0,
+          satietyAwarded: 0,
+          deltaObserved: 0,
+          svgPublished: false,
+          notes: `Immutable owner ID mismatch: snapshot ownerDatabaseId (${snapshot2Day.ownerDatabaseId}) does not match expected (${expectedOwnerDatabaseId}). Synchronization aborted.`,
+          error: new IdentityMismatchError(
+            `Established ledger ownerDatabaseId (${state.contributions.ownerDatabaseId}) does not match expected ownerDatabaseId (${expectedOwnerDatabaseId}).`
+          ),
+        };
+      }
       // Established ledger: verify immutable numeric database ID
       verifyOwnerIdentity(snapshot2Day.today, state.contributions.ownerDatabaseId);
+    } else if (mode === 'baseline_only') {
+      if (isBaselineCompleted) {
+        return {
+          status: 'baseline_refused',
+          incrementsEvaluated: 0,
+          xpAwarded: 0,
+          satietyAwarded: 0,
+          deltaObserved: 0,
+          svgPublished: false,
+          notes: 'Installation baseline has already been established and cannot be overwritten.',
+          error: new BaselineAlreadyEstablishedError(),
+        };
+      }
+      if (expectedOwnerDatabaseId && snapshot2Day.ownerDatabaseId !== expectedOwnerDatabaseId) {
+        return {
+          status: 'integrity_failed',
+          incrementsEvaluated: 0,
+          xpAwarded: 0,
+          satietyAwarded: 0,
+          deltaObserved: 0,
+          svgPublished: false,
+          notes: `Immutable owner ID mismatch: snapshot ownerDatabaseId (${snapshot2Day.ownerDatabaseId}) does not match expected (${expectedOwnerDatabaseId}). Baseline initialization aborted.`,
+          error: new IdentityMismatchError(
+            `Queried GitHub databaseId (${snapshot2Day.ownerDatabaseId}) does not match expected ownerDatabaseId (${expectedOwnerDatabaseId}).`
+          ),
+        };
+      }
+      if (!isPristine) {
+        return {
+          status: 'integrity_failed',
+          incrementsEvaluated: 0,
+          xpAwarded: 0,
+          satietyAwarded: 0,
+          deltaObserved: 0,
+          svgPublished: false,
+          notes: 'Contribution ledger is not in a valid pristine state (partially initialized or corrupt). Baseline initialization refused.',
+          error: new Error('Contribution ledger is not in a valid pristine state.'),
+        };
+      }
     }
 
     // 7. Deterministic Contribution Reconciliation
@@ -301,7 +573,7 @@ export async function syncContributions(
     });
 
     let syncStatus: ContributionSyncStatus;
-    if (!isBaselineCompleted) {
+    if (mode === 'baseline_only') {
       syncStatus = 'baseline_established';
     } else if (
       reconciliation.deltaObserved > 0 ||
@@ -315,7 +587,7 @@ export async function syncContributions(
     // 8. Inactivity Simulation Transitions Coordination
     let finalPetState: PetStateDocument = reconciliation.nextPetState;
     let vitalsChanged = false;
-    if (!options.skipSimulation) {
+    if (!options.skipSimulation && mode !== 'baseline_only') {
       const simResult = applyInactivitySimulation(finalPetState, nowMs);
       finalPetState = simResult.nextPetState;
       vitalsChanged =
@@ -384,7 +656,7 @@ export async function syncContributions(
 
     // 10. Post-Commit Lock-Held SVG Asset Publication (AC-26, AC-31)
     let svgPublished = false;
-    if (!isDryRun) {
+    if (!isDryRun && mode !== 'baseline_only') {
       try {
         const pubResult = await publishPetSvg({ baseDir });
         svgPublished = pubResult.svgChanged || pubResult.readmeChanged;
@@ -443,7 +715,8 @@ export async function syncContributions(
       error.name === 'LedgerIntegrityError' ||
       error.name === 'CorruptOrdinalError' ||
       error.name === 'CorruptHwmError' ||
-      error.name === 'IdentityMismatchError';
+      error.name === 'IdentityMismatchError' ||
+      error.message.includes('validation failed');
 
     const isConflict =
       error.name === 'ConcurrencyLockError' ||
