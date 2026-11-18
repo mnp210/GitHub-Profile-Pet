@@ -1,0 +1,69 @@
+name: Pet Baseline Initialization
+
+# Dedicated, manual-only baseline initialization workflow (Phase 3C2.3-B2-R3)
+#
+# Security & Isolation Guarantees:
+# 1. Manual-Only: strictly workflow_dispatch; no schedule, push, issue, pull-request, or automatic triggers.
+# 2. Least Privilege: minimal permissions (contents: write) for fast-forward baseline publication.
+# 3. Multi-Clause Authorization Policy:
+#    - Validates repository identity (github.repository == 'mnp210/GitHub-Profile-Pet')
+#    - Validates repository owner (github.repository_owner == 'mnp210')
+#    - Validates triggering actor (github.actor == 'mnp210')
+#    - Rejects fork executions (!github.event.repository.fork)
+#    - Requires explicit confirmation input (inputs.confirm_owner == 'mnp210')
+# 4. Total Isolation from Ordinary Publication:
+#    - Invokes dedicated scripts/establish-baseline.ts (not ordinary publisher)
+#    - Zero pet vital simulation (vitals decay is bypassed during baseline)
+#    - Zero actions processed
+#    - Zero retroactive rewards awarded
+#    - Zero SVG asset publication (public/pet.svg is never touched)
+#    - Zero README.md mutation
+#    - Restricts staged manifest strictly to the 3 state documents
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_owner:
+        description: 'Type "mnp210" to authorize one-time baseline establishment'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pet-runtime-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  establish-baseline:
+    name: Establish Contribution Baseline
+    if: >
+      github.repository == 'mnp210/GitHub-Profile-Pet' &&
+      github.repository_owner == 'mnp210' &&
+      (github.repository_owner_id == '298821706' || github.repository_owner_id == 298821706) &&
+      github.actor == 'mnp210' &&
+      (github.actor_id == '298821706' || github.actor_id == 298821706) &&
+      !github.event.repository.fork &&
+      github.event.inputs.confirm_owner == 'mnp210'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run Dedicated Baseline Pipeline
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PET_OWNER_LOGIN: 'mnp210'
+          PET_OWNER_DATABASE_ID: '298821706'
+        run: |
+          node --experimental-strip-types scripts/establish-baseline.ts --ref "${{ github.ref_name }}"
