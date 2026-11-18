@@ -9,7 +9,11 @@
  *   node --experimental-strip-types scripts/publish-pipeline.ts [--ref <refName>] [--remote <remote>] [--dry-run] [--skip-push] [--base-dir <dir>]
  */
 
-import { runPublicationPipeline } from '../src/features/pet-engine/publication/index.ts';
+import {
+  runPublicationPipeline,
+  executeBaselinePipeline,
+  type SyncExecutionMode,
+} from '../src/features/pet-engine/publication/index.ts';
 
 export function parseArgs(args: string[]): {
   refName?: string;
@@ -17,6 +21,8 @@ export function parseArgs(args: string[]): {
   dryRun: boolean;
   skipPush: boolean;
   baseDir?: string;
+  baselineOnly: boolean;
+  expectedOwnerDatabaseId?: number;
   help: boolean;
 } {
   let refName: string | undefined;
@@ -24,6 +30,8 @@ export function parseArgs(args: string[]): {
   let dryRun = false;
   let skipPush = false;
   let baseDir: string | undefined;
+  let baselineOnly = false;
+  let expectedOwnerDatabaseId: number | undefined;
   let help = false;
 
   for (let i = 0; i < args.length; i++) {
@@ -40,26 +48,74 @@ export function parseArgs(args: string[]): {
       dryRun = true;
     } else if (arg === '--skip-push') {
       skipPush = true;
+    } else if (arg === '--baseline-only') {
+      baselineOnly = true;
+    } else if (arg === '--owner-id' && i + 1 < args.length) {
+      const parsedId = parseInt(args[++i], 10);
+      if (!isNaN(parsedId)) {
+        expectedOwnerDatabaseId = parsedId;
+      }
+    } else if (arg === '--mode' && i + 1 < args.length) {
+      const modeVal = args[++i];
+      if (modeVal === 'baseline_only' || modeVal === 'baseline-only') {
+        baselineOnly = true;
+      }
     }
   }
 
-  return { refName, gitRemote, dryRun, skipPush, baseDir, help };
+  return { refName, gitRemote, dryRun, skipPush, baseDir, baselineOnly, expectedOwnerDatabaseId, help };
 }
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
 
   if (options.help) {
-    console.log('Usage: node --experimental-strip-types scripts/publish-pipeline.ts [--ref <refName>] [--remote <remote>] [--dry-run] [--skip-push] [--base-dir <dir>]');
+    console.log('Usage: node --experimental-strip-types scripts/publish-pipeline.ts [--ref <refName>] [--remote <remote>] [--dry-run] [--skip-push] [--base-dir <dir>] [--owner-id <id>] [--baseline-only]');
     process.exit(0);
   }
 
+  const mode: SyncExecutionMode = options.baselineOnly ? 'baseline_only' : 'runtime';
+
   console.log('[publish-pipeline] Initializing safe Git publication pipeline...');
+  console.log(`[publish-pipeline] Execution Mode: ${mode.toUpperCase()}`);
+  if (options.expectedOwnerDatabaseId) {
+    console.log(`[publish-pipeline] Expected Owner Database ID: ${options.expectedOwnerDatabaseId}`);
+  }
   if (options.dryRun) {
     console.log('[publish-pipeline] Mode: DRY RUN (no disk writes or publication)');
   }
   if (options.skipPush) {
     console.log('[publish-pipeline] Option: SKIP PUSH (commit locally, skip remote push)');
+  }
+
+  if (options.baselineOnly) {
+    console.log('[publish-pipeline] Routing to isolated baseline establishment pipeline...');
+    const result = await executeBaselinePipeline({
+      refName: options.refName,
+      gitRemote: options.gitRemote,
+      dryRun: options.dryRun,
+      skipPush: options.skipPush,
+      baseDir: options.baseDir,
+      expectedOwnerDatabaseId: options.expectedOwnerDatabaseId,
+    });
+
+    if (!result.success) {
+      console.error(`::error::[publish-pipeline] Baseline establishment failed (${result.status}): ${result.details}`);
+      if (result.error?.stack) {
+        console.error(result.error.stack);
+      }
+      process.exit(1);
+    }
+
+    console.log(`[publish-pipeline] Status: ${result.status.toUpperCase()}`);
+    console.log(`[publish-pipeline] Details: ${result.details}`);
+    if (result.commitSha) {
+      console.log(`[publish-pipeline] Commit SHA: ${result.commitSha}`);
+    }
+    if (result.destinationRef) {
+      console.log(`[publish-pipeline] Destination Ref: ${result.destinationRef}`);
+    }
+    return;
   }
 
   const result = await runPublicationPipeline({
@@ -68,6 +124,8 @@ async function main() {
     dryRun: options.dryRun,
     skipPush: options.skipPush,
     baseDir: options.baseDir,
+    mode,
+    expectedOwnerDatabaseId: options.expectedOwnerDatabaseId,
   });
 
   if (!result.success) {
