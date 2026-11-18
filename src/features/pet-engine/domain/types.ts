@@ -117,11 +117,27 @@ export interface ProcessedRequestRegistry {
   unresolvedGaps: number[];
 }
 
+export interface ActionFeedbackRecord {
+  issueNumber: number;
+  requestId: string;
+  actionType?: CareActionType;
+  status: 'accepted' | 'rejected' | 'quarantined' | 'duplicate' | 'deferred';
+  generation: number;
+  completedAt: string;
+  feedbackDelivered: boolean;
+  feedbackMarker: string;
+  feedbackBody: string;
+  targetLabel?: string;
+  deliveredAt?: string;
+  closureConfirmed?: boolean;
+}
+
 export interface ActionLedgerDocument {
   schemaVersion: number;
   generation: number;
   recentActions: RecentActionEntry[];
   processedRequestRegistry: ProcessedRequestRegistry;
+  pendingFeedback?: ActionFeedbackRecord[];
 }
 
 export type ClassificationType =

@@ -158,4 +158,6 @@ export interface InboxProcessingOptions {
   maxCommentPages?: number;
   timeBudgetMs?: number;
   existingLock?: LockReleaseFn;
+  deferFeedback?: boolean;
+  nowMs?: number;
 }

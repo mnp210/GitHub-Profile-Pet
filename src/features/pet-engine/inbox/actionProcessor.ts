@@ -15,20 +15,30 @@ import {
   loadRepositoryState,
   recoverRepositoryState,
   saveRepositoryState,
+  type CompleteRepositoryState,
+  type LockReleaseFn,
 } from '../persistence/stateRepository.ts';
+import { isValidIsoDateString } from '../validation/stateValidator.ts';
 import { publishPetSvg } from '../publication/index.ts';
 import { CorruptedCheckpointError } from '../simulation/simulationCheckpoint.ts';
 import { executeCareAction } from '../transitions/careTransitions.ts';
 import { applyInactivitySimulation } from '../transitions/simulationTransitions.ts';
-import type { CareActionType, PetStateDocument, TransitionOutcome } from '../domain/types.ts';
+import type {
+  ActionFeedbackRecord,
+  CareActionType,
+  PetStateDocument,
+  TransitionOutcome,
+} from '../domain/types.ts';
 import {
   deliverFeedbackWithConfirmation,
   getActionFeedbackMarker,
+  inspectFeedbackStatus,
   normalizeBotLogin,
 } from './feedbackMarker.ts';
 import { DefaultGitHubInboxClient } from './gitHubClient.ts';
 import { scanPendingActions } from './inboxScanner.ts';
 import type {
+  ActionExecutionStatus,
   ActionParseResult,
   ActionProcessOutcome,
   GitHubInboxClient,
@@ -139,6 +149,7 @@ export async function processInbox(
   const maxIssuesPerBatch = options.maxIssuesPerBatch ?? 50;
   const startTime = Date.now();
   const deadlineMs = startTime + timeBudgetMs;
+  const nowMs = options.nowMs ?? startTime;
 
   const paths = getStatePaths(baseDir);
   const ownsLock = !options.existingLock;
@@ -179,6 +190,60 @@ export async function processInbox(
   let stateModified = false;
   let savedGeneration: number | undefined;
   let hasMorePending = scan.hasMorePending ?? false;
+
+  async function handleActionFeedback(params: {
+    issueNumber: number;
+    actionType?: CareActionType;
+    status: ActionExecutionStatus;
+    commentBody: string;
+    marker: string;
+    targetLabel: string;
+  }): Promise<void> {
+    state.actions.pendingFeedback = state.actions.pendingFeedback ?? [];
+    const record: ActionFeedbackRecord = {
+      issueNumber: params.issueNumber,
+      requestId: `issue-${params.issueNumber}`,
+      actionType: params.actionType,
+      status: params.status,
+      generation: state.generation,
+      completedAt: new Date(nowMs).toISOString(),
+      feedbackDelivered: false,
+      feedbackMarker: params.marker,
+      feedbackBody: params.commentBody,
+      targetLabel: params.targetLabel,
+    };
+
+    const existingIdx = state.actions.pendingFeedback.findIndex((p) => p.issueNumber === params.issueNumber);
+    if (existingIdx >= 0) {
+      state.actions.pendingFeedback[existingIdx] = record;
+    } else {
+      state.actions.pendingFeedback.push(record);
+    }
+
+    if (!options.deferFeedback) {
+      const feedbackResult = await deliverFeedbackWithConfirmation({
+        client,
+        repository,
+        issueNumber: params.issueNumber,
+        commentBody: params.commentBody,
+        expectedMarker: params.marker,
+        botLogin: options.botLogin,
+        maxPages: options.maxCommentPages,
+        deadlineMs,
+      });
+
+      if (feedbackResult.delivered) {
+        try {
+          await client.closeIssue(repository, params.issueNumber, params.targetLabel);
+          record.feedbackDelivered = true;
+          record.closureConfirmed = true;
+          record.deliveredAt = new Date(nowMs).toISOString();
+        } catch {
+          // If closure throws, do not mark complete
+        }
+      }
+    }
+  }
 
   async function persistCurrentState(): Promise<void> {
     const nextGen = state.generation + 1;
@@ -227,26 +292,17 @@ export async function processInbox(
         levelsGained: 0,
       });
 
-      // Feedback recovery: only comment if matching bot feedback has not yet been delivered
       const marker = getActionFeedbackMarker(item.issueNumber);
       const commentBody = `ℹ️ This pet care action was already processed and committed in a previous transaction.\n\n${marker}`;
 
-      const feedbackResult = await deliverFeedbackWithConfirmation({
-        client,
-        repository,
+      await handleActionFeedback({
         issueNumber: item.issueNumber,
+        actionType: item.actionType,
+        status: 'duplicate',
         commentBody,
-        expectedMarker: marker,
-        botLogin: options.botLogin,
-        maxPages: options.maxCommentPages,
-        deadlineMs,
+        marker,
+        targetLabel: 'pet-action:completed',
       });
-
-      if (feedbackResult.delivered) {
-        await client
-          .closeIssue(repository, item.issueNumber, 'pet-action:completed')
-          .catch(() => {});
-      }
       continue;
     }
 
@@ -260,7 +316,6 @@ export async function processInbox(
       state.actions.processedRequestRegistry = advanceHighWaterMark(
         state.actions.processedRequestRegistry
       );
-      await persistCurrentState();
 
       outcomes.push({
         issueNumber: item.issueNumber,
@@ -275,22 +330,14 @@ export async function processInbox(
       const marker = getActionFeedbackMarker(item.issueNumber);
       const commentBody = `❌ Pull requests cannot be processed as pet care actions.\n\n${marker}`;
 
-      const feedbackResult = await deliverFeedbackWithConfirmation({
-        client,
-        repository,
+      await handleActionFeedback({
         issueNumber: item.issueNumber,
+        status: 'rejected',
         commentBody,
-        expectedMarker: marker,
-        botLogin: options.botLogin,
-        maxPages: options.maxCommentPages,
-        deadlineMs,
+        marker,
+        targetLabel: 'pet-action:invalid',
       });
-
-      if (feedbackResult.delivered) {
-        await client
-          .closeIssue(repository, item.issueNumber, 'pet-action:invalid')
-          .catch(() => {});
-      }
+      await persistCurrentState();
       continue;
     }
 
@@ -304,7 +351,6 @@ export async function processInbox(
       state.actions.processedRequestRegistry = advanceHighWaterMark(
         state.actions.processedRequestRegistry
       );
-      await persistCurrentState();
 
       outcomes.push({
         issueNumber: item.issueNumber,
@@ -320,22 +366,15 @@ export async function processInbox(
       const marker = getActionFeedbackMarker(item.issueNumber);
       const commentBody = `⚠️ **Action Quarantined:** This issue was edited after its initial submission. To guarantee game state integrity and prevent payload tampering, edited actions are not processed.\n\n${marker}`;
 
-      const feedbackResult = await deliverFeedbackWithConfirmation({
-        client,
-        repository,
+      await handleActionFeedback({
         issueNumber: item.issueNumber,
+        actionType: item.actionType,
+        status: 'quarantined',
         commentBody,
-        expectedMarker: marker,
-        botLogin: options.botLogin,
-        maxPages: options.maxCommentPages,
-        deadlineMs,
+        marker,
+        targetLabel: 'pet-action:quarantine',
       });
-
-      if (feedbackResult.delivered) {
-        await client
-          .closeIssue(repository, item.issueNumber, 'pet-action:quarantine')
-          .catch(() => {});
-      }
+      await persistCurrentState();
       continue;
     }
 
@@ -349,7 +388,6 @@ export async function processInbox(
       state.actions.processedRequestRegistry = advanceHighWaterMark(
         state.actions.processedRequestRegistry
       );
-      await persistCurrentState();
 
       outcomes.push({
         issueNumber: item.issueNumber,
@@ -365,22 +403,15 @@ export async function processInbox(
       const marker = getActionFeedbackMarker(item.issueNumber);
       const commentBody = `❌ ${item.rejectionReason ?? 'Invalid pet action submission.'}\n\n${marker}`;
 
-      const feedbackResult = await deliverFeedbackWithConfirmation({
-        client,
-        repository,
+      await handleActionFeedback({
         issueNumber: item.issueNumber,
+        actionType: item.actionType,
+        status: 'rejected',
         commentBody,
-        expectedMarker: marker,
-        botLogin: options.botLogin,
-        maxPages: options.maxCommentPages,
-        deadlineMs,
+        marker,
+        targetLabel: item.targetLabel ?? 'pet-action:invalid',
       });
-
-      if (feedbackResult.delivered) {
-        await client
-          .closeIssue(repository, item.issueNumber, item.targetLabel ?? 'pet-action:invalid')
-          .catch(() => {});
-      }
+      await persistCurrentState();
       continue;
     }
 
@@ -401,7 +432,6 @@ export async function processInbox(
       state.actions.processedRequestRegistry = advanceHighWaterMark(
         state.actions.processedRequestRegistry
       );
-      await persistCurrentState();
 
       const rejMessage = `Unauthorized actor (@${item.authorLogin}, id: ${item.authorId}). Only the designated repository trainer can submit care actions.`;
       const rejOutcome: ActionProcessOutcome = {
@@ -423,22 +453,15 @@ export async function processInbox(
         reaction: rejOutcome.reactionText,
       })}\n\n${marker}`;
 
-      const feedbackResult = await deliverFeedbackWithConfirmation({
-        client,
-        repository,
+      await handleActionFeedback({
         issueNumber: issueNum,
+        actionType,
+        status: 'rejected',
         commentBody,
-        expectedMarker: marker,
-        botLogin: options.botLogin,
-        maxPages: options.maxCommentPages,
-        deadlineMs,
+        marker,
+        targetLabel: 'pet-action:unauthorized',
       });
-
-      if (feedbackResult.delivered) {
-        await client
-          .closeIssue(repository, issueNum, 'pet-action:unauthorized')
-          .catch(() => {});
-      }
+      await persistCurrentState();
       continue;
     }
 
@@ -476,7 +499,6 @@ export async function processInbox(
       state.actions.processedRequestRegistry = advanceHighWaterMark(
         state.actions.processedRequestRegistry
       );
-      await persistCurrentState();
 
       const accOutcome: ActionProcessOutcome = {
         issueNumber: issueNum,
@@ -513,22 +535,15 @@ export async function processInbox(
         mood: transition.nextPetState.mood,
       })}\n\n${marker}`;
 
-      const feedbackResult = await deliverFeedbackWithConfirmation({
-        client,
-        repository,
+      await handleActionFeedback({
         issueNumber: issueNum,
+        actionType,
+        status: 'accepted',
         commentBody,
-        expectedMarker: marker,
-        botLogin: options.botLogin,
-        maxPages: options.maxCommentPages,
-        deadlineMs,
+        marker,
+        targetLabel: 'pet-action:completed',
       });
-
-      if (feedbackResult.delivered) {
-        await client
-          .closeIssue(repository, issueNum, 'pet-action:completed')
-          .catch(() => {});
-      }
+      await persistCurrentState();
     } else {
       // Rejection: Cooldown, Full Hunger, Low Energy, Stale
       rejectedCount++;
@@ -539,7 +554,6 @@ export async function processInbox(
       state.actions.processedRequestRegistry = advanceHighWaterMark(
         state.actions.processedRequestRegistry
       );
-      await persistCurrentState();
 
       const rejOutcome: ActionProcessOutcome = {
         issueNumber: issueNum,
@@ -560,22 +574,15 @@ export async function processInbox(
         reaction: transition.outcome.reaction,
       })}\n\n${marker}`;
 
-      const feedbackResult = await deliverFeedbackWithConfirmation({
-        client,
-        repository,
+      await handleActionFeedback({
         issueNumber: issueNum,
+        actionType,
+        status: 'rejected',
         commentBody,
-        expectedMarker: marker,
-        botLogin: options.botLogin,
-        maxPages: options.maxCommentPages,
-        deadlineMs,
+        marker,
+        targetLabel: 'pet-action:rejected',
       });
-
-      if (feedbackResult.delivered) {
-        await client
-          .closeIssue(repository, issueNum, 'pet-action:rejected')
-          .catch(() => {});
-      }
+      await persistCurrentState();
     }
   }
 
@@ -602,6 +609,325 @@ export async function processInbox(
       await releaseLock().catch(() => {});
     }
   }
+}
+
+export const FEEDBACK_RETENTION_PERIOD_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
+
+export interface CompactFeedbackOptions {
+  nowMs?: number;
+  retentionPeriodMs?: number;
+}
+
+export interface CompactFeedbackResult {
+  prunedCount: number;
+  retainedCount: number;
+  records: ActionFeedbackRecord[];
+}
+
+const VALID_PRUNING_STATUSES = new Set(['accepted', 'rejected', 'quarantined', 'duplicate']);
+
+/**
+ * Checks whether an ActionFeedbackRecord is eligible for safe pruning.
+ *
+ * Strict Pruning Invariant (R2-A):
+ * A record is eligible if and only if ALL conditions hold:
+ * 1. feedbackDelivered === true
+ * 2. closureConfirmed === true
+ * 3. status is present and is a valid terminal status ('accepted' | 'rejected' | 'quarantined' | 'duplicate')
+ * 4. deliveredAt exists, is a string, and is a valid ISO date-time string (NO fallback to completedAt)
+ * 5. Date.parse(deliveredAt) produces a valid numeric timestamp
+ * 6. nowMs - deliveredAtMs >= retentionPeriodMs (boundary rule: >= 7 days, inclusive at 7-day boundary)
+ *
+ * Fails closed: All other records (pending, deferred, missing closure confirmation, missing deliveredAt,
+ * invalid deliveredAt, corrupt) return false and are NEVER pruned.
+ */
+export function isFeedbackRecordEligibleForPruning(
+  record: ActionFeedbackRecord,
+  nowMs: number,
+  retentionPeriodMs: number = FEEDBACK_RETENTION_PERIOD_MS
+): boolean {
+  if (typeof record !== 'object' || record === null) {
+    return false;
+  }
+
+  // 1. Must be durably marked as delivered
+  if (record.feedbackDelivered !== true) {
+    return false;
+  }
+
+  // 2. Closure must be confirmed
+  if (record.closureConfirmed !== true) {
+    return false;
+  }
+
+  // 3. Must have a valid terminal status (not deferred, missing, or unknown)
+  if (
+    !record.status ||
+    typeof record.status !== 'string' ||
+    record.status === 'deferred' ||
+    !VALID_PRUNING_STATUSES.has(record.status)
+  ) {
+    return false;
+  }
+
+  // 4. Must have a valid delivery timestamp (deliveredAt is strictly required; NO fallback to completedAt)
+  if (
+    !record.deliveredAt ||
+    typeof record.deliveredAt !== 'string' ||
+    !isValidIsoDateString(record.deliveredAt)
+  ) {
+    return false;
+  }
+
+  const deliveredAtMs = Date.parse(record.deliveredAt);
+  if (Number.isNaN(deliveredAtMs)) {
+    return false;
+  }
+
+  // 5. Explicit retention boundary check: nowMs - deliveredAtMs >= retentionPeriodMs
+  const ageMs = nowMs - deliveredAtMs;
+  return ageMs >= retentionPeriodMs;
+}
+
+/**
+ * Deterministically compacts pendingFeedback records according to the 7-day retention policy.
+ * Preserves all unresolved, unconfirmed, deferred, or unconfirmed-closure records.
+ * Permanent deduplication in processedRequestRegistry is completely unaffected.
+ */
+export function compactPendingFeedback(
+  records: ActionFeedbackRecord[] | undefined,
+  options: CompactFeedbackOptions = {}
+): CompactFeedbackResult {
+  if (!records || !Array.isArray(records)) {
+    return { prunedCount: 0, retainedCount: 0, records: [] };
+  }
+
+  const nowMs = options.nowMs ?? Date.now();
+  const retentionPeriodMs = options.retentionPeriodMs ?? FEEDBACK_RETENTION_PERIOD_MS;
+
+  const retained: ActionFeedbackRecord[] = [];
+  let prunedCount = 0;
+
+  for (const record of records) {
+    if (isFeedbackRecordEligibleForPruning(record, nowMs, retentionPeriodMs)) {
+      prunedCount++;
+    } else {
+      retained.push(record);
+    }
+  }
+
+  return {
+    prunedCount,
+    retainedCount: retained.length,
+    records: retained,
+  };
+}
+
+export interface DeliverPendingFeedbackOptions {
+  baseDir?: string;
+  repository?: string;
+  client?: GitHubInboxClient;
+  botLogin?: string;
+  maxCommentPages?: number;
+  deadlineMs?: number;
+  records?: ActionFeedbackRecord[];
+  nowMs?: number;
+  persist?: boolean;
+  autoCompact?: boolean;
+  retentionPeriodMs?: number;
+}
+
+export interface DeliverPendingFeedbackResult {
+  deliveredCount: number;
+  failedCount: number;
+  prunedCount: number;
+  stateModified: boolean;
+  results: Array<{ issueNumber: number; delivered: boolean; error?: string }>;
+}
+
+/**
+ * Recovers and delivers pending feedback comments and issue closures for durably committed actions.
+ * Guarantees idempotency via deterministic bot marker inspection.
+ * Durably persists completion status and runs bounded compaction.
+ */
+export async function deliverPendingFeedback(
+  options: DeliverPendingFeedbackOptions = {}
+): Promise<DeliverPendingFeedbackResult> {
+  const baseDir = options.baseDir ?? process.cwd();
+  const repository = options.repository ?? process.env.GITHUB_REPOSITORY ?? 'owner/github-profile-pet';
+  const client: GitHubInboxClient =
+    options.client ?? new DefaultGitHubInboxClient(process.env.GITHUB_TOKEN || '');
+  const nowMs = options.nowMs ?? Date.now();
+  const paths = getStatePaths(baseDir);
+
+  let targetRecords: ActionFeedbackRecord[] = [];
+  let releaseLock: LockReleaseFn | undefined;
+  let loadedState: CompleteRepositoryState | undefined;
+  let stateModified = false;
+
+  if (options.records) {
+    targetRecords = options.records.filter((r) => !r.feedbackDelivered || !r.closureConfirmed);
+  } else {
+    try {
+      releaseLock = await acquireLock(paths.lockPath);
+      await recoverRepositoryState(baseDir, { lockOwnerId: releaseLock.ownerId }).catch(() => {});
+      loadedState = await loadRepositoryState(baseDir, { lockOwnerId: releaseLock.ownerId });
+      targetRecords = (loadedState.actions.pendingFeedback ?? []).filter(
+        (r) => !r.feedbackDelivered || !r.closureConfirmed
+      );
+    } catch {
+      if (releaseLock) await releaseLock().catch(() => {});
+      return { deliveredCount: 0, failedCount: 0, prunedCount: 0, stateModified: false, results: [] };
+    }
+  }
+
+  let deliveredCount = 0;
+  let failedCount = 0;
+  let prunedCount = 0;
+  const results: Array<{ issueNumber: number; delivered: boolean; error?: string }> = [];
+
+  try {
+    for (const record of targetRecords) {
+      try {
+        // Step 1: Inspect existing comments with exact bot login and deterministic marker
+        const inspection = await inspectFeedbackStatus({
+          client,
+          repository,
+          issueNumber: record.issueNumber,
+          expectedMarker: record.feedbackMarker,
+          expectedBotLogin: options.botLogin,
+          maxPages: options.maxCommentPages,
+          deadlineMs: options.deadlineMs,
+        });
+
+        // Fail-closed on incomplete or ambiguous scans
+        if (inspection.status === 'incomplete_unknown') {
+          failedCount++;
+          results.push({
+            issueNumber: record.issueNumber,
+            delivered: false,
+            error: inspection.reason ?? 'Comment inspection was incomplete or ambiguous',
+          });
+          continue;
+        }
+
+        // Step 2: Deliver comment if absent across entire history
+        if (inspection.status !== 'confirmed') {
+          const delivery = await deliverFeedbackWithConfirmation({
+            client,
+            repository,
+            issueNumber: record.issueNumber,
+            commentBody: record.feedbackBody,
+            expectedMarker: record.feedbackMarker,
+            botLogin: options.botLogin,
+            maxPages: options.maxCommentPages,
+            deadlineMs: options.deadlineMs,
+          });
+
+          if (!delivery.delivered) {
+            failedCount++;
+            results.push({
+              issueNumber: record.issueNumber,
+              delivered: false,
+              error: delivery.reason ?? 'Failed to deliver feedback comment',
+            });
+            continue;
+          }
+        }
+
+        // Step 3: Issue closure and labeling
+        try {
+          await client.closeIssue(repository, record.issueNumber, record.targetLabel);
+        } catch (closeErr) {
+          failedCount++;
+          results.push({
+            issueNumber: record.issueNumber,
+            delivered: false,
+            error: `Issue closure failed: ${(closeErr as Error).message}`,
+          });
+          continue;
+        }
+
+        // Step 4: Durable delivery completion confirmation
+        // Only mark complete when BOTH comment confirmed AND issue closure confirmed
+        record.feedbackDelivered = true;
+        record.closureConfirmed = true;
+        record.deliveredAt = new Date(nowMs).toISOString();
+        deliveredCount++;
+        stateModified = true;
+        results.push({ issueNumber: record.issueNumber, delivered: true });
+      } catch (err: unknown) {
+        failedCount++;
+        results.push({
+          issueNumber: record.issueNumber,
+          delivered: false,
+          error: (err as Error).message,
+        });
+      }
+    }
+
+    // Step 5: Bounded retention compaction (F-B0-02)
+    if (options.autoCompact !== false) {
+      const recordsToCompact = loadedState
+        ? (loadedState.actions.pendingFeedback ?? [])
+        : (options.records ?? []);
+
+      if (recordsToCompact.length > 0) {
+        const compactRes = compactPendingFeedback(recordsToCompact, {
+          nowMs,
+          retentionPeriodMs: options.retentionPeriodMs,
+        });
+
+        if (compactRes.prunedCount > 0) {
+          prunedCount = compactRes.prunedCount;
+          stateModified = true;
+          if (loadedState) {
+            loadedState.actions.pendingFeedback = compactRes.records;
+          } else if (options.records) {
+            options.records.length = 0;
+            options.records.push(...compactRes.records);
+          }
+        }
+      }
+    }
+
+    // Step 6: Safe state persistence under lock
+    if (stateModified && options.persist !== false) {
+      if (!loadedState) {
+        try {
+          releaseLock = await acquireLock(paths.lockPath);
+          await recoverRepositoryState(baseDir, { lockOwnerId: releaseLock.ownerId });
+          loadedState = await loadRepositoryState(baseDir, { lockOwnerId: releaseLock.ownerId });
+          if (options.records) {
+            loadedState.actions.pendingFeedback = options.records;
+          }
+        } catch {
+          // If acquiring lock or loading state fails, return current results
+        }
+      }
+
+      if (loadedState) {
+        await saveRepositoryState(
+          baseDir,
+          {
+            pet: loadedState.pet,
+            contributions: loadedState.contributions,
+            actions: loadedState.actions,
+          },
+          {
+            existingLock: releaseLock,
+            expectedGeneration: loadedState.generation,
+          }
+        );
+      }
+    }
+  } finally {
+    if (releaseLock) {
+      await releaseLock().catch(() => {});
+    }
+  }
+
+  return { deliveredCount, failedCount, prunedCount, stateModified, results };
 }
 
 export interface CareActionTransactionOptions {
