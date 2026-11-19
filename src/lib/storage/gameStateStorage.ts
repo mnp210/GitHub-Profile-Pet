@@ -1,6 +1,6 @@
-import { PetState } from '@/types/pet';
-import { INITIAL_PET_STATE } from '@/constants/petData';
-import { ActionHistoryEntry, ActionType } from '@/features/gamification/rewards';
+import type { PetState } from '../../types/pet.ts';
+import { INITIAL_PET_STATE } from '../../constants/petData.ts';
+import type { ActionHistoryEntry, ActionType } from '../../features/gamification/rewards.ts';
 
 const LOCAL_STORAGE_PET_KEY = 'gh_pet_game_state_v1';
 const LOCAL_STORAGE_HISTORY_KEY = 'gh_pet_action_history_v1';
@@ -80,25 +80,32 @@ export function saveLocalGameState(pet: PetState, history: ActionHistoryEntry[])
 
 /**
  * Loads connected GitHub repository configuration.
+ * Note: Personal Access Tokens are NEVER loaded from localStorage to protect against credential leakage.
  */
 export function loadRepoConfig(): ConnectedRepoConfig {
   if (typeof window === 'undefined') {
     return { repo: '', syncToActions: false };
   }
 
+  // Security Hardening: Purge any legacy token from localStorage
+  try {
+    localStorage.removeItem(LOCAL_STORAGE_TOKEN_KEY);
+  } catch {
+    // Ignore storage errors in restricted contexts
+  }
+
   const repo = localStorage.getItem(LOCAL_STORAGE_REPO_KEY) || '';
-  const token = localStorage.getItem(LOCAL_STORAGE_TOKEN_KEY) || '';
-  const syncToActions = repo.length > 0 && token.length > 0;
 
   return {
     repo,
-    token: token || undefined,
-    syncToActions,
+    token: undefined, // Purely in-memory per session
+    syncToActions: false,
   };
 }
 
 /**
  * Saves connected GitHub repository configuration.
+ * Note: Personal Access Tokens are NEVER written to localStorage.
  */
 export function saveRepoConfig(config: ConnectedRepoConfig): void {
   if (typeof window === 'undefined') return;
@@ -109,10 +116,11 @@ export function saveRepoConfig(config: ConnectedRepoConfig): void {
     localStorage.removeItem(LOCAL_STORAGE_REPO_KEY);
   }
 
-  if (config.token) {
-    localStorage.setItem(LOCAL_STORAGE_TOKEN_KEY, config.token.trim());
-  } else {
+  // Security Hardening: Never write PAT to localStorage
+  try {
     localStorage.removeItem(LOCAL_STORAGE_TOKEN_KEY);
+  } catch {
+    // Ignore storage errors in restricted contexts
   }
 }
 
@@ -237,6 +245,15 @@ export async function dispatchGitHubActionIssue(
     });
 
     if (!response.ok) {
+      if (response.status === 401) {
+        return { success: false, error: 'Authentication failed (HTTP 401): Invalid or expired personal access token.' };
+      }
+      if (response.status === 403) {
+        return { success: false, error: 'Permission denied (HTTP 403): Token lacks write permission or issues are disabled on this repository.' };
+      }
+      if (response.status === 404) {
+        return { success: false, error: `Repository not found or token lacks access (HTTP 404): ${cleanRepo}` };
+      }
       const errBody = await response.json().catch(() => ({}));
       return {
         success: false,
@@ -346,6 +363,15 @@ export async function updateRemoteReadme(
     });
 
     if (!response.ok) {
+      if (response.status === 401) {
+        return { success: false, error: 'Authentication failed (HTTP 401): Invalid or expired personal access token.' };
+      }
+      if (response.status === 403) {
+        return { success: false, error: 'Permission denied (HTTP 403): Token lacks write permission or issues are disabled on this repository.' };
+      }
+      if (response.status === 404) {
+        return { success: false, error: `Repository not found or token lacks access (HTTP 404): ${cleanRepo}` };
+      }
       const errBody = await response.json().catch(() => ({}));
       return {
         success: false,

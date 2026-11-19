@@ -18,7 +18,9 @@ import {
   type ActivityType,
   type ProcessActivityEventInput,
   type ProcessActivityResult,
+  type ActivityLedgerDocument,
 } from '../src/features/pet-engine/activity/index.ts';
+import type { PetStateDocument } from '../src/features/pet-engine/domain/types.ts';
 
 export const ACTIVITY_PUBLICATION_MANIFEST_PATHS = [
   'pet/state/pet.json',
@@ -75,6 +77,30 @@ interface GitHubReviewEvent {
 
 async function execGit(args: string[], cwd: string): Promise<{ stdout: string; stderr: string }> {
   return execFileAsync('git', args, { cwd });
+}
+
+async function pushWithRetry(targetRef: string, baseDir: string, maxAttempts = 4): Promise<void> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      console.log(`[GIT] Pushing fast-forward update to origin/${targetRef} (attempt ${attempt}/${maxAttempts})...`);
+      await execGit(['push', 'origin', `HEAD:${targetRef}`], baseDir);
+      console.log('[GIT] Push successful.');
+      return;
+    } catch (err) {
+      console.warn(`[GIT WARN] Push attempt ${attempt} failed: ${(err as Error).message}`);
+      if (attempt === maxAttempts) {
+        throw new Error(`Failed to push activity updates after ${maxAttempts} attempts: ${(err as Error).message}`);
+      }
+      console.log(`[GIT] Fetching and rebasing on latest origin/${targetRef}...`);
+      try {
+        await execGit(['fetch', 'origin', targetRef], baseDir);
+        await execGit(['rebase', `origin/${targetRef}`], baseDir);
+      } catch (rebaseErr) {
+        await execGit(['rebase', '--abort'], baseDir).catch(() => {});
+        throw new Error(`Rebase failed after rejected push: ${(rebaseErr as Error).message}`);
+      }
+    }
+  }
 }
 
 async function main() {
@@ -205,6 +231,46 @@ async function main() {
     }
   }
 
+  // 3. Git Commit History Reconciliation Sweep (Durable Catch-Up)
+  // Reconciles recent commits in the working copy to discover any commits not yet awarded
+  try {
+    const gitLogResult = await execGit(
+      ['log', '-n', '30', '--format=%H%x09%an%x09%ae%x09%s%x09%cI', 'HEAD'],
+      baseDir
+    );
+
+    const logLines = gitLogResult.stdout.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    for (const line of logLines) {
+      const parts = line.split('\t');
+      const sha = parts[0];
+      const authorName = parts[1];
+      const subject = parts[3] || '';
+      const commitDate = parts[4] || '';
+
+      if (!sha || !authorName) continue;
+      const cleanSha = sha.trim().toLowerCase();
+
+      // Check if already queued in eventsToProcess
+      const alreadyQueued = eventsToProcess.some(
+        (e) => e.eventType === 'commit' && e.eventId.replace(/^commit:/i, '').toLowerCase() === cleanSha
+      );
+      if (alreadyQueued) continue;
+
+      eventsToProcess.push({
+        eventType: 'commit',
+        eventId: `commit:${cleanSha}`,
+        actor: authorName,
+        commitMessage: subject,
+        details: subject ? subject.slice(0, 100) : 'Commit reconciliation',
+        timestamp: commitDate,
+        ref: targetRef,
+      });
+    }
+  } catch (err) {
+    // If not in a git repo or log fails (e.g. shallow clone or initial commit), continue gracefully
+    console.log('[INFO] Git history reconciliation skipped:', (err as Error).message);
+  }
+
   if (eventsToProcess.length === 0) {
     console.log('[NO-OP] No qualifying activity events found in execution context.');
     return;
@@ -214,6 +280,8 @@ async function main() {
 
   let totalXpAwarded = 0;
   const processedResults: ProcessActivityResult[] = [];
+  let currentPet: PetStateDocument | undefined;
+  let currentLedger: ActivityLedgerDocument | undefined;
 
   for (const eventInput of eventsToProcess) {
     try {
@@ -221,8 +289,12 @@ async function main() {
         baseDir,
         event: eventInput,
         dryRun,
+        currentPetState: currentPet,
+        currentActivityLedger: currentLedger,
       });
 
+      currentPet = outcome.petState;
+      currentLedger = outcome.activityLedger;
       processedResults.push(outcome.result);
       totalXpAwarded += outcome.result.xpAwarded;
 
@@ -256,16 +328,16 @@ async function main() {
 
         const gitToken = process.env.GITHUB_TOKEN;
         if (gitToken) {
-          console.log(`[GIT] Pushing fast-forward update to origin/${targetRef}...`);
-          await execGit(['push', 'origin', `HEAD:${targetRef}`], baseDir);
-          console.log('[GIT] Push successful.');
+          await pushWithRetry(targetRef, baseDir, 4);
         } else {
           console.log('[INFO] No GITHUB_TOKEN present; skipped push.');
         }
       }
     } catch (err) {
       console.error('[GIT ERROR] Failed to commit/push activity changes:', (err as Error).message);
-      // Non-fatal if running in dry-run or disconnected local testing
+      if (process.env.GITHUB_ACTIONS) {
+        process.exit(1);
+      }
     }
   }
 }

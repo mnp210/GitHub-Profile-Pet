@@ -882,8 +882,8 @@ export default function Home() {
                   onChange={(e) => setDraftToken(e.target.value)}
                   className="w-full px-3 py-2 bg-[#090a10] border border-[#2b274c] rounded-lg text-xs font-mono text-slate-100 focus:outline-none focus:border-purple-500"
                 />
-                <p className="text-[10px] text-slate-500 mt-1">
-                  🔒 Zero-token exposure guarantee: Token is stored strictly in your browser session and never sent to any third-party server.
+                <p className="text-[10px] text-amber-400/90 mt-1">
+                  🔒 Zero-token storage policy: Tokens are held strictly in temporary browser memory and are NEVER saved to localStorage, indexedDB, cookies, or any backend server. Refreshing or closing this tab completely purges the token.
                 </p>
               </div>
 

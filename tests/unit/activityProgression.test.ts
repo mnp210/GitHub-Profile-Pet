@@ -430,4 +430,77 @@ describe('Activity Progression Engine - Unit Tests', () => {
       assert.equal(updatedPet.mood, 'Energetic');
     });
   });
+
+  describe('Bounded Retention & Staleness Protection', () => {
+    it('rejects events older than 14 days as skipped_stale with 0 XP', () => {
+      const pet = createMockPetState();
+      const ledger = initDefaultActivityLedger();
+      const oldTimestamp = '2026-11-01T00:00:00.000Z'; // 18 days before timestamp (2026-11-19)
+
+      const { updatedPet, result } = evaluateActivityEvent(
+        pet,
+        ledger,
+        {
+          eventId: 'old-commit-sha-12345',
+          eventType: 'commit',
+          actor: 'developer1',
+          timestamp: oldTimestamp,
+          commitMessage: 'feat: very old commit',
+        },
+        timestamp
+      );
+
+      assert.equal(result.status, 'skipped_stale');
+      assert.equal(result.xpAwarded, 0);
+      assert.equal(updatedPet.xp, 0);
+    });
+
+    it('accepts events within the 14-day window', () => {
+      const pet = createMockPetState();
+      const ledger = initDefaultActivityLedger();
+      const recentTimestamp = '2026-11-17T00:00:00.000Z'; // 2 days before timestamp
+
+      const { updatedPet, result } = evaluateActivityEvent(
+        pet,
+        ledger,
+        {
+          eventId: 'recent-commit-sha-67890',
+          eventType: 'commit',
+          actor: 'developer1',
+          timestamp: recentTimestamp,
+          commitMessage: 'feat: recent commit',
+        },
+        timestamp
+      );
+
+      assert.equal(result.status, 'rewarded');
+      assert.equal(result.xpAwarded, 15);
+      assert.equal(updatedPet.xp, 15);
+    });
+
+    it('prunes daily accrued XP entries older than 30 days', () => {
+      const pet = createMockPetState();
+      const ledger = initDefaultActivityLedger();
+
+      // Seed with an old date (45 days ago) and a recent date (2 days ago)
+      ledger.dailyAccruedXp['2026-10-01'] = 200;
+      ledger.dailyAccruedXp['2026-11-17'] = 150;
+
+      const { updatedLedger } = evaluateActivityEvent(
+        pet,
+        ledger,
+        {
+          eventId: 'commit-today',
+          eventType: 'commit',
+          actor: 'developer1',
+        },
+        timestamp
+      );
+
+      // '2026-10-01' should be pruned; '2026-11-17' and today '2026-11-19' should exist
+      assert.equal(updatedLedger.dailyAccruedXp['2026-10-01'], undefined);
+      assert.equal(updatedLedger.dailyAccruedXp['2026-11-17'], 150);
+      assert.equal(updatedLedger.dailyAccruedXp['2026-11-19'], 15);
+    });
+  });
 });

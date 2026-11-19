@@ -20,6 +20,9 @@ import {
   PET_ACTION_PENDING_LABEL,
   PET_CARE_ACTION_LABEL_PREFIX,
   MAX_RECENT_EVENTS_RETAINED,
+  MAX_REGISTRY_ENTRIES,
+  MAX_ACTIVITY_AGE_DAYS,
+  MAX_DAILY_ACCRUED_DAYS,
 } from './constants.ts';
 import type {
   ActivityEventRecord,
@@ -126,12 +129,50 @@ export function isDuplicateEvent(
 }
 
 /**
- * Records an event identifier into the deduplication registry.
+ * Checks whether an event timestamp is older than the maximum eligibility lookback window.
+ */
+export function isEventStale(
+  eventTimestamp: string | undefined,
+  nowUtc: string,
+  maxAgeDays: number = MAX_ACTIVITY_AGE_DAYS
+): boolean {
+  if (!eventTimestamp) return false;
+  const eventTime = new Date(eventTimestamp).getTime();
+  const nowTime = new Date(nowUtc).getTime();
+  if (Number.isNaN(eventTime) || Number.isNaN(nowTime)) return false;
+  const ageMs = nowTime - eventTime;
+  return ageMs > maxAgeDays * 24 * 60 * 60 * 1000;
+}
+
+/**
+ * Prunes daily accrued XP entries older than the retention threshold.
+ */
+export function pruneDailyAccruedXp(
+  dailyMap: Record<string, number>,
+  nowUtc: string,
+  maxDays: number = MAX_DAILY_ACCRUED_DAYS
+): Record<string, number> {
+  const cutoffTime = new Date(nowUtc).getTime() - maxDays * 24 * 60 * 60 * 1000;
+  const cutoffDate = new Date(cutoffTime).toISOString().slice(0, 10);
+  const pruned: Record<string, number> = {};
+
+  for (const [dateKey, xp] of Object.entries(dailyMap)) {
+    if (dateKey >= cutoffDate) {
+      pruned[dateKey] = xp;
+    }
+  }
+
+  return pruned;
+}
+
+/**
+ * Records an event identifier into the deduplication registry with bounded size enforcement.
  */
 export function recordProcessedIdentifier(
   registry: ActivityProcessedRegistry,
   eventType: ActivityType,
-  eventId: string
+  eventId: string,
+  maxEntries: number = MAX_REGISTRY_ENTRIES
 ): void {
   const cleanId = eventId.trim();
 
@@ -140,6 +181,9 @@ export function recordProcessedIdentifier(
       const sha = cleanId.replace(/^commit:/i, '').toLowerCase();
       if (!registry.commitShas.some((s) => s.toLowerCase() === sha)) {
         registry.commitShas.push(sha);
+        if (registry.commitShas.length > maxEntries) {
+          registry.commitShas = registry.commitShas.slice(-maxEntries);
+        }
       }
       break;
     }
@@ -147,6 +191,9 @@ export function recordProcessedIdentifier(
       const num = parseInt(cleanId.replace(/^issue:/i, ''), 10);
       if (Number.isInteger(num) && !registry.issueNumbers.includes(num)) {
         registry.issueNumbers.push(num);
+        if (registry.issueNumbers.length > maxEntries) {
+          registry.issueNumbers = registry.issueNumbers.slice(-maxEntries);
+        }
       }
       break;
     }
@@ -154,6 +201,9 @@ export function recordProcessedIdentifier(
       const num = parseInt(cleanId.replace(/^pr_opened:/i, '').replace(/^pr:/i, ''), 10);
       if (Number.isInteger(num) && !registry.prOpenedNumbers.includes(num)) {
         registry.prOpenedNumbers.push(num);
+        if (registry.prOpenedNumbers.length > maxEntries) {
+          registry.prOpenedNumbers = registry.prOpenedNumbers.slice(-maxEntries);
+        }
       }
       break;
     }
@@ -161,6 +211,9 @@ export function recordProcessedIdentifier(
       const num = parseInt(cleanId.replace(/^pr_merged:/i, '').replace(/^pr:/i, ''), 10);
       if (Number.isInteger(num) && !registry.prMergedNumbers.includes(num)) {
         registry.prMergedNumbers.push(num);
+        if (registry.prMergedNumbers.length > maxEntries) {
+          registry.prMergedNumbers = registry.prMergedNumbers.slice(-maxEntries);
+        }
       }
       break;
     }
@@ -168,6 +221,9 @@ export function recordProcessedIdentifier(
       const id = parseInt(cleanId.replace(/^review:/i, ''), 10);
       if (Number.isInteger(id) && !registry.reviewIds.includes(id)) {
         registry.reviewIds.push(id);
+        if (registry.reviewIds.length > maxEntries) {
+          registry.reviewIds = registry.reviewIds.slice(-maxEntries);
+        }
       }
       break;
     }
@@ -264,7 +320,44 @@ export function evaluateActivityEvent(
     };
   }
 
-  // 3. Pet Care Action Issue Exclusion
+  // 3. Activity Lookback Window / Staleness Boundary Check
+  if (isEventStale(input.timestamp, nowUtc)) {
+    const skippedRecord: ActivityEventRecord = {
+      eventId: input.eventId,
+      eventType: input.eventType,
+      actor: input.actor,
+      timestamp: nowUtc,
+      xpAwarded: 0,
+      status: 'skipped_stale',
+      details: `Activity event timestamp (${input.timestamp}) exceeds the ${MAX_ACTIVITY_AGE_DAYS}-day eligibility window.`,
+      ref: input.ref,
+    };
+
+    const updatedLedger: ActivityLedgerDocument = {
+      ...ledger,
+      recentEvents: [skippedRecord, ...ledger.recentEvents].slice(0, MAX_RECENT_EVENTS_RETAINED),
+      updatedAt: nowUtc,
+    };
+
+    return {
+      updatedPet: petState,
+      updatedLedger,
+      result: {
+        success: true,
+        xpAwarded: 0,
+        status: 'skipped_stale',
+        didLevelUp: false,
+        previousLevel: petState.level,
+        newLevel: petState.level,
+        previousXp: petState.xp,
+        newXp: petState.xp,
+        evolutionStage: petState.evolutionStage,
+        reason: skippedRecord.details,
+      },
+    };
+  }
+
+  // 4. Pet Care Action Issue Exclusion
   if (input.eventType === 'issue_opened' && isCareActionIssue(input.issueLabels, input.details)) {
     const skippedRecord: ActivityEventRecord = {
       eventId: input.eventId,
@@ -367,6 +460,7 @@ export function evaluateActivityEvent(
 
     const updatedLedger: ActivityLedgerDocument = {
       ...ledger,
+      dailyAccruedXp: pruneDailyAccruedXp(ledger.dailyAccruedXp, nowUtc),
       processedRegistry: newRegistry,
       recentEvents: [skippedRecord, ...ledger.recentEvents].slice(0, MAX_RECENT_EVENTS_RETAINED),
       updatedAt: nowUtc,
@@ -418,10 +512,13 @@ export function evaluateActivityEvent(
   };
   recordProcessedIdentifier(newRegistry, input.eventType, input.eventId);
 
-  const newDailyAccrued = {
-    ...ledger.dailyAccruedXp,
-    [dateKey]: currentDailyAccrued + effectiveXp,
-  };
+  const newDailyAccrued = pruneDailyAccruedXp(
+    {
+      ...ledger.dailyAccruedXp,
+      [dateKey]: currentDailyAccrued + effectiveXp,
+    },
+    nowUtc
+  );
 
   const rewardedRecord: ActivityEventRecord = {
     eventId: input.eventId,
@@ -486,6 +583,8 @@ export async function executeActivityProcessing(options: {
   nowMs?: number;
   skipSvgRender?: boolean;
   dryRun?: boolean;
+  currentPetState?: PetStateDocument;
+  currentActivityLedger?: ActivityLedgerDocument;
 }): Promise<{
   success: boolean;
   result: ProcessActivityResult;
@@ -497,23 +596,31 @@ export async function executeActivityProcessing(options: {
   const activityPath = path.join(baseDir, 'pet', 'ledger', 'activity.json');
   const nowUtc = options.nowMs ? new Date(options.nowMs).toISOString() : new Date().toISOString();
 
-  // 1. Read or initialize pet state
+  // 1. Read or use provided pet state
   let petState: PetStateDocument;
-  try {
-    const raw = await fs.readFile(statePath, 'utf-8');
-    petState = JSON.parse(raw);
-  } catch (err) {
-    throw new Error(`Failed to load authoritative pet state at ${statePath}: ${(err as Error).message}`);
+  if (options.currentPetState) {
+    petState = options.currentPetState;
+  } else {
+    try {
+      const raw = await fs.readFile(statePath, 'utf-8');
+      petState = JSON.parse(raw);
+    } catch (err) {
+      throw new Error(`Failed to load authoritative pet state at ${statePath}: ${(err as Error).message}`);
+    }
   }
 
-  // 2. Read or initialize activity ledger
+  // 2. Read or use provided activity ledger
   let activityLedger: ActivityLedgerDocument;
-  try {
-    const raw = await fs.readFile(activityPath, 'utf-8');
-    activityLedger = JSON.parse(raw);
-  } catch {
-    // If activity.json does not exist yet, initialize pristine
-    activityLedger = initDefaultActivityLedger(petState.generation ?? 1);
+  if (options.currentActivityLedger) {
+    activityLedger = options.currentActivityLedger;
+  } else {
+    try {
+      const raw = await fs.readFile(activityPath, 'utf-8');
+      activityLedger = JSON.parse(raw);
+    } catch {
+      // If activity.json does not exist yet, initialize pristine
+      activityLedger = initDefaultActivityLedger(petState.generation ?? 1);
+    }
   }
 
   // 3. Evaluate activity

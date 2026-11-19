@@ -66,3 +66,21 @@ export const PET_ACTION_PENDING_LABEL = 'pet-action:pending';
  * Maximum number of recent event records retained in the activity ledger.
  */
 export const MAX_RECENT_EVENTS_RETAINED = 100;
+
+/**
+ * Maximum number of processed identifiers retained per category in the deduplication registry.
+ * Prevents unbounded array growth while safely guarding recent replay boundaries.
+ */
+export const MAX_REGISTRY_ENTRIES = 500;
+
+/**
+ * Maximum lookback age in days for activity event eligibility.
+ * Events older than 14 days UTC are rejected as stale, allowing safe bounded pruning of older registry entries.
+ */
+export const MAX_ACTIVITY_AGE_DAYS = 14;
+
+/**
+ * Maximum number of daily accrued XP records retained (in days).
+ * Daily records older than 30 days are pruned during state transitions.
+ */
+export const MAX_DAILY_ACCRUED_DAYS = 30;

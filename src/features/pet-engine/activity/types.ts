@@ -17,6 +17,7 @@ export type ActivityEventStatus =
   | 'skipped_duplicate'
   | 'skipped_daily_cap'
   | 'skipped_care_action'
+  | 'skipped_stale'
   | 'invalid';
 
 export interface ActivityEventRecord {
