@@ -34,7 +34,12 @@ import type {
   PetStateDocument,
 } from '../domain/types.ts';
 import { ENGINE_SCHEMA_VERSION } from '../domain/constants.ts';
-import { saveRepositoryState } from '../persistence/stateRepository.ts';
+import {
+  acquireLock,
+  recoverRepositoryState,
+  type CompleteRepositoryState,
+  type LockReleaseFn,
+} from '../persistence/stateRepository.ts';
 import { assertValidPetState } from '../validation/stateValidator.ts';
 import {
   assertValidActionLedger,
@@ -309,12 +314,8 @@ export async function executeBaselinePipeline(
   // 5. Preflight Check: Baseline Guard (F-04)
   const contribPath = path.join(baseDir, 'pet', 'ledger', 'contributions.json');
   let contribDoc: ContributionLedgerDocument | null = null;
-  let originalContribBytes = '';
-  let originalPetBytes = '';
-  let originalActionsBytes = '';
   try {
     const rawContent = await fs.readFile(contribPath, 'utf-8');
-    originalContribBytes = rawContent;
     contribDoc = JSON.parse(rawContent);
   } catch (err: unknown) {
     return {
@@ -379,6 +380,19 @@ export async function executeBaselinePipeline(
     };
   }
 
+  let initialPristineState: CompleteRepositoryState | undefined;
+  let pipelineLock: LockReleaseFn | null = null;
+  const safeReleaseLock = async () => {
+    if (pipelineLock) {
+      try {
+        await pipelineLock();
+      } catch {
+        // ignore cleanup error
+      }
+      pipelineLock = null;
+    }
+  };
+
   // Rule 2: Foreign-owner baseline detected (inherited fork or transfer)
   if (isForeignOwner) {
     if (!options.reinitializeForeignFork) {
@@ -419,20 +433,19 @@ export async function executeBaselinePipeline(
       };
     }
 
-    try {
-      const lockExists = await fs.access(lockPath).then(() => true).catch(() => false);
-      if (lockExists) {
+    if (!dryRun) {
+      try {
+        pipelineLock = await acquireLock(lockPath);
+      } catch (lockErr: unknown) {
         return {
           success: false,
           status: 'integrity_failed',
           sourceCommitSha,
           destinationRef: targetBranch,
           details: `Baseline Refused (F-04): Active lock file detected at ${lockPath}. Pristine reset cannot proceed while lock is active.`,
-          error: new Error('Active concurrency lock detected'),
+          error: lockErr as Error,
         };
       }
-    } catch {
-      // access check handled
     }
 
     // 2. Read and backup all 3 authoritative state files
@@ -441,9 +454,9 @@ export async function executeBaselinePipeline(
     let currentPetDoc: PetStateDocument | null = null;
 
     try {
-      originalPetBytes = await fs.readFile(petPath, 'utf-8');
-      originalActionsBytes = await fs.readFile(actionsPath, 'utf-8');
-      currentPetDoc = JSON.parse(originalPetBytes);
+      const petRaw = await fs.readFile(petPath, 'utf-8');
+      await fs.readFile(actionsPath, 'utf-8');
+      currentPetDoc = JSON.parse(petRaw);
     } catch (err: unknown) {
       return {
         success: false,
@@ -532,52 +545,13 @@ export async function executeBaselinePipeline(
       };
     }
 
-    // 5. Persist reset state transactionally
-    if (!dryRun) {
-      try {
-        await saveRepositoryState(baseDir, {
-          pet: pristinePetDoc,
-          contributions: pristineContribDoc,
-          actions: pristineActionsDoc,
-        });
-      } catch (saveErr: unknown) {
-        // Attempt rollback
-        await fs.writeFile(petPath, originalPetBytes, 'utf-8').catch(() => {});
-        await fs.writeFile(contribPath, originalContribBytes, 'utf-8').catch(() => {});
-        await fs.writeFile(actionsPath, originalActionsBytes, 'utf-8').catch(() => {});
-        return {
-          success: false,
-          status: 'integrity_failed',
-          sourceCommitSha,
-          destinationRef: targetBranch,
-          details: `Preflight Check Failed (F-04): Transactional reset failed: ${(saveErr as Error).message}`,
-          error: saveErr as Error,
-        };
-      }
-
-      // 6. Post-reset verification using validatePristineInstallation
-      const postResetCheck = await validatePristineInstallation(baseDir, {
-        allowForeignBaseline: false,
-        expectedOwnerDatabaseId: rawExpectedDbId,
-        expectedOwnerLogin: targetOwnerLogin,
-      });
-
-      if (!postResetCheck.valid) {
-        // Rollback all 3 files
-        await fs.writeFile(petPath, originalPetBytes, 'utf-8').catch(() => {});
-        await fs.writeFile(contribPath, originalContribBytes, 'utf-8').catch(() => {});
-        await fs.writeFile(actionsPath, originalActionsBytes, 'utf-8').catch(() => {});
-        return {
-          success: false,
-          status: 'integrity_failed',
-          sourceCommitSha,
-          destinationRef: targetBranch,
-          details: `Baseline Refused (F-04): Post-reset pristine validation failed:\n - ${postResetCheck.errors.join('\n - ')}`,
-          error: new Error(`Post-reset pristine validation failed: ${postResetCheck.errors.join('; ')}`),
-        };
-      }
-    }
-
+    // 5. In-memory pristine replacement state prepared for atomic baseline commit
+    initialPristineState = {
+      pet: pristinePetDoc,
+      contributions: pristineContribDoc,
+      actions: pristineActionsDoc,
+      generation: 1,
+    };
     contribDoc = pristineContribDoc;
   } else {
     // Standard / pristine baseline checks
@@ -619,12 +593,12 @@ export async function executeBaselinePipeline(
       : undefined);
 
   const restoreOriginalBytesIfFailed = async () => {
-    if (isForeignOwner && options.reinitializeForeignFork && !dryRun) {
-      const petPath = path.join(baseDir, 'pet', 'state', 'pet.json');
-      const actionsPath = path.join(baseDir, 'pet', 'ledger', 'actions.json');
-      await fs.writeFile(petPath, originalPetBytes, 'utf-8').catch(() => {});
-      await fs.writeFile(contribPath, originalContribBytes, 'utf-8').catch(() => {});
-      await fs.writeFile(actionsPath, originalActionsBytes, 'utf-8').catch(() => {});
+    if (isForeignOwner && options.reinitializeForeignFork && !dryRun && pipelineLock) {
+      try {
+        await recoverRepositoryState(baseDir, { lockOwnerId: pipelineLock.ownerId });
+      } catch (rollErr: unknown) {
+        throw new Error(`Rollback failed: ${(rollErr as Error).message}`);
+      }
     }
   };
 
@@ -642,9 +616,27 @@ export async function executeBaselinePipeline(
       skipSimulation: true,
       expectedOwnerDatabaseId: rawExpectedDbId,
       targetOwnerLogin,
+      existingLock: pipelineLock ?? undefined,
+      initialPristineState,
     });
   } catch (err: unknown) {
-    await restoreOriginalBytesIfFailed();
+    let rollbackErr: Error | undefined;
+    try {
+      await restoreOriginalBytesIfFailed();
+    } catch (rErr: unknown) {
+      rollbackErr = rErr as Error;
+    }
+    await safeReleaseLock();
+    if (rollbackErr) {
+      return {
+        success: false,
+        status: 'integrity_failed',
+        sourceCommitSha,
+        destinationRef: targetBranch,
+        details: `Preflight Check Failed (F-04): Sync failed and rollback failed: ${rollbackErr.message} (Original error: ${(err as Error).message})`,
+        error: rollbackErr,
+      };
+    }
     return {
       success: false,
       status: 'error',
@@ -656,7 +648,24 @@ export async function executeBaselinePipeline(
   }
 
   if (syncResult.status === 'baseline_refused') {
-    await restoreOriginalBytesIfFailed();
+    let rollbackErr: Error | undefined;
+    try {
+      await restoreOriginalBytesIfFailed();
+    } catch (rErr: unknown) {
+      rollbackErr = rErr as Error;
+    }
+    await safeReleaseLock();
+    if (rollbackErr) {
+      return {
+        success: false,
+        status: 'integrity_failed',
+        sourceCommitSha,
+        destinationRef: targetBranch,
+        details: `Preflight Check Failed (F-04): Rollback failed: ${rollbackErr.message}`,
+        error: rollbackErr,
+        syncResult,
+      };
+    }
     return {
       success: false,
       status: 'baseline_refused',
@@ -669,7 +678,24 @@ export async function executeBaselinePipeline(
   }
 
   if (syncResult.status === 'integrity_failed') {
-    await restoreOriginalBytesIfFailed();
+    let rollbackErr: Error | undefined;
+    try {
+      await restoreOriginalBytesIfFailed();
+    } catch (rErr: unknown) {
+      rollbackErr = rErr as Error;
+    }
+    await safeReleaseLock();
+    if (rollbackErr) {
+      return {
+        success: false,
+        status: 'integrity_failed',
+        sourceCommitSha,
+        destinationRef: targetBranch,
+        details: `Preflight Check Failed (F-04): Rollback failed: ${rollbackErr.message}`,
+        error: rollbackErr,
+        syncResult,
+      };
+    }
     return {
       success: false,
       status: 'integrity_failed',
@@ -682,8 +708,25 @@ export async function executeBaselinePipeline(
   }
 
   if (syncResult.status === 'conflict') {
-    await restoreOriginalBytesIfFailed();
+    let rollbackErr: Error | undefined;
+    try {
+      await restoreOriginalBytesIfFailed();
+    } catch (rErr: unknown) {
+      rollbackErr = rErr as Error;
+    }
     await execGit(['checkout', '--', ...BASELINE_MANIFEST_PATHS]).catch(() => {});
+    await safeReleaseLock();
+    if (rollbackErr) {
+      return {
+        success: false,
+        status: 'integrity_failed',
+        sourceCommitSha,
+        destinationRef: targetBranch,
+        details: `Preflight Check Failed (F-04): Conflict rollback failed: ${rollbackErr.message}`,
+        error: rollbackErr,
+        syncResult,
+      };
+    }
     return {
       success: false,
       status: 'stage_1_fence_conflict',
@@ -695,7 +738,24 @@ export async function executeBaselinePipeline(
   }
 
   if (syncResult.status === 'provider_failed') {
-    await restoreOriginalBytesIfFailed();
+    let rollbackErr: Error | undefined;
+    try {
+      await restoreOriginalBytesIfFailed();
+    } catch (rErr: unknown) {
+      rollbackErr = rErr as Error;
+    }
+    await safeReleaseLock();
+    if (rollbackErr) {
+      return {
+        success: false,
+        status: 'integrity_failed',
+        sourceCommitSha,
+        destinationRef: targetBranch,
+        details: `Preflight Check Failed (F-04): Rollback failed: ${rollbackErr.message}`,
+        error: rollbackErr,
+        syncResult,
+      };
+    }
     return {
       success: false,
       status: 'provider_failed',
@@ -716,6 +776,7 @@ export async function executeBaselinePipeline(
     if (options.dryRun && options.skipCleanPreflight) {
       statusOut = '';
     } else {
+      await safeReleaseLock();
       return {
         success: false,
         status: 'error',
@@ -746,6 +807,7 @@ export async function executeBaselinePipeline(
   // Strict isolation check: public/pet.svg, README.md, or any file outside baseline manifest must NOT be touched
   if (unauthorizedModifiedPaths.length > 0) {
     await execGit(['checkout', '--', ...modifiedManifestPaths, ...unauthorizedModifiedPaths]).catch(() => {});
+    await safeReleaseLock();
     return {
       success: false,
       status: 'manifest_violation',
@@ -759,6 +821,7 @@ export async function executeBaselinePipeline(
 
   // 8. Dry-Run Short Circuit
   if (dryRun) {
+    await safeReleaseLock();
     return {
       success: true,
       status: 'baseline_established',
@@ -775,6 +838,7 @@ export async function executeBaselinePipeline(
   try {
     await execGit(['add', ...modifiedManifestPaths]);
   } catch (err: unknown) {
+    await safeReleaseLock();
     return {
       success: false,
       status: 'error',
@@ -794,6 +858,7 @@ export async function executeBaselinePipeline(
     commitSha = headRes.stdout.trim();
   } catch (err: unknown) {
     await execGit(['reset', 'HEAD']).catch(() => {});
+    await safeReleaseLock();
     return {
       success: false,
       status: 'error',
@@ -807,6 +872,7 @@ export async function executeBaselinePipeline(
 
   // 11. Skip-Push Short Circuit
   if (skipPush) {
+    await safeReleaseLock();
     return {
       success: true,
       status: 'baseline_established',
@@ -828,6 +894,7 @@ export async function executeBaselinePipeline(
 
     // On non-fast-forward push rejection: roll back local commit to S_0
     await execGit(['reset', '--hard', sourceCommitSha]).catch(() => {});
+    await safeReleaseLock();
 
     return {
       success: false,
@@ -840,6 +907,7 @@ export async function executeBaselinePipeline(
     };
   }
 
+  await safeReleaseLock();
   return {
     success: true,
     status: 'baseline_established',

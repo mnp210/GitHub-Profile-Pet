@@ -36,6 +36,8 @@ import {
   loadRepositoryState,
   recoverRepositoryState,
   saveRepositoryState,
+  type CompleteRepositoryState,
+  type LockReleaseFn,
 } from '../persistence/stateRepository.ts';
 import { publishPetSvg } from '../publication/index.ts';
 import { applyInactivitySimulation } from '../transitions/simulationTransitions.ts';
@@ -98,6 +100,8 @@ export interface ContributionSyncOptions {
   targetOwnerLogin?: string;
   mode?: SyncExecutionMode;
   expectedOwnerDatabaseId?: number;
+  existingLock?: LockReleaseFn;
+  initialPristineState?: CompleteRepositoryState;
 }
 
 export interface ContributionSyncResult {
@@ -161,22 +165,26 @@ export async function syncContributions(
   // 0. Preflight Baseline Guard Check (Zero network calls, zero simulation, zero state mutation)
   const paths = getStatePaths(baseDir);
   let localLedgerRaw: ContributionLedgerDocument | null = null;
-  try {
-    const rawContent = await fs.readFile(paths.contributionsPath, 'utf-8');
-    localLedgerRaw = JSON.parse(rawContent) as ContributionLedgerDocument;
-    assertValidContributionLedger(localLedgerRaw);
-  } catch (err: unknown) {
-    const error = err as Error;
-    return {
-      status: 'integrity_failed',
-      incrementsEvaluated: 0,
-      xpAwarded: 0,
-      satietyAwarded: 0,
-      deltaObserved: 0,
-      svgPublished: false,
-      notes: `Failed to read contribution ledger document: ${error.message}`,
-      error,
-    };
+  if (options.initialPristineState) {
+    localLedgerRaw = options.initialPristineState.contributions;
+  } else {
+    try {
+      const rawContent = await fs.readFile(paths.contributionsPath, 'utf-8');
+      localLedgerRaw = JSON.parse(rawContent) as ContributionLedgerDocument;
+      assertValidContributionLedger(localLedgerRaw);
+    } catch (err: unknown) {
+      const error = err as Error;
+      return {
+        status: 'integrity_failed',
+        incrementsEvaluated: 0,
+        xpAwarded: 0,
+        satietyAwarded: 0,
+        deltaObserved: 0,
+        svgPublished: false,
+        notes: `Failed to read contribution ledger document: ${error.message}`,
+        error,
+      };
+    }
   }
 
   if (mode === 'runtime') {
@@ -457,7 +465,7 @@ export async function syncContributions(
   }
 
   // 4. Local Mutex Lock Acquisition
-  const releaseLock = isDryRun ? null : await acquireLock(paths.lockPath);
+  const releaseLock = options.existingLock ?? (isDryRun ? null : await acquireLock(paths.lockPath));
 
   try {
     // 5. Recover Journal and Load Authoritative Repository State
@@ -467,9 +475,11 @@ export async function syncContributions(
       await recoverRepositoryState(baseDir).catch(() => {});
     }
 
-    const state = await loadRepositoryState(baseDir, {
-      lockOwnerId: releaseLock?.ownerId,
-    });
+    const state =
+      options.initialPristineState ??
+      (await loadRepositoryState(baseDir, {
+        lockOwnerId: releaseLock?.ownerId,
+      }));
 
     // 6. Strict Pristine Predicate vs. Established Identity Verification
     const isPristine = isPristineContributionLedger(
@@ -648,7 +658,7 @@ export async function syncContributions(
           actions: nextActions,
         },
         {
-          expectedGeneration: state.generation,
+          expectedGeneration: options.initialPristineState ? undefined : state.generation,
           existingLock: releaseLock!,
         }
       );
@@ -737,7 +747,7 @@ export async function syncContributions(
       error,
     };
   } finally {
-    if (releaseLock) {
+    if (releaseLock && !options.existingLock) {
       await releaseLock();
     }
   }
