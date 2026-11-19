@@ -33,11 +33,11 @@ export interface PetStateDocument {
   happinessDecayAccumulator?: number; // Persistent fractional decay accumulator in [0, 1)
   mood: PetMood;
   evolutionStage: EvolutionStage;
-  lastInteractionTime: string;      // ISO-8601 UTC
-  lastOfflineResolutionTime: string; // ISO-8601 UTC
-  lastSimulatedAt?: string;          // ISO-8601 UTC (Phase 3C1 durable simulation checkpoint)
+  lastInteractionTime: string | null;      // ISO-8601 UTC or null (unoccurred event)
+  lastOfflineResolutionTime: string | null; // ISO-8601 UTC or null for pristine templates
+  lastSimulatedAt?: string | null;          // ISO-8601 UTC or null (Phase 3C1 durable simulation checkpoint)
   lastWelcomeBonusClaimedAt: string | null; // ISO-8601 UTC or null
-  updatedAt: string;                // ISO-8601 UTC
+  updatedAt: string | null;                // ISO-8601 UTC or null for pristine templates
 }
 
 export type SliceStatus = 'rewarded' | 'forfeited' | 'pending' | 'expired';
@@ -88,8 +88,8 @@ export interface MonthlyHistoricalSummary {
 export interface ContributionLedgerDocument {
   schemaVersion: number;
   generation: number;
-  ownerDatabaseId?: number;
-  ownerLogin?: string;
+  ownerDatabaseId?: number | null;
+  ownerLogin?: string | null;
   installationBaseline?: InstallationBaselineMetadata;
   dailyHwm?: Record<string, number>;           // YYYY-MM-DD -> peak public contribution count
   dailyRewardOrdinal?: Record<string, number>;  // YYYY-MM-DD -> monotonic post-installation ordinal counter

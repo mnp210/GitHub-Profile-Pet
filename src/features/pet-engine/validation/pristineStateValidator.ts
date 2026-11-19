@@ -28,6 +28,8 @@ export interface PristineValidationOptions {
   allowForeignBaseline?: boolean;
   expectedOwnerDatabaseId?: number;
   expectedOwnerLogin?: string;
+  allowActiveLock?: boolean;
+  allowActiveJournal?: boolean;
 }
 
 export interface PristineValidationResult {
@@ -53,25 +55,29 @@ export async function validatePristineInstallation(
   const lockPath = path.join(baseDir, 'pet', '.lock');
 
   // 1. Transaction Journal & Concurrency Lock Hygiene Check
-  try {
-    const journalEntries = await fs.readdir(journalDir).catch(() => []);
-    if (journalEntries.length > 0) {
-      errors.push(
-        `Active or uncommitted transaction journal detected in ${journalDir} (${journalEntries.length} entries). Pristine installation cannot have pending transactions.`
-      );
+  if (!options.allowActiveJournal) {
+    try {
+      const journalEntries = await fs.readdir(journalDir).catch(() => []);
+      if (journalEntries.length > 0) {
+        errors.push(
+          `Active or uncommitted transaction journal detected in ${journalDir} (${journalEntries.length} entries). Pristine installation cannot have pending transactions.`
+        );
+      }
+    } catch {
+      // If readdir fails for reasons other than ENOENT, fail closed
+      errors.push(`Failed to inspect transaction journal directory at ${journalDir}.`);
     }
-  } catch {
-    // If readdir fails for reasons other than ENOENT, fail closed
-    errors.push(`Failed to inspect transaction journal directory at ${journalDir}.`);
   }
 
-  try {
-    const lockExists = await fs.access(lockPath).then(() => true).catch(() => false);
-    if (lockExists) {
-      errors.push(`Active lock file detected at ${lockPath}. Pristine installation cannot have active concurrency locks.`);
+  if (!options.allowActiveLock) {
+    try {
+      const lockExists = await fs.access(lockPath).then(() => true).catch(() => false);
+      if (lockExists) {
+        errors.push(`Active lock file detected at ${lockPath}. Pristine installation cannot have active concurrency locks.`);
+      }
+    } catch {
+      // access check handled by then/catch
     }
-  } catch {
-    // access check handled by then/catch
   }
 
   // 2. Read and Parse State Documents

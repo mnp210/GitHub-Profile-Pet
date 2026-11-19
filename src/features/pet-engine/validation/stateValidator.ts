@@ -140,24 +140,42 @@ export function validatePetState(data: unknown): ValidationResult {
     errors.push(`Invalid evolutionStage: received ${String(obj.evolutionStage)}.`);
   }
 
-  if (!isValidIsoDateString(obj.lastInteractionTime)) {
-    errors.push(`lastInteractionTime must be a valid ISO-8601 UTC date string.`);
+  const isPristineHatchling =
+    obj.generation === 1 &&
+    obj.level === 1 &&
+    obj.xp === 0 &&
+    obj.evolutionStage === 'Hatchling';
+
+  if (obj.lastInteractionTime !== null && !isValidIsoDateString(obj.lastInteractionTime)) {
+    errors.push(`lastInteractionTime must be null or a valid ISO-8601 UTC date string.`);
   }
 
-  if (!isValidIsoDateString(obj.lastOfflineResolutionTime)) {
-    errors.push(`lastOfflineResolutionTime must be a valid ISO-8601 UTC date string.`);
+  if (isPristineHatchling) {
+    if (obj.lastOfflineResolutionTime !== null && !isValidIsoDateString(obj.lastOfflineResolutionTime)) {
+      errors.push(`lastOfflineResolutionTime must be null or a valid ISO-8601 UTC date string.`);
+    }
+  } else {
+    if (!isValidIsoDateString(obj.lastOfflineResolutionTime)) {
+      errors.push(`lastOfflineResolutionTime must be a valid ISO-8601 UTC date string.`);
+    }
   }
 
-  if (obj.lastSimulatedAt !== undefined && !isValidIsoDateString(obj.lastSimulatedAt)) {
-    errors.push(`lastSimulatedAt must be a valid ISO-8601 UTC date string.`);
+  if (obj.lastSimulatedAt !== undefined && obj.lastSimulatedAt !== null && !isValidIsoDateString(obj.lastSimulatedAt)) {
+    errors.push(`lastSimulatedAt must be null or a valid ISO-8601 UTC date string.`);
   }
 
   if (obj.lastWelcomeBonusClaimedAt !== null && !isValidIsoDateString(obj.lastWelcomeBonusClaimedAt)) {
     errors.push(`lastWelcomeBonusClaimedAt must be null or a valid ISO-8601 UTC date string.`);
   }
 
-  if (!isValidIsoDateString(obj.updatedAt)) {
-    errors.push(`updatedAt must be a valid ISO-8601 UTC date string.`);
+  if (isPristineHatchling) {
+    if (obj.updatedAt !== null && !isValidIsoDateString(obj.updatedAt)) {
+      errors.push(`updatedAt must be null or a valid ISO-8601 UTC date string.`);
+    }
+  } else {
+    if (!isValidIsoDateString(obj.updatedAt)) {
+      errors.push(`updatedAt must be a valid ISO-8601 UTC date string.`);
+    }
   }
 
   return {

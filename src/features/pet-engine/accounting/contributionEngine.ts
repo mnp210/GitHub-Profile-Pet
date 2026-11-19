@@ -261,7 +261,12 @@ export function reconcileContributions(
   const { snapshots, ownerDatabaseId, ownerLogin } = normalizeSnapshots(params);
 
   // Identity validation: fail closed if snapshot identity disagrees with established ledger
-  if (ledger.ownerDatabaseId !== undefined && ownerDatabaseId !== undefined) {
+  if (
+    typeof ledger.ownerDatabaseId === 'number' &&
+    ledger.ownerDatabaseId > 0 &&
+    typeof ownerDatabaseId === 'number' &&
+    ownerDatabaseId > 0
+  ) {
     if (ledger.ownerDatabaseId !== ownerDatabaseId) {
       throw new IdentityMismatchError(
         `Immutable Owner Database ID Mismatch: Ledger owned by ${ledger.ownerDatabaseId}, snapshot provided ${ownerDatabaseId}.`

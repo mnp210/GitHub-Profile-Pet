@@ -1131,8 +1131,15 @@ describe('R3.21 Release Portability & Fail-Closed Authorization Suite', () => {
         gitExecutor: mockGitExecutor,
       });
 
-      assert.equal(res.success, false);
-      assert.equal(res.status, 'integrity_failed');
+      assert.equal(res.success, true);
+      assert.equal(res.status, 'baseline_established');
+
+      const loaded = await loadRepositoryState(tempDir);
+      assert.equal(loaded.pet.xp, 0);
+      assert.equal(loaded.pet.level, 1);
+      assert.equal(loaded.contributions.ownerDatabaseId, 9999);
+      assert.equal(loaded.contributions.ownerLogin, 'forker');
+      assert.equal(loaded.contributions.installationBaseline?.completed, true);
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
