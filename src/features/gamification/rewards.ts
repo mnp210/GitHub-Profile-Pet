@@ -1,4 +1,4 @@
-export type ActionType = 'pet' | 'train' | 'feed' | 'rest';
+export type ActionType = 'pet' | 'train' | 'feed' | 'rest' | 'play';
 
 export interface ActionHistoryEntry {
   action: ActionType;
@@ -78,6 +78,12 @@ export const BASE_ACTION_REWARDS: Record<
     baseHappiness: 12,
     baseHunger: 0,
     energyCost: 0,
+  },
+  play: {
+    baseExp: 15,
+    baseHappiness: 16,
+    baseHunger: 0,
+    energyCost: 10,
   },
   train: {
     baseExp: 30,

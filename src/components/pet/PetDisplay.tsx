@@ -1,181 +1,257 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PetState, PetSpeciesMeta } from '@/types/pet';
-import { PetSprite } from './PetSprite';
-import { PixelButton } from '@/components/ui/PixelButton';
-import { HeartIcon, BoltIcon, ActivityIcon, MoonIcon } from '@/components/ui/PixelIcons';
+import { PetSprite, SpriteAnimationState } from './PetSprite';
+import { retroAudio } from '@/lib/audio/retroAudio';
 import type { ActionType } from '@/features/gamification/rewards';
+
+interface ParticleEffect {
+  id: number;
+  x: number;
+  y: number;
+  text: string;
+  colorClass?: string;
+  icon?: string;
+}
 
 interface PetDisplayProps {
   pet: PetState;
   speciesMeta: PetSpeciesMeta;
-  onExecuteAction?: (action: ActionType) => void;
-  rewardMultiplierText?: string;
+  onExecuteAction: (action: ActionType) => void;
+  cooldownRemainingSeconds?: number;
+  lastReaction?: string;
+  isActionsSyncing?: boolean;
 }
 
 export const PetDisplay: React.FC<PetDisplayProps> = ({
   pet,
   speciesMeta,
   onExecuteAction,
-  rewardMultiplierText,
+  cooldownRemainingSeconds = 0,
+  lastReaction,
+  isActionsSyncing = false,
 }) => {
-  const [clickEffect, setClickEffect] = useState<{ id: number; x: number; y: number; text: string; colorClass?: string }[]>([]);
+  const [particles, setParticles] = useState<ParticleEffect[]>([]);
+  const [animationState, setAnimationState] = useState<SpriteAnimationState>('idle');
 
-  const triggerVisualEffect = (x: number, y: number, text: string, colorClass = 'text-slate-200') => {
-    const newEffect = { id: Date.now() + Math.random(), x, y, text, colorClass };
-    setClickEffect((prev) => [...prev.slice(-3), newEffect]);
+  // Spawn visual particle on interaction
+  const triggerParticle = (x: number, y: number, text: string, colorClass = 'text-pink-300', icon?: string) => {
+    const newParticle: ParticleEffect = {
+      id: Date.now() + Math.random(),
+      x,
+      y,
+      text,
+      colorClass,
+      icon,
+    };
+
+    setParticles((prev) => [...prev.slice(-5), newParticle]);
 
     setTimeout(() => {
-      setClickEffect((prev) => prev.filter((item) => item.id !== newEffect.id));
-    }, 1200);
+      setParticles((prev) => prev.filter((p) => p.id !== newParticle.id));
+    }, 1400);
   };
 
-  const handleStageClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    triggerVisualEffect(x, y, 'Purr~', 'text-pink-300');
-    if (onExecuteAction) {
-      onExecuteAction('pet');
+  const handlePetDirectClick = () => {
+    triggerParticle(150, 100, 'Purr~', 'text-pink-400', '❤️');
+    setAnimationState('happy');
+    retroAudio.playPurr();
+    onExecuteAction('pet');
+    setTimeout(() => setAnimationState('idle'), 800);
+  };
+
+  const handleActionClick = (action: ActionType) => {
+    retroAudio.playClick();
+    if (action === 'feed') {
+      triggerParticle(160, 90, '+24 Satiety', 'text-amber-300', '🍖');
+      setAnimationState('eating');
+      retroAudio.playEat();
+    } else if (action === 'play') {
+      triggerParticle(160, 90, '+16 Happiness', 'text-cyan-300', '🎾');
+      setAnimationState('playing');
+      retroAudio.playPlay();
+    } else if (action === 'train') {
+      triggerParticle(160, 80, '+30 XP (-18⚡)', 'text-indigo-300', '⚔️');
+      setAnimationState('training');
+      retroAudio.playTrain();
+    } else if (action === 'rest') {
+      triggerParticle(160, 100, '+25 Energy', 'text-purple-300', '🌙');
+      setAnimationState('sleeping');
+      retroAudio.playRest();
+    } else if (action === 'pet') {
+      triggerParticle(160, 90, '+12 Happiness', 'text-pink-400', '❤️');
+      setAnimationState('happy');
+      retroAudio.playPurr();
     }
+
+    onExecuteAction(action);
+    setTimeout(() => setAnimationState('idle'), 1000);
   };
 
-  const getMoodColor = () => {
+  const getMoodBadgeColor = () => {
     switch (pet.mood) {
       case 'Energetic':
-        return 'text-amber-400 bg-amber-950/40 border-amber-800/40';
+        return 'text-amber-300 bg-amber-950/60 border-amber-500/40';
       case 'Resting':
-        return 'text-indigo-300 bg-indigo-950/40 border-indigo-800/40';
+        return 'text-indigo-300 bg-indigo-950/60 border-indigo-500/40';
       case 'Curious':
-        return 'text-cyan-300 bg-cyan-950/40 border-cyan-800/40';
+        return 'text-cyan-300 bg-cyan-950/60 border-cyan-500/40';
       default:
-        return 'text-emerald-400 bg-emerald-950/40 border-emerald-800/40';
+        return 'text-emerald-300 bg-emerald-950/60 border-emerald-500/40';
     }
   };
 
   return (
-    <div className="relative flex flex-col items-center w-full">
-      {/* Interactive Arena Stage */}
-      <div
-        role="button"
-        tabIndex={0}
-        aria-label="Interactive pet arena stage. Press Enter or Space to pet your companion."
-        onClick={handleStageClick}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            triggerVisualEffect(140, 140, 'Purr~', 'text-pink-300');
-            if (onExecuteAction) {
-              onExecuteAction('pet');
-            }
-          }
-        }}
-        className="relative w-full aspect-4/3 max-h-[300px] bg-[#0c0e12] border border-[#222733] rounded-lg p-4 flex flex-col items-center justify-between select-none cursor-pointer overflow-hidden group focus-visible:border-indigo-500"
-        title="Click or press Enter to interact with your pet"
-      >
-        {/* Subtle background radial gradient */}
-        <div className="absolute inset-0 bg-radial from-transparent via-transparent to-black/40 pointer-events-none" />
+    <div className="relative flex flex-col items-center w-full max-w-full">
+      {/* ARENA CONTAINER */}
+      <div className="relative w-full aspect-16/10 sm:aspect-16/9 min-h-[300px] max-h-[380px] bg-gradient-to-b from-[#090b10] via-[#10131f] to-[#0c0e16] border-2 border-[#2b274c] rounded-2xl p-4 flex flex-col items-center justify-between select-none overflow-hidden shadow-2xl shadow-indigo-950/40">
+        {/* Background Arcane Starfield & Radial Aura */}
+        <div className="absolute inset-0 bg-radial from-purple-900/15 via-transparent to-black/60 pointer-events-none" />
+        <div className="absolute top-2 left-6 w-1 h-1 bg-purple-300 rounded-full animate-ping opacity-60 pointer-events-none" />
+        <div className="absolute top-8 right-10 w-1.5 h-1.5 bg-indigo-300 rounded-full animate-pulse opacity-50 pointer-events-none" />
+        <div className="absolute bottom-16 left-12 w-1 h-1 bg-cyan-300 rounded-full animate-pulse opacity-40 pointer-events-none" />
+        <div className="absolute top-20 left-1/4 w-1 h-1 bg-pink-300 rounded-full animate-ping opacity-50 pointer-events-none" />
 
-        {/* Top Habitat Header */}
-        <div className="relative z-10 w-full flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 text-[10px] font-medium rounded bg-[#181c24] text-slate-300 border border-[#2d3342]">
+        {/* TOP STATUS BAR: Element, Rarity, Mood & Cooldown Timer */}
+        <div className="relative z-10 w-full flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-[#19152b] text-purple-200 border border-purple-800/50 shadow-sm">
               {speciesMeta.element}
             </span>
-            <span className="px-2 py-0.5 text-[10px] font-medium rounded bg-[#181c24] text-slate-400 border border-[#222733]">
+            <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-[#141224] text-slate-400 border border-slate-700/50">
               {speciesMeta.rarity}
             </span>
+            {isActionsSyncing && (
+              <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-indigo-950 text-indigo-300 border border-indigo-700 animate-pulse">
+                ⚡ Syncing Actions
+              </span>
+            )}
           </div>
 
-          <div className={`px-2 py-0.5 text-[10px] font-medium rounded border ${getMoodColor()}`}>
-            Mood: {pet.mood}
+          <div className="flex items-center gap-2">
+            {cooldownRemainingSeconds > 0 && (
+              <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-950/80 text-amber-300 border border-amber-600/60 animate-pulse font-mono">
+                ⏳ Cooldown: {cooldownRemainingSeconds}s
+              </span>
+            )}
+            <span className={`px-2.5 py-0.5 text-[11px] font-semibold rounded-md border shadow-sm ${getMoodBadgeColor()}`}>
+              Mood: {pet.mood}
+            </span>
           </div>
         </div>
 
-        {/* Floating Interaction Text Particles */}
-        {clickEffect.map((effect) => (
+        {/* FLOATING ACTION PARTICLES */}
+        {particles.map((p) => (
           <div
-            key={effect.id}
-            style={{ left: effect.x, top: effect.y }}
-            className={`absolute z-30 pointer-events-none -translate-x-1/2 -translate-y-1/2 font-medium text-xs ${effect.colorClass} drop-shadow-md animate-bounce`}
+            key={p.id}
+            style={{ left: `${p.x}px`, top: `${p.y}px` }}
+            className={`absolute z-30 pointer-events-none -translate-x-1/2 -translate-y-1/2 font-bold text-sm ${p.colorClass} drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)] animate-bounce flex items-center gap-1`}
           >
-            {effect.text}
+            {p.icon && <span>{p.icon}</span>}
+            <span>{p.text}</span>
           </div>
         ))}
 
-        {/* Centered Pet Sprite */}
-        <div className={`relative z-10 my-auto flex flex-col items-center justify-center transition-transform group-hover:scale-102 ${pet.mood === 'Resting' ? 'opacity-80' : ''}`}>
-          <PetSprite species={pet.species} size={160} />
+        {/* REACTION SPEECH BUBBLE */}
+        {lastReaction && (
+          <div className="relative z-20 max-w-[85%] bg-[#1a172e]/90 border border-purple-500/30 rounded-xl px-3 py-1.5 text-center text-xs text-purple-200 shadow-lg backdrop-blur-sm animate-fade-in mt-1">
+            <span className="italic font-medium">"{lastReaction}"</span>
+          </div>
+        )}
+
+        {/* CENTERED PET SPRITE ARENA */}
+        <div className="relative z-10 my-auto flex flex-col items-center justify-center">
+          <PetSprite
+            species={pet.species}
+            size={180}
+            animationState={animationState}
+            evolutionStage={pet.evolutionStage}
+            onClick={handlePetDirectClick}
+          />
         </div>
 
-        {/* Stage Pedestal Platform */}
+        {/* ARCANE PEDESTAL PLATFORM */}
         <div className="relative z-10 w-full flex flex-col items-center">
-          <div className="w-36 md:w-48 h-1.5 bg-[#181c24] rounded-full border border-[#222733]" />
-          <div className="text-[10px] text-slate-500 mt-1.5 flex items-center justify-between w-full px-1">
-            <span>Click stage to pet</span>
-            {rewardMultiplierText && (
-              <span className="text-slate-400 font-medium">{rewardMultiplierText}</span>
-            )}
+          <div className="w-48 sm:w-64 h-2.5 bg-gradient-to-r from-transparent via-[#312a59] to-transparent rounded-full border-t border-purple-500/40 shadow-[0_0_15px_rgba(147,51,234,0.3)]" />
+          <div className="text-[11px] text-purple-300/70 mt-1 flex items-center justify-between w-full px-2">
+            <span>✨ Tap companion to stroke</span>
+            <span className="font-mono text-purple-400 font-semibold">{pet.name}</span>
           </div>
         </div>
       </div>
 
-      {/* Quick Action Interaction Bar with 4 Actions: Pet, Train, Feed, Rest */}
-      <div className="w-full mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <PixelButton
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            triggerVisualEffect(80, 140, 'Petting...', 'text-pink-300');
-            onExecuteAction?.('pet');
-          }}
-          icon={<HeartIcon size={13} aria-hidden={true} />}
-          aria-label="Pet companion (Happiness and XP)"
-        >
-          Pet
-        </PixelButton>
-
-        <PixelButton
-          size="sm"
-          variant="secondary"
-          disabled={pet.energy < 18}
-          onClick={() => {
-            triggerVisualEffect(140, 100, 'Training!', 'text-amber-300');
-            onExecuteAction?.('train');
-          }}
-          icon={<BoltIcon size={13} aria-hidden={true} />}
-          aria-label="Train companion (Requires 18 Energy)"
-        >
-          Train (-18⚡)
-        </PixelButton>
-
-        <PixelButton
-          size="sm"
-          variant="secondary"
+      {/* 5 GAMEPLAY ACTION CONTROLS */}
+      <div className="w-full mt-4 grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+        {/* 1. FEED */}
+        <button
+          onClick={() => handleActionClick('feed')}
           disabled={pet.hunger >= 100}
-          onClick={() => {
-            triggerVisualEffect(200, 140, 'Feeding...', 'text-cyan-300');
-            onExecuteAction?.('feed');
-          }}
-          icon={<ActivityIcon size={13} aria-hidden={true} />}
-          aria-label="Feed commit (Satiety and XP)"
+          className={`relative p-3 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all text-xs font-bold shadow-md ${
+            pet.hunger >= 100
+              ? 'opacity-40 bg-[#12131a] border-slate-800 text-slate-500 cursor-not-allowed'
+              : 'bg-[#181629] border-[#38315d] text-amber-200 hover:bg-[#231f3d] hover:border-amber-500/60 active:scale-95'
+          }`}
+          title="Feed companion: +24 Satiety, +10 XP"
         >
-          Feed
-        </PixelButton>
+          <span className="text-xl">🍖</span>
+          <span>Feed</span>
+          <span className="text-[10px] text-amber-400 font-normal font-mono">+24 Sat</span>
+        </button>
 
-        <PixelButton
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            triggerVisualEffect(150, 160, 'Resting...', 'text-indigo-300');
-            onExecuteAction?.('rest');
-          }}
-          icon={<MoonIcon size={13} aria-hidden={true} />}
-          aria-label="Rest companion (+25 Energy, 0 XP)"
+        {/* 2. PLAY */}
+        <button
+          onClick={() => handleActionClick('play')}
+          disabled={pet.energy < 10}
+          className={`relative p-3 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all text-xs font-bold shadow-md ${
+            pet.energy < 10
+              ? 'opacity-40 bg-[#12131a] border-slate-800 text-slate-500 cursor-not-allowed'
+              : 'bg-[#181629] border-[#38315d] text-cyan-200 hover:bg-[#231f3d] hover:border-cyan-500/60 active:scale-95'
+          }`}
+          title="Play with companion: +16 Happiness, -10 Energy, +15 XP"
         >
-          Rest (+25⚡)
-        </PixelButton>
+          <span className="text-xl">🎾</span>
+          <span>Play</span>
+          <span className="text-[10px] text-cyan-400 font-normal font-mono">+16 Joy (-10⚡)</span>
+        </button>
+
+        {/* 3. TRAIN */}
+        <button
+          onClick={() => handleActionClick('train')}
+          disabled={pet.energy < 18}
+          className={`relative p-3 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all text-xs font-bold shadow-md ${
+            pet.energy < 18
+              ? 'opacity-40 bg-[#12131a] border-slate-800 text-slate-500 cursor-not-allowed'
+              : 'bg-[#181629] border-[#38315d] text-indigo-200 hover:bg-[#231f3d] hover:border-indigo-500/60 active:scale-95'
+          }`}
+          title="Train companion: +30 XP, -18 Energy"
+        >
+          <span className="text-xl">⚔️</span>
+          <span>Train</span>
+          <span className="text-[10px] text-indigo-400 font-normal font-mono">+30 XP (-18⚡)</span>
+        </button>
+
+        {/* 4. REST */}
+        <button
+          onClick={() => handleActionClick('rest')}
+          className="relative p-3 rounded-xl border border-[#38315d] bg-[#181629] text-purple-200 hover:bg-[#231f3d] hover:border-purple-500/60 active:scale-95 flex flex-col items-center justify-center gap-1 transition-all text-xs font-bold shadow-md"
+          title="Rest companion: Restores energy to full"
+        >
+          <span className="text-xl">🌙</span>
+          <span>Rest</span>
+          <span className="text-[10px] text-purple-400 font-normal font-mono">+25⚡ (0 XP)</span>
+        </button>
+
+        {/* 5. PET */}
+        <button
+          onClick={() => handleActionClick('pet')}
+          className="relative p-3 rounded-xl border border-[#38315d] bg-[#181629] text-pink-200 hover:bg-[#231f3d] hover:border-pink-500/60 active:scale-95 col-span-2 sm:col-span-1 flex flex-col items-center justify-center gap-1 transition-all text-xs font-bold shadow-md"
+          title="Stroke pet: +12 Happiness, +6 XP"
+        >
+          <span className="text-xl">🐾</span>
+          <span>Pet</span>
+          <span className="text-[10px] text-pink-400 font-normal font-mono">+12 Joy (+6 XP)</span>
+        </button>
       </div>
     </div>
   );
