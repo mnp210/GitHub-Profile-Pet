@@ -128,4 +128,71 @@ describe('Activity Transaction Journal & Crash Recovery (Sprint 4.1)', () => {
       .catch(() => false);
     assert.equal(txDirExists, false);
   });
+
+  it('handles crash before prepare (no tx directory) cleanly without error', async () => {
+    const recovered = await recoverActivityTransaction(tempBaseDir);
+    assert.equal(recovered, true, 'Recovery when no transaction exists should succeed idempotently');
+  });
+
+  it('rolls forward when crash occurs halfway through file replacements (some already renamed)', async () => {
+    const petPath = path.join(tempBaseDir, 'pet/state/pet.json');
+    const ledgerPath = path.join(tempBaseDir, 'pet/ledger/activity.json');
+
+    await fs.mkdir(path.dirname(petPath), { recursive: true });
+    await fs.mkdir(path.dirname(ledgerPath), { recursive: true });
+
+    // Suppose pet.json was ALREADY renamed to destination, but activity.json was still in staged/
+    await fs.writeFile(petPath, JSON.stringify({ level: 3, xp: 200 }), 'utf-8');
+    await fs.writeFile(ledgerPath, JSON.stringify({ oldState: true }), 'utf-8');
+
+    const txDir = path.join(tempBaseDir, ACTIVITY_TX_DIR);
+    const stagedLedgerDir = path.join(txDir, 'staged', 'pet/ledger');
+    await fs.mkdir(stagedLedgerDir, { recursive: true });
+    await fs.writeFile(path.join(stagedLedgerDir, 'activity.json'), JSON.stringify({ oldState: false, newState: true }), 'utf-8');
+
+    const manifest: ActivityTxManifest = {
+      txId: 'tx-crash-halfway',
+      status: 'committed',
+      files: ['pet/state/pet.json', 'pet/ledger/activity.json'],
+      timestamp: new Date().toISOString(),
+    };
+    await fs.writeFile(path.join(txDir, 'tx.json'), JSON.stringify(manifest), 'utf-8');
+
+    const recovered = await recoverActivityTransaction(tempBaseDir);
+    assert.equal(recovered, true);
+
+    const readPet = JSON.parse(await fs.readFile(petPath, 'utf-8'));
+    const readLedger = JSON.parse(await fs.readFile(ledgerPath, 'utf-8'));
+
+    assert.equal(readPet.level, 3, 'Existing applied file must remain intact');
+    assert.equal(readLedger.newState, true, 'Pending staged file must be rolled forward to destination');
+  });
+
+  it('cleans up transaction directory safely when crash occurred after replacements but before cleanup', async () => {
+    const petPath = path.join(tempBaseDir, 'pet/state/pet.json');
+    await fs.mkdir(path.dirname(petPath), { recursive: true });
+    await fs.writeFile(petPath, JSON.stringify({ level: 4 }), 'utf-8');
+
+    const txDir = path.join(tempBaseDir, ACTIVITY_TX_DIR);
+    await fs.mkdir(path.join(txDir, 'staged'), { recursive: true });
+    const manifest: ActivityTxManifest = {
+      txId: 'tx-crash-after-apply',
+      status: 'committed',
+      files: ['pet/state/pet.json'],
+      timestamp: new Date().toISOString(),
+    };
+    await fs.writeFile(path.join(txDir, 'tx.json'), JSON.stringify(manifest), 'utf-8');
+
+    const recovered = await recoverActivityTransaction(tempBaseDir);
+    assert.equal(recovered, true);
+
+    const readPet = JSON.parse(await fs.readFile(petPath, 'utf-8'));
+    assert.equal(readPet.level, 4);
+
+    const txDirExists = await fs
+      .access(txDir)
+      .then(() => true)
+      .catch(() => false);
+    assert.equal(txDirExists, false, 'Dangling transaction directory must be purged');
+  });
 });

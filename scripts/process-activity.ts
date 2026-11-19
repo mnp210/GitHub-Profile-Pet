@@ -19,7 +19,6 @@ import {
   executeActivityProcessing,
   performCompleteReconciliation,
   recoverActivityTransaction,
-  ACTIVITY_TX_DIR,
   type ActivityType,
   type ProcessActivityEventInput,
   type ProcessActivityResult,
@@ -377,10 +376,10 @@ async function main() {
       }
       console.log(`[GIT] Resetting to latest origin/${targetRef} and re-evaluating...`);
       try {
-        await fs.rm(path.join(baseDir, ACTIVITY_TX_DIR), { recursive: true, force: true }).catch(() => {});
+        await recoverActivityTransaction(baseDir);
         await execGit(['fetch', 'origin', targetRef], baseDir);
         await execGit(['reset', '--hard', `origin/${targetRef}`], baseDir);
-        await fs.rm(path.join(baseDir, ACTIVITY_TX_DIR), { recursive: true, force: true }).catch(() => {});
+        await recoverActivityTransaction(baseDir);
       } catch (resetErr) {
         console.error('[GIT ERROR] Failed to fetch and reset to remote:', (resetErr as Error).message);
         throw err;
