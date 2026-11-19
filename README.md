@@ -18,20 +18,34 @@ GitHub Profile Pet operates on a **100% GitHub-Native, serverless architecture**
 
 ```mermaid
 graph LR
-    subgraph User Repository & Profile
-        A[GitHub Profile README] <-- Embeds -- B[public/pet.svg]
-        C[pet/state/pet.json] <--> D[GitHub Actions Runtime]
-        E[pet/ledger/actions.json] <--> D
-        F[pet/ledger/contributions.json] <--> D
+    subgraph PROFILE["User Repository & Profile"]
+        A["GitHub Profile README"]
+        B["public/pet.svg"]
+        C["pet/state/pet.json"]
+        E["pet/ledger/actions.json"]
+        F["pet/ledger/contributions.json"]
+        D["GitHub Actions Runtime"]
+
+        B -->|"Embedded in"| A
+        C <--> D
+        E <--> D
+        F <--> D
     end
 
-    subgraph GitHub-Native Interactions
-        G[User Opens Care Issue] --> H[pet-interaction.yml]
+    subgraph INTERACTIONS["GitHub-Native Interactions"]
+        G["User Opens Care Issue"]
+        H["pet-interaction.yml"]
+        I["Scheduled Hourly Cron"]
+        J["pet-publisher.yml"]
+        K["Manual Dispatch"]
+        L["pet-baseline.yml"]
+
+        G --> H
         H --> D
-        I[Scheduled Hourly Cron] --> J[pet-publisher.yml]
+        I --> J
         J --> D
         D --> B
-        K[Manual Dispatch] --> L[pet-baseline.yml]
+        K --> L
         L --> D
     end
 ```
