@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { PetState, PetSpeciesMeta } from '@/types/pet';
 import { PetSprite, SpriteAnimationState } from './PetSprite';
 import { retroAudio } from '@/lib/audio/retroAudio';
@@ -156,7 +156,7 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
         {/* REACTION SPEECH BUBBLE */}
         {lastReaction && (
           <div className="relative z-20 max-w-[85%] bg-[#1a172e]/90 border border-purple-500/30 rounded-xl px-3 py-1.5 text-center text-xs text-purple-200 shadow-lg backdrop-blur-sm animate-fade-in mt-1">
-            <span className="italic font-medium">"{lastReaction}"</span>
+            <span className="italic font-medium">&ldquo;{lastReaction}&rdquo;</span>
           </div>
         )}
 

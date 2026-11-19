@@ -11,6 +11,7 @@ export interface ConnectedRepoConfig {
   repo: string; // e.g. "mnp210/GitHub-Profile-Pet-Test"
   token?: string; // Optional user personal access token
   syncToActions: boolean;
+  enableReadmeMenu?: boolean;
   lastSyncedAt?: string;
 }
 
@@ -236,6 +237,118 @@ export async function dispatchGitHubActionIssue(
 
     const issueData = await response.json();
     return { success: true, issueNumber: issueData.number };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+/**
+ * Fetches the raw content and git blob SHA of a repository's README.md via GitHub Contents API.
+ */
+export async function fetchRemoteReadme(
+  repo: string,
+  token?: string
+): Promise<{ success: boolean; content?: string; sha?: string; error?: string }> {
+  if (!repo || !repo.includes('/')) {
+    return { success: false, error: 'Invalid repository format. Expected "owner/repo".' };
+  }
+
+  try {
+    const cleanRepo = repo.trim();
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github.v3+json',
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token.trim()}`;
+    }
+
+    const response = await fetch(
+      `https://api.github.com/repos/${cleanRepo}/contents/README.md?t=${Date.now()}`,
+      { headers }
+    );
+
+    if (response.status === 404) {
+      return { success: true, content: '', sha: undefined };
+    }
+
+    if (!response.ok) {
+      return { success: false, error: `GitHub API error: HTTP ${response.status}` };
+    }
+
+    const data = await response.json();
+    const base64Content = (data.content || '').replace(/\s/g, '');
+    let decoded = '';
+    try {
+      decoded = decodeURIComponent(escape(atob(base64Content)));
+    } catch {
+      decoded = atob(base64Content);
+    }
+
+    return {
+      success: true,
+      content: decoded,
+      sha: data.sha,
+    };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+/**
+ * Updates or creates the repository's README.md via GitHub Contents API.
+ * Requires `Contents: read/write` permissions.
+ */
+export async function updateRemoteReadme(
+  repo: string,
+  content: string,
+  commitMessage: string,
+  sha: string | undefined,
+  token: string
+): Promise<{ success: boolean; commitSha?: string; error?: string }> {
+  if (!repo || !token) {
+    return { success: false, error: 'Repository and Token are required to update README.' };
+  }
+
+  try {
+    const cleanRepo = repo.trim();
+    let encoded = '';
+    try {
+      encoded = btoa(unescape(encodeURIComponent(content)));
+    } catch {
+      encoded = btoa(content);
+    }
+
+    const payload: { message: string; content: string; sha?: string } = {
+      message: commitMessage,
+      content: encoded,
+    };
+    if (sha) {
+      payload.sha = sha;
+    }
+
+    const response = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/README.md`, {
+      method: 'PUT',
+      headers: {
+        Accept: 'application/vnd.github.v3+json',
+        Authorization: `Bearer ${token.trim()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      return {
+        success: false,
+        error: errBody.message || `GitHub error HTTP ${response.status}`,
+      };
+    }
+
+    const resData = await response.json();
+    return {
+      success: true,
+      commitSha: resData.commit?.sha,
+    };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

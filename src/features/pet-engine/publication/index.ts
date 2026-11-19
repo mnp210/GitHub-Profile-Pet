@@ -4,6 +4,7 @@
 
 export * from './types.ts';
 export * from './readmeEmbed.ts';
+export * from './readmeMenu.ts';
 export * from './svgPublisher.ts';
 export * from './publishPipeline.ts';
 export * from './baselinePipeline.ts';

@@ -15,6 +15,10 @@
     "simulate:pet": "node --experimental-strip-types scripts/simulate-pet.ts",
     "publish:pet": "node --experimental-strip-types scripts/publish-pet.ts",
     "process:inbox": "node --experimental-strip-types scripts/process-inbox.ts",
+    "readme:menu:generate": "node --experimental-strip-types scripts/manage-readme-menu.ts generate",
+    "readme:menu:install": "node --experimental-strip-types scripts/manage-readme-menu.ts install",
+    "readme:menu:uninstall": "node --experimental-strip-types scripts/manage-readme-menu.ts uninstall",
+    "readme:menu:check": "node --experimental-strip-types scripts/manage-readme-menu.ts check",
     "migrate": "node --experimental-strip-types scripts/migrate.ts up",
     "migrate:down": "node --experimental-strip-types scripts/migrate.ts down"
   },

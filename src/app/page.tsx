@@ -21,57 +21,124 @@ import {
   dispatchGitHubActionIssue,
   exportSaveData,
   importSaveData,
+  fetchRemoteReadme,
+  updateRemoteReadme,
   ConnectedRepoConfig,
 } from '@/lib/storage/gameStateStorage';
+import {
+  generateReadmeMenuSnippet,
+  installReadmeMenu,
+  uninstallReadmeMenu,
+} from '@/features/pet-engine/publication/readmeMenu';
 
 export default function Home() {
-  const [pet, setPet] = useState<PetState>(INITIAL_PET_STATE);
-  const [actionHistory, setActionHistory] = useState<ActionHistoryEntry[]>([]);
+  const [pet, setPet] = useState<PetState>(() => loadLocalPetState());
+  const [actionHistory, setActionHistory] = useState<ActionHistoryEntry[]>(() => loadLocalActionHistory());
   const [cooldownRemainingSec, setCooldownRemainingSec] = useState<number>(0);
   const [lastReaction, setLastReaction] = useState<string>('');
   const [feedback, setFeedback] = useState<{
     message: string;
     type: 'success' | 'warning' | 'level_up' | 'info';
     rewardText?: string;
-  } | null>(null);
+  } | null>(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search).get('action');
+      if (p && p.toLowerCase().trim() === 'stats') {
+        const initialPet = loadLocalPetState();
+        return {
+          message: `Viewing Pet Stats for ${initialPet.name} from repository README.`,
+          type: 'info',
+        };
+      }
+    }
+    return null;
+  });
 
   // Audio mute state
-  const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [isMuted, setIsMuted] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? retroAudio.getMuted() : false
+  );
 
   // GitHub Sync & Modal state
-  const [repoConfig, setRepoConfig] = useState<ConnectedRepoConfig>({ repo: '', syncToActions: false });
+  const [repoConfig, setRepoConfig] = useState<ConnectedRepoConfig>(() => {
+    const loaded = loadRepoConfig();
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search).get('repo');
+      if (p && p.trim()) return { ...loaded, repo: p.trim() };
+    }
+    return loaded;
+  });
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
-  const [isCodexModalOpen, setIsCodexModalOpen] = useState<boolean>(false);
+  const [isCodexModalOpen, setIsCodexModalOpen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('action')?.toLowerCase().trim() === 'stats';
+    }
+    return false;
+  });
   const [isActionsSyncing, setIsActionsSyncing] = useState<boolean>(false);
   const [syncStatusMsg, setSyncStatusMsg] = useState<string>('');
 
+  // Pending action routed from external README navigation requiring user confirmation
+  const [pendingActionConfirmation, setPendingActionConfirmation] = useState<{
+    action: ActionType;
+    repo: string;
+  } | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const actionParam = params.get('action')?.toLowerCase().trim();
+      const repoParam = params.get('repo')?.trim() || loadRepoConfig().repo || 'connected repository';
+      if (actionParam && ['feed', 'play', 'train', 'rest', 'pet'].includes(actionParam)) {
+        return { action: actionParam as ActionType, repo: repoParam };
+      }
+    }
+    return null;
+  });
+
+  // README Pet Menu Integration state
+  const [readmeOperationStatus, setReadmeOperationStatus] = useState<string>('');
+  const [isReadmeBusy, setIsReadmeBusy] = useState<boolean>(false);
+
   // Draft inputs for sync modal
-  const [draftRepo, setDraftRepo] = useState<string>('');
-  const [draftToken, setDraftToken] = useState<string>('');
+  const [draftRepo, setDraftRepo] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search).get('repo');
+      if (p && p.trim()) return p.trim();
+    }
+    return loadRepoConfig().repo || '';
+  });
+  const [draftToken, setDraftToken] = useState<string>(() => loadRepoConfig().token || '');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 1. Initial Load: Read from persistent storage on client mount
   useEffect(() => {
-    const loadedPet = loadLocalPetState();
-    const loadedHistory = loadLocalActionHistory();
-    const loadedConfig = loadRepoConfig();
+    const initialConfig = loadRepoConfig();
 
-    setPet(loadedPet);
-    setActionHistory(loadedHistory);
-    setRepoConfig(loadedConfig);
-    setDraftRepo(loadedConfig.repo || '');
-    setDraftToken(loadedConfig.token || '');
-    setIsMuted(retroAudio.getMuted());
+    let activeRepo = initialConfig.repo;
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const repoParam = params.get('repo');
+      const actionParam = params.get('action');
+
+      if (repoParam && repoParam.trim()) {
+        activeRepo = repoParam.trim();
+        saveRepoConfig({ ...initialConfig, repo: activeRepo });
+      }
+
+      if (actionParam && actionParam.toLowerCase().trim() === 'stats') {
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete('action');
+        window.history.replaceState({}, '', newUrl.toString());
+      }
+    }
 
     // Auto-fetch latest state from repository if connected
-    if (loadedConfig.repo) {
-      setSyncStatusMsg('Fetching latest state from GitHub...');
-      fetchRemotePetState(loadedConfig.repo, loadedConfig.token).then((res) => {
+    if (activeRepo) {
+      fetchRemotePetState(activeRepo, initialConfig.token).then((res) => {
         if (res.success && res.pet) {
           setPet(res.pet);
-          saveLocalGameState(res.pet, loadedHistory);
-          setSyncStatusMsg(`Synchronized with ${loadedConfig.repo}`);
+          saveLocalGameState(res.pet, loadLocalActionHistory());
+          setSyncStatusMsg(`Synchronized with ${activeRepo}`);
         } else {
           setSyncStatusMsg(res.error || 'Using local adventure save.');
         }
@@ -205,6 +272,200 @@ export default function Home() {
           console.warn('GitHub Action sync notice:', res.error);
         }
       });
+    }
+  };
+
+  // Confirm and execute pending action from README link
+  const handleConfirmPendingAction = () => {
+    if (!pendingActionConfirmation) return;
+    const actionToRun = pendingActionConfirmation.action;
+    setPendingActionConfirmation(null);
+
+    if (typeof window !== 'undefined') {
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('action');
+      window.history.replaceState({}, '', newUrl.toString());
+    }
+
+    handleAction(actionToRun);
+  };
+
+  // Cancel pending action from README link
+  const handleCancelPendingAction = () => {
+    setPendingActionConfirmation(null);
+    if (typeof window !== 'undefined') {
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('action');
+      window.history.replaceState({}, '', newUrl.toString());
+    }
+  };
+
+  // Consequence preview dictionary for README action confirmation modal
+  const getActionConsequencePreview = (action: ActionType) => {
+    switch (action) {
+      case 'feed':
+        return {
+          title: '🍖 Feed Companion',
+          changes: ['+24 Satiety', '+10 XP', '-8 Energy'],
+          description: 'Restores hunger and awards basic care experience points.',
+        };
+      case 'play':
+        return {
+          title: '🎾 Play with Companion',
+          changes: ['+18 Joy / Happiness', '+15 XP', '-15 Energy'],
+          description: 'Engages companion in energetic play, boosting mood and happiness.',
+        };
+      case 'train':
+        return {
+          title: '⚔️ Train Companion',
+          changes: ['+25 XP', '+8 Joy', '-22 Energy', '-10 Satiety'],
+          description: 'Rigorous training regimen that accelerates level progression.',
+        };
+      case 'rest':
+        return {
+          title: '🌙 Rest Companion',
+          changes: ['+25 Energy', '-5 Satiety'],
+          description: 'Puts companion to sleep to recover vital energy.',
+        };
+      case 'pet':
+        return {
+          title: '🐾 Pet Companion',
+          changes: ['+10 Joy / Happiness', '+5 XP'],
+          description: 'Gentle touch offering affection and reassurance.',
+        };
+    }
+  };
+
+  // Copy README Pet Menu Markdown snippet to clipboard
+  const handleCopyReadmeSnippet = async () => {
+    const targetRepo = draftRepo.trim() || repoConfig.repo || 'owner/repo';
+    const snippet = generateReadmeMenuSnippet({
+      repo: targetRepo,
+      pet,
+    });
+
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(snippet);
+        setReadmeOperationStatus('✅ Copied README Pet Menu snippet to clipboard!');
+      } else {
+        setReadmeOperationStatus('Clipboard API unavailable in this context.');
+      }
+    } catch {
+      setReadmeOperationStatus('Failed to copy to clipboard.');
+    }
+  };
+
+  // Install / Update README Pet Menu via GitHub Contents API
+  const handleInstallReadmeMenu = async () => {
+    const targetRepo = draftRepo.trim() || repoConfig.repo;
+    const token = draftToken.trim() || repoConfig.token;
+
+    if (!targetRepo || !token) {
+      setReadmeOperationStatus('⚠️ Both repository and token with "Contents: read/write" are required.');
+      return;
+    }
+
+    setIsReadmeBusy(true);
+    setReadmeOperationStatus('Fetching repository README.md...');
+
+    try {
+      const fetchRes = await fetchRemoteReadme(targetRepo, token);
+      if (!fetchRes.success) {
+        setReadmeOperationStatus(`Error fetching README: ${fetchRes.error}`);
+        setIsReadmeBusy(false);
+        return;
+      }
+
+      const existingContent = fetchRes.content ?? '';
+      const installRes = installReadmeMenu(existingContent, {
+        repo: targetRepo,
+        pet,
+      });
+
+      if (!installRes.changed) {
+        setReadmeOperationStatus('ℹ️ README Pet Menu is already up-to-date!');
+        setIsReadmeBusy(false);
+        return;
+      }
+
+      setReadmeOperationStatus('Committing updated README.md to GitHub...');
+      const commitMsg = installRes.installed
+        ? 'docs: install interactive pet menu in README [skip ci]'
+        : 'docs: update pet menu state in README [skip ci]';
+
+      const updateRes = await updateRemoteReadme(
+        targetRepo,
+        installRes.content,
+        commitMsg,
+        fetchRes.sha,
+        token
+      );
+
+      if (updateRes.success) {
+        setReadmeOperationStatus(`🎉 Successfully ${installRes.installed ? 'installed' : 'updated'} Pet Menu in README!`);
+      } else {
+        setReadmeOperationStatus(`GitHub commit error: ${updateRes.error}`);
+      }
+    } catch (err) {
+      setReadmeOperationStatus(`Failed: ${(err as Error).message}`);
+    } finally {
+      setIsReadmeBusy(false);
+    }
+  };
+
+  // Uninstall README Pet Menu via GitHub Contents API
+  const handleUninstallReadmeMenu = async () => {
+    const targetRepo = draftRepo.trim() || repoConfig.repo;
+    const token = draftToken.trim() || repoConfig.token;
+
+    if (!targetRepo || !token) {
+      setReadmeOperationStatus('⚠️ Both repository and token with "Contents: read/write" are required.');
+      return;
+    }
+
+    if (!confirm('Are you sure you want to completely remove the Pet Menu from your README?')) {
+      return;
+    }
+
+    setIsReadmeBusy(true);
+    setReadmeOperationStatus('Fetching repository README.md...');
+
+    try {
+      const fetchRes = await fetchRemoteReadme(targetRepo, token);
+      if (!fetchRes.success) {
+        setReadmeOperationStatus(`Error fetching README: ${fetchRes.error}`);
+        setIsReadmeBusy(false);
+        return;
+      }
+
+      const existingContent = fetchRes.content ?? '';
+      const uninstallRes = uninstallReadmeMenu(existingContent);
+
+      if (!uninstallRes.removed) {
+        setReadmeOperationStatus('ℹ️ No Pet Menu found in README to remove.');
+        setIsReadmeBusy(false);
+        return;
+      }
+
+      setReadmeOperationStatus('Committing clean README.md to GitHub...');
+      const updateRes = await updateRemoteReadme(
+        targetRepo,
+        uninstallRes.content,
+        'docs: uninstall pet menu from README [skip ci]',
+        fetchRes.sha,
+        token
+      );
+
+      if (updateRes.success) {
+        setReadmeOperationStatus('🗑️ Successfully removed Pet Menu from README!');
+      } else {
+        setReadmeOperationStatus(`GitHub commit error: ${updateRes.error}`);
+      }
+    } catch (err) {
+      setReadmeOperationStatus(`Failed: ${(err as Error).message}`);
+    } finally {
+      setIsReadmeBusy(false);
     }
   };
 
@@ -551,11 +812,11 @@ export default function Home() {
 
               <div>
                 <label className="block text-xs font-semibold text-purple-300 mb-1">
-                  Personal Access Token (Optional for Actions Dispatch)
+                  Personal Access Token (Optional for Actions & README Integration)
                 </label>
                 <input
                   type="password"
-                  placeholder="Fine-grained token with 'Issues: Read and Write'"
+                  placeholder="Fine-grained token with 'Issues: Read & Write' and optional 'Contents: Read & Write'"
                   value={draftToken}
                   onChange={(e) => setDraftToken(e.target.value)}
                   className="w-full px-3 py-2 bg-[#090a10] border border-[#2b274c] rounded-lg text-xs font-mono text-slate-100 focus:outline-none focus:border-purple-500"
@@ -563,6 +824,60 @@ export default function Home() {
                 <p className="text-[10px] text-slate-500 mt-1">
                   🔒 Zero-token exposure guarantee: Token is stored strictly in your browser session and never sent to any third-party server.
                 </p>
+              </div>
+
+              {/* PERMISSIONS & SAFETY DOCUMENTATION */}
+              <div className="p-2.5 rounded-lg bg-[#0d0f17] border border-[#272344] text-[11px] text-slate-400 space-y-1">
+                <p className="font-semibold text-purple-300">🔐 Granular GitHub Permissions Model:</p>
+                <p>• <strong>Issues (Read & Write):</strong> Required only for dispatching care action issues to trigger GitHub Actions.</p>
+                <p>• <strong>Contents (Read & Write):</strong> Required ONLY if enabling automatic installation/updates to <code>README.md</code>.</p>
+              </div>
+
+              {/* README PET MENU INTEGRATION SECTION */}
+              <div className="p-3 rounded-xl bg-[#141226] border border-purple-800/40 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-purple-200 flex items-center gap-1.5">
+                    <span>📑</span> README Pet Menu Integration
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">Markdown / HTML</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Embed an attractive, interactive-navigation Pet Menu in any repository README so visitors can inspect your pet and jump straight into live gameplay!
+                </p>
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleCopyReadmeSnippet}
+                    className="px-2.5 py-1 rounded bg-[#201c38] hover:bg-[#2e2952] border border-purple-700/60 text-[11px] font-semibold text-purple-200 cursor-pointer"
+                  >
+                    📋 Copy Markdown
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isReadmeBusy || !draftToken.trim()}
+                    onClick={handleInstallReadmeMenu}
+                    className="px-2.5 py-1 rounded bg-purple-700 hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed text-[11px] font-bold text-white cursor-pointer"
+                    title={draftToken.trim() ? "Install or update README menu directly via GitHub Contents API" : "Requires token with Contents: Read & Write"}
+                  >
+                    {isReadmeBusy ? 'Updating...' : '🚀 Install / Update in README'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isReadmeBusy || !draftToken.trim()}
+                    onClick={handleUninstallReadmeMenu}
+                    className="px-2.5 py-1 rounded bg-rose-950/60 hover:bg-rose-900 border border-rose-800 disabled:opacity-50 disabled:cursor-not-allowed text-[11px] text-rose-300 cursor-pointer"
+                    title={draftToken.trim() ? "Completely remove the Pet Menu from README" : "Requires token with Contents: Read & Write"}
+                  >
+                    🗑️ Uninstall
+                  </button>
+                </div>
+
+                {readmeOperationStatus && (
+                  <div className="p-2 rounded bg-[#0b0c13] border border-purple-800/60 text-[11px] text-purple-200 font-mono">
+                    {readmeOperationStatus}
+                  </div>
+                )}
               </div>
 
               {syncStatusMsg && (
@@ -618,6 +933,84 @@ export default function Home() {
                 className="px-4 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-600 text-xs font-bold text-white cursor-pointer"
               >
                 Close Codex
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. ACTION CONFIRMATION MODAL (ROUTED FROM README DEEP-LINK) */}
+      {pendingActionConfirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="w-full max-w-md bg-[#131124] border-2 border-amber-500 rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#2d2847] pb-3">
+              <h3 className="text-sm font-bold text-amber-300 flex items-center gap-2 font-mono">
+                <span>⚡</span> CONFIRM EXTERNAL PET ACTION
+              </h3>
+              <button
+                onClick={handleCancelPendingAction}
+                className="text-slate-400 hover:text-white text-lg p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-[#1c1833] border border-amber-500/30 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">Target Companion:</span>
+                <span className="font-bold text-slate-100">
+                  {pet.name} ({currentSpeciesMeta.name})
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">Target Repository:</span>
+                <span className="font-mono text-purple-300">
+                  {pendingActionConfirmation.repo}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">Requested Action:</span>
+                <span className="font-bold text-amber-400 uppercase tracking-wide">
+                  {getActionConsequencePreview(pendingActionConfirmation.action).title}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 text-xs text-slate-300">
+              <p className="font-semibold text-purple-200">Predicted Consequences:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {getActionConsequencePreview(pendingActionConfirmation.action).changes.map((c, i) => (
+                  <span
+                    key={i}
+                    className="px-2 py-0.5 rounded bg-purple-950/80 border border-purple-700/60 text-purple-200 font-mono text-[11px]"
+                  >
+                    {c}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-400 pt-1">
+                {getActionConsequencePreview(pendingActionConfirmation.action).description}
+              </p>
+            </div>
+
+            <div className="p-2.5 rounded-lg bg-amber-950/30 border border-amber-800/40 text-[11px] text-amber-200/90 leading-relaxed">
+              🔒 <strong>Action Confirmation Safety Policy:</strong> You navigated to this game from a repository README link. Actions will not execute automatically without your explicit confirmation.
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#2d2847]">
+              <button
+                type="button"
+                onClick={handleCancelPendingAction}
+                className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPendingAction}
+                className="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-xs font-bold text-black shadow-lg shadow-amber-600/30 cursor-pointer"
+              >
+                Confirm & Execute
               </button>
             </div>
           </div>

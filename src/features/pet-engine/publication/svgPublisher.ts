@@ -11,6 +11,7 @@ import { renderPetSvg } from '../rendering/index.ts';
 import { assertValidSvgOutput } from '../rendering/svgValidation.ts';
 import { assertValidPetState } from '../validation/stateValidator.ts';
 import { updateReadmeContent } from './readmeEmbed.ts';
+import { updateReadmeMenuContent, README_MENU_MARKER_START } from './readmeMenu.ts';
 import type { PublishPetOptions, PublishResult } from './types.ts';
 
 /**
@@ -118,12 +119,39 @@ export async function publishPetSvg(options: PublishPetOptions = {}): Promise<Pu
         .relative(path.dirname(readmePath), outputPath)
         .replace(/\\/g, '/');
 
-      const updateResult = updateReadmeContent(existingReadme, relativeSvg);
-      readmeUpdated = updateResult.markersFound;
-      readmeChanged = updateResult.changed;
+      let currentReadmeContent = existingReadme;
+      let anyMarkersFound = false;
+
+      // 1. Update standard profile badge embed if markers present
+      const badgeUpdateResult = updateReadmeContent(currentReadmeContent, relativeSvg);
+      if (badgeUpdateResult.markersFound) {
+        anyMarkersFound = true;
+        currentReadmeContent = badgeUpdateResult.content;
+      }
+
+      // 2. Update interactive README Pet Menu if markers present
+      if (currentReadmeContent.includes(README_MENU_MARKER_START)) {
+        anyMarkersFound = true;
+        const resolvedRepo =
+          options.repo ||
+          process.env.GITHUB_REPOSITORY ||
+          'owner/github-profile-pet';
+
+        const menuUpdateResult = updateReadmeMenuContent(currentReadmeContent, {
+          repo: resolvedRepo,
+          pet: petState,
+          hostedGameUrl: options.hostedGameUrl,
+          svgRelativePath: relativeSvg,
+          lastUpdatedUtc: new Date().toISOString(),
+        });
+        currentReadmeContent = menuUpdateResult.content;
+      }
+
+      readmeUpdated = anyMarkersFound;
+      readmeChanged = currentReadmeContent !== existingReadme;
 
       if (readmeChanged) {
-        await atomicWriteFile(readmePath, updateResult.content);
+        await atomicWriteFile(readmePath, currentReadmeContent);
       }
     }
   }
