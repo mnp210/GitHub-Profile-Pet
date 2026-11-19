@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generation": 2,
+  "generation": 3,
   "ownerDatabaseId": 298821706,
   "ownerLogin": "mnp210",
   "installationBaseline": {
@@ -14,22 +14,77 @@
   },
   "dailyHwm": {
     "2026-11-17": 1,
-    "2026-11-18": 6
+    "2026-11-18": 10,
+    "2026-11-19": 0
   },
   "dailyRewardOrdinal": {
     "2026-11-17": 0,
-    "2026-11-18": 0
+    "2026-11-18": 4,
+    "2026-11-19": 0
   },
   "lastSyncReceipt": {
-    "timestamp": "2026-11-18T13:27:20.455Z",
+    "timestamp": "2026-11-19T03:59:27.099Z",
     "status": "success",
-    "incrementsProcessed": 0,
-    "notes": "Installation baseline recorded. Historical contributions baseline established with zero rewards."
+    "incrementsProcessed": 4,
+    "notes": "Reconciled 2 snapshot(s). Observed delta: 4. Evaluated: 4."
   },
-  "dailyAccruedXp": {},
-  "hourlyIncrementUsage": {},
+  "dailyAccruedXp": {
+    "2026-11-18": 55
+  },
+  "hourlyIncrementUsage": {
+    "2026-11-19T03": 4
+  },
   "hourlySliceUsage": {},
-  "monotonicPublicHwm": 6,
-  "slices": [],
+  "monotonicPublicHwm": 10,
+  "slices": [
+    {
+      "sliceId": "slice_2026-11-18_ord_1",
+      "syncDate": "2026-11-18",
+      "dailyOrdinal": 1,
+      "discoveredAt": "2026-11-19T03:59:27.099Z",
+      "units": 1,
+      "status": "rewarded",
+      "rewardedXp": 25,
+      "rewardedSatiety": 10,
+      "expiryAt": "2026-11-20T00:00:00.000Z",
+      "evaluatedAt": "2026-11-19T03:59:27.099Z"
+    },
+    {
+      "sliceId": "slice_2026-11-18_ord_2",
+      "syncDate": "2026-11-18",
+      "dailyOrdinal": 2,
+      "discoveredAt": "2026-11-19T03:59:27.099Z",
+      "units": 1,
+      "status": "rewarded",
+      "rewardedXp": 15,
+      "rewardedSatiety": 5,
+      "expiryAt": "2026-11-20T00:00:00.000Z",
+      "evaluatedAt": "2026-11-19T03:59:27.099Z"
+    },
+    {
+      "sliceId": "slice_2026-11-18_ord_3",
+      "syncDate": "2026-11-18",
+      "dailyOrdinal": 3,
+      "discoveredAt": "2026-11-19T03:59:27.099Z",
+      "units": 1,
+      "status": "rewarded",
+      "rewardedXp": 10,
+      "rewardedSatiety": 2,
+      "expiryAt": "2026-11-20T00:00:00.000Z",
+      "evaluatedAt": "2026-11-19T03:59:27.099Z"
+    },
+    {
+      "sliceId": "slice_2026-11-18_ord_4",
+      "syncDate": "2026-11-18",
+      "dailyOrdinal": 4,
+      "discoveredAt": "2026-11-19T03:59:27.099Z",
+      "units": 1,
+      "status": "rewarded",
+      "rewardedXp": 5,
+      "rewardedSatiety": 1,
+      "expiryAt": "2026-11-20T00:00:00.000Z",
+      "evaluatedAt": "2026-11-19T03:59:27.099Z"
+    }
+  ],
   "monthlyHistoricalSummary": []
 }
