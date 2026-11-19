@@ -2,7 +2,7 @@
 
 **Document ID:** `docs/operations/contribution-baseline-procedure.md`  
 **Milestone:** Phase 3C2.3-A.2 (Final Operational Recovery & GraphQL Safety Corrections)  
-**Target Repository:** `mnp210/GitHub-Profile-Pet`  
+**Target Repository:** `<owner>/<repo>` (Operational Reference)  
 **Status:** Approved Reference  
 
 ---
@@ -24,17 +24,17 @@ Subsequent contributions observed in future hourly synchronization runs that exc
 Before initiating the baseline synchronization run, the operator must execute the following non-mutating pre-checks:
 
 ### 2.1 Repository and Owner Identity Checks
-1. **Target Repository:** Verify current Git origin URL points to `mnp210/GitHub-Profile-Pet`:
+1. **Target Repository:** Verify current Git origin URL points to `<owner>/<repo>`:
    ```bash
    git remote get-url origin
    ```
    *Qualification Note (F-02):* The local branch check confirms branch alignment, but the runtime does not independently inspect the remote URL. In production GitHub Actions, `actions/checkout@v4` guarantees that `origin` points to the hosted repository.
 2. **Owner Account Type:** Confirm the owner is a personal GitHub user, not an organization:
-   - Target Login: `mnp210`
+   - Target Login: `<owner-username>`
    - Account Type: `User` (`__typename == "User"`)
    - Organization accounts are rejected fail-closed with `OrganizationAccountError`.
 3. **Immutable Numeric Database ID:**
-   - Confirm owner numeric ID resolution: Database ID `298821706` for `mnp210`.
+   - Confirm owner numeric ID resolution: Database ID `<owner-database-id>` for `<owner-username>`.
    - Once recorded in `pet/ledger/contributions.json`, this ID binds the ledger permanently to prevent cross-account credential theft or username recycling.
 
 ### 2.2 Provider, Rate-Limit & Credential Checks

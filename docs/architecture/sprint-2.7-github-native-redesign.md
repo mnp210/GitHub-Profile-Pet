@@ -557,12 +557,9 @@ The profile README displays direct markdown links that open pre-filled Issue For
 - *GraphQL API Resource Limits:* https://docs.github.com/en/graphql/overview/resource-limitations (Accessed Nov 15, 2026)
 
 ### 8.1 Platform Allowance Accounting
-1. **Public Repository Runner Allowance:** Standard GitHub-hosted Linux runners (2-core, 7 GB RAM) are **free and unlimited** for public repositories, subject to platform abuse and fair-use guidelines.
-2. **Private Repository Runner Allowance:** GitHub Free accounts include **2,000 Linux runner minutes/month**.
-   - Scheduled Maintenance: 4 runs/day × 30.5 days = ~122 runs/month @ ~15–25s (billed as 1 min) = **~122 minutes/month**.
-   - Interactive Care Actions: ~3 actions/day = ~90 runs/month @ ~15s (billed as 1 min) = **~90 minutes/month**.
-   - Total Consumption: **~212 runner minutes/month** (**10.6% of personal allowance**), leaving ~89% of minutes for private software development.
-3. **Storage & Cache Limits:** Actions cache and artifact storage is capped at 500 MB free per repo. **Our target architecture stores state in Git, consuming 0 MB of Actions artifact/cache storage.**
+1. **Public Repository Runner Allowance:** Standard GitHub-hosted Linux runners (`ubuntu-latest`: 4 vCPUs, 16 GB RAM, 14 GB SSD) are **free of minute charges** for public repositories, subject to platform abuse and fair-use guidelines.
+2. **Private Repository Runner Allowance:** Private repository execution runs on standard Linux runners (`ubuntu-latest`: 2 vCPUs, 8 GB RAM, 14 GB SSD; SKU: `actions_linux`) and draws from the account's monthly monetary compute allowance ($12.00 USD/month on GitHub Free) at $0.006/min.
+3. **Storage & Cache Limits:** Actions artifact storage is capped at 500 MB included for Free accounts, and Actions cache is capped at 10 GB per repo. **Our target architecture stores state in Git repository storage (<100 KB total), consuming 0 MB of Actions artifact and 0 MB of cache storage.**
 4. **Concurrency Ceiling (Plan-Specific Limits):**
    - **GitHub Free:** Maximum **20 concurrent jobs** per user account.
    - **GitHub Pro:** 40 concurrent jobs.

@@ -16,6 +16,7 @@
  */
 
 import { executeBaselinePipeline } from '../src/features/pet-engine/publication/index.ts';
+import { verifyAdministratorAuthorization } from '../src/features/pet-engine/contribution/index.ts';
 
 export function parseArgs(args: string[]): {
   refName?: string;
@@ -24,6 +25,7 @@ export function parseArgs(args: string[]): {
   skipPush: boolean;
   baseDir?: string;
   expectedOwnerDatabaseId?: number;
+  reinitializeForeignFork: boolean;
   help: boolean;
 } {
   let refName: string | undefined;
@@ -32,6 +34,7 @@ export function parseArgs(args: string[]): {
   let skipPush = false;
   let baseDir: string | undefined;
   let expectedOwnerDatabaseId: number | undefined;
+  let reinitializeForeignFork = false;
   let help = false;
 
   for (let i = 0; i < args.length; i++) {
@@ -48,6 +51,8 @@ export function parseArgs(args: string[]): {
       dryRun = true;
     } else if (arg === '--skip-push') {
       skipPush = true;
+    } else if (arg === '--reinitialize-foreign-fork') {
+      reinitializeForeignFork = true;
     } else if (arg === '--owner-id' && i + 1 < args.length) {
       const parsedId = parseInt(args[++i], 10);
       if (!isNaN(parsedId)) {
@@ -56,7 +61,7 @@ export function parseArgs(args: string[]): {
     }
   }
 
-  return { refName, gitRemote, dryRun, skipPush, baseDir, expectedOwnerDatabaseId, help };
+  return { refName, gitRemote, dryRun, skipPush, baseDir, expectedOwnerDatabaseId, reinitializeForeignFork, help };
 }
 
 async function main() {
@@ -77,6 +82,22 @@ async function main() {
     console.log('[establish-baseline] Option: SKIP PUSH (commit locally, skip remote push)');
   }
 
+  // Verify administrator authorization if running within GitHub Actions context (R3.22-02)
+  if (process.env.GITHUB_ACTOR || process.env.GITHUB_REPOSITORY_OWNER) {
+    try {
+      const auth = await verifyAdministratorAuthorization({
+        repository: process.env.GITHUB_REPOSITORY ?? '',
+        repositoryOwner: process.env.GITHUB_REPOSITORY_OWNER ?? '',
+        actor: process.env.GITHUB_ACTOR ?? '',
+        confirmOwner: process.env.CONFIRM_OWNER,
+      });
+      console.log(`[establish-baseline] Administrator Authorization: ${auth.details}`);
+    } catch (err: unknown) {
+      console.error(`::error::[establish-baseline] Authorization Failed: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  }
+
   const result = await executeBaselinePipeline({
     refName: options.refName,
     gitRemote: options.gitRemote,
@@ -84,6 +105,7 @@ async function main() {
     skipPush: options.skipPush,
     baseDir: options.baseDir,
     expectedOwnerDatabaseId: options.expectedOwnerDatabaseId,
+    reinitializeForeignFork: options.reinitializeForeignFork,
   });
 
   if (!result.success) {

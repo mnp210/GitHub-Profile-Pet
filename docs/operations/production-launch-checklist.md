@@ -2,7 +2,7 @@
 
 **Document ID:** `docs/operations/production-launch-checklist.md`  
 **Milestone:** Phase 3C2.3-A.2 (Final Operational Recovery & GraphQL Safety Corrections)  
-**Target Repository:** `mnp210/GitHub-Profile-Pet`  
+**Target Repository:** `<owner>/<repo>` (Operational Reference)  
 **Status:** Operational Pre-Launch Document (Awaiting Baseline Authorization)  
 
 ---
@@ -12,20 +12,20 @@
 Every item in this section must be verified prior to authorizing baseline initialization.
 
 - [ ] **1.1 Repository Identity Verification**
-  - *Requirement:* Working tree remote `origin` points strictly to `mnp210/GitHub-Profile-Pet`.
+  - *Requirement:* Working tree remote `origin` points strictly to `<owner>/<repo>`.
   - *Verification Command:*
     ```bash
     git remote get-url origin
-    # Expected: https://github.com/mnp210/GitHub-Profile-Pet.git (or git@github.com:mnp210/GitHub-Profile-Pet.git)
+    # Expected: https://github.com/<owner>/<repo>.git (or git@github.com:<owner>/<repo>.git)
     ```
   - *Qualification (F-02):* The local branch check confirms local branch alignment, but does not independently inspect remote URLs. Production safety relies on `actions/checkout@v4` on the Actions runner to configure the correct repository origin.
 
 - [ ] **1.2 Owner Identity & Personal Account Type**
-  - *Requirement:* Owner login is `mnp210`, immutable numeric database ID is `298821706`, and account type is `User`.
+  - *Requirement:* Owner login is `<owner-username>`, immutable numeric database ID is `<owner-database-id>`, and account type is `User`.
   - *Verification Command:*
     ```bash
     node --experimental-strip-types scripts/probe-github-contributions.ts
-    # Expected output: isPersonalAccount: true, databaseId: 298821706, login: "mnp210"
+    # Expected output: isPersonalAccount: true, databaseId: <owner-database-id>, login: "<owner-username>"
     ```
 
 - [ ] **1.3 Workflow Configurations & Schedule Overlap**
@@ -148,5 +148,5 @@ Every item in this section must be verified prior to authorizing baseline initia
 - [ ] **4.4 Ledger Schema Invariant:** Run automated integrity tests weekly (`npm run test:pet-engine`).
 - [ ] **4.5 Inactivity Suspension Check & Re-Enablement (F-01):** Check at 45 days of inactivity to prevent GitHub's 60-day cron pause. If suspended, re-enable workflows via the GitHub Web UI ("Enable workflow"), GitHub CLI (`gh workflow enable <file>`), or REST API; do not rely on `workflow_dispatch` alone.
 - [ ] **4.6 Capacity and Usage Accounting:**
-  - Standard hosted runners in public repositories are free of runner-minute charges, subject to GitHub usage policies and capacity. Free of charge does not mean unlimited execution capacity or guaranteed scheduling.
-  - For private repositories, runner minutes are rounded up to the nearest whole minute per job. A scenario of 48 runs/day at 1 min/job across a 30-day month yields ~1,440 billed minutes/month. This is an illustrative scenario; all other account workflows must be included when evaluating available quota.
+  - Standard hosted runners in public repositories (`ubuntu-latest`: 4 vCPUs, 16 GB RAM, 14 GB SSD) are free of runner-minute charges, subject to GitHub usage policies and capacity. Free of charge does not mean unlimited execution capacity or guaranteed scheduling.
+  - For private repositories, compute usage (`ubuntu-latest`: 2 vCPUs, 8 GB RAM, 14 GB SSD; SKU: `actions_linux`) draws from the account's monthly included monetary compute allowance (e.g. $12.00 USD/month on GitHub Free) at the standard Linux rate ($0.006/min for 2-core x64). Job durations round up to the nearest whole minute. An illustrative scenario of 48 runs/day at 1 min/job across a 30-day month yields ~1,440 billable minutes (~$8.64 USD/month, or ~72% of a $12.00 allowance). This is an illustrative estimate; all other account workflows and shared compute workloads draw from the same allowance.

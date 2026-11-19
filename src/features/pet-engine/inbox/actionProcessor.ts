@@ -415,15 +415,27 @@ export async function processInbox(
       continue;
     }
 
-    // Case E: Eligible Action - Author Authorization Check
+    // Case E: Eligible Action - Author Authorization Check (P1-03: Fail-Closed Authorization)
     const issueNum = item.issueNumber;
     const actionType = item.actionType!;
 
-    if (
-      !options.allowAnyAuthor &&
-      options.trustedAuthorId !== undefined &&
-      item.authorId !== options.trustedAuthorId
-    ) {
+    const isBotAuthor =
+      item.authorId === 41898282 ||
+      (typeof item.authorLogin === 'string' && item.authorLogin.toLowerCase().endsWith('[bot]'));
+
+    const hasValidAuthorId =
+      typeof item.authorId === 'number' && Number.isInteger(item.authorId) && item.authorId > 0;
+
+    const isAuthorized =
+      !isBotAuthor &&
+      hasValidAuthorId &&
+      (options.allowAnyAuthor === true ||
+        (typeof options.trustedAuthorId === 'number' &&
+          Number.isInteger(options.trustedAuthorId) &&
+          options.trustedAuthorId > 0 &&
+          item.authorId === options.trustedAuthorId));
+
+    if (!isAuthorized) {
       rejectedCount++;
       state.actions.processedRequestRegistry = recordProcessedIssue(
         state.actions.processedRequestRegistry,
@@ -433,7 +445,10 @@ export async function processInbox(
         state.actions.processedRequestRegistry
       );
 
-      const rejMessage = `Unauthorized actor (@${item.authorLogin}, id: ${item.authorId}). Only the designated repository trainer can submit care actions.`;
+      const rejMessage =
+        typeof options.trustedAuthorId !== 'number' || options.trustedAuthorId <= 0
+          ? 'Missing or unconfigured trusted repository trainer identity. Care action rejected.'
+          : `Unauthorized actor (@${item.authorLogin}, id: ${item.authorId}). Only the designated repository trainer can submit care actions.`;
       const rejOutcome: ActionProcessOutcome = {
         issueNumber: issueNum,
         actionType,

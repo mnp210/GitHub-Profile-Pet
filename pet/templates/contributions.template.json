@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "generation": 1,
+  "ownerDatabaseId": null,
+  "ownerLogin": null,
+  "dailyHwm": {},
+  "dailyRewardOrdinal": {},
+  "dailyAccruedXp": {},
+  "hourlyIncrementUsage": {},
+  "hourlySliceUsage": {},
+  "monotonicPublicHwm": 0,
+  "slices": [],
+  "monthlyHistoricalSummary": []
+}

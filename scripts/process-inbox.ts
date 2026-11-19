@@ -9,6 +9,7 @@
  */
 
 import { runInboxPublicationPipeline } from '../src/features/pet-engine/publication/index.ts';
+import { resolveOwnerIdentity } from '../src/features/pet-engine/contribution/index.ts';
 
 export function parseArgs(args: string[]): {
   refName?: string;
@@ -76,6 +77,32 @@ async function main() {
     console.log('[process-inbox] Option: SKIP PUSH (commit locally, skip remote push)');
   }
 
+  const baseDir = options.baseDir ?? process.cwd();
+  let trustedAuthorId: number | undefined;
+
+  try {
+    const identity = resolveOwnerIdentity({ baseDir, env: process.env, allowLedgerFallback: true });
+    if (typeof identity.databaseId === 'number' && Number.isInteger(identity.databaseId) && identity.databaseId > 0) {
+      trustedAuthorId = identity.databaseId;
+      console.log(
+        `[process-inbox] Authorized Trainer Identity: @${identity.login} (databaseId: ${trustedAuthorId}, source: ${identity.sourceDatabaseId ?? identity.sourceLogin})`
+      );
+    } else {
+      console.error(
+        '::error::[process-inbox] Failed to resolve trusted owner numeric database ID. Action inbox requires valid trainer identity.'
+      );
+      process.exit(1);
+    }
+  } catch (err: unknown) {
+    console.error(`::error::[process-inbox] Identity resolution failed: ${(err as Error).message}`);
+    process.exit(1);
+  }
+
+  const allowAnyAuthor = process.env.PET_ALLOW_ANY_AUTHOR === 'true';
+  if (allowAnyAuthor) {
+    console.log('[process-inbox] Configuration: PET_ALLOW_ANY_AUTHOR is true. Community pet mode enabled.');
+  }
+
   const result = await runInboxPublicationPipeline({
     refName: options.refName,
     gitRemote: options.gitRemote,
@@ -83,6 +110,8 @@ async function main() {
     skipPush: options.skipPush,
     baseDir: options.baseDir,
     maxRetries: options.maxRetries,
+    trustedAuthorId,
+    allowAnyAuthor,
   });
 
   if (result.inboxResult) {

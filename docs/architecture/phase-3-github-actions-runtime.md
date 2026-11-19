@@ -223,8 +223,8 @@ fi
 ## 7. Free-Tier Resource, Billing & Lifecycle Analysis
 
 ### 7.1 Platform Allowance & Usage Limits
-- **Public Repositories:** Standard GitHub-hosted Linux runners (2 cores, 7 GB RAM) are free of minute charges for public repositories. However, they are **subject to GitHub's standard platform policies, abuse and fair-use guidelines, and account concurrency limits** (maximum 20 concurrent jobs across the user's account on GitHub Free). They should not be assumed to be unconditionally unlimited.
-- **Private Repositories:** Private repository execution is subject to the account's included monthly allowance (2,000 Linux runner minutes/month on GitHub Free).
+- **Public Repositories:** Standard GitHub-hosted Linux runners (`ubuntu-latest`: 4 vCPUs, 16 GB RAM, 14 GB SSD) are free of minute charges for public repositories. However, they are **subject to GitHub's standard platform policies, abuse and fair-use guidelines, and account concurrency limits** (maximum 20 concurrent jobs across the user's account on GitHub Free). They should not be assumed to be unconditionally unlimited.
+- **Private Repositories:** Private repository execution runs on standard Linux runners (`ubuntu-latest`: 2 vCPUs, 8 GB RAM, 14 GB SSD; SKU: `actions_linux`) and draws compute from the account's monthly monetary allowance ($12.00 USD/month on GitHub Free) at $0.006/min.
   - 4 runs/day × 30.5 days = ~122 runs/month.
   - Typical duration: ~15 seconds per run (rounded up to 1 minute per job in GitHub Actions billing increments) = **~122 billed minutes/month (~6.1% of included allowance)**.
   - Leaves ~93.9% of runner minutes for other private development workflows.
