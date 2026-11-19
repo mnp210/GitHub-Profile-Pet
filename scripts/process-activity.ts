@@ -19,6 +19,7 @@ import {
   executeActivityProcessing,
   performCompleteReconciliation,
   recoverActivityTransaction,
+  ACTIVITY_TX_DIR,
   type ActivityType,
   type ProcessActivityEventInput,
   type ProcessActivityResult,
@@ -114,6 +115,7 @@ async function runProcessingCycle(options: {
 
   // 3. Complete Activity Reconciliation (Git Commits + GitHub API Issues/PRs/Reviews)
   let reconciliationCheckpoints: { lastCommitSha?: string; lastIssueNumber?: number; lastPrNumber?: number; reconciledAt: string } | undefined;
+  let reconCompletedFully = true;
   try {
     const gitToken = process.env.GITHUB_TOKEN;
     const gitRepo = process.env.GITHUB_REPOSITORY;
@@ -131,6 +133,7 @@ async function runProcessingCycle(options: {
     });
 
     reconciliationCheckpoints = recon.checkpoints;
+    reconCompletedFully = recon.completedFully;
     if (recon.warnings.length > 0) {
       for (const w of recon.warnings) {
         console.log(`[RECONCILIATION NOTICE] ${w}`);
@@ -187,8 +190,8 @@ async function runProcessingCycle(options: {
     }
   }
 
-  // Update checkpoints in ledger if available
-  if (currentLedger && reconciliationCheckpoints) {
+  // Update checkpoints in ledger only if available AND reconciliation completed fully
+  if (currentLedger && reconciliationCheckpoints && reconCompletedFully) {
     currentLedger.checkpoints = reconciliationCheckpoints;
     if (!dryRun) {
       await fs.writeFile(
@@ -197,6 +200,8 @@ async function runProcessingCycle(options: {
         'utf-8'
       );
     }
+  } else if (!reconCompletedFully) {
+    console.log('[RECONCILIATION NOTICE] Checkpoints preserved without advancement due to incomplete reconciliation sweep.');
   }
 
   console.log(`[COMPLETE] Total Activity XP awarded: ${totalXpAwarded}`);
@@ -372,8 +377,10 @@ async function main() {
       }
       console.log(`[GIT] Resetting to latest origin/${targetRef} and re-evaluating...`);
       try {
+        await fs.rm(path.join(baseDir, ACTIVITY_TX_DIR), { recursive: true, force: true }).catch(() => {});
         await execGit(['fetch', 'origin', targetRef], baseDir);
         await execGit(['reset', '--hard', `origin/${targetRef}`], baseDir);
+        await fs.rm(path.join(baseDir, ACTIVITY_TX_DIR), { recursive: true, force: true }).catch(() => {});
       } catch (resetErr) {
         console.error('[GIT ERROR] Failed to fetch and reset to remote:', (resetErr as Error).message);
         throw err;

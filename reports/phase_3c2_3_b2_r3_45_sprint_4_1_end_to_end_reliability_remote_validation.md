@@ -4,7 +4,8 @@
 **Candidate Workspace:** `D:\Projects\GitHub-Profile-Pet-R3.7-Candidate`  
 **Candidate Branch:** `candidate/playable-virtual-pet-game`  
 **Starting HEAD Commit:** `6a6fc769d08840e0de3773a032d937b7aea9bbb1`  
-**Final Candidate HEAD Commit:** `db55da60fdeb032889e12cf3b4e783ad43480736`  
+**Implementation Code HEAD Commit:** `db55da60fdeb032889e12cf3b4e783ad43480736`  
+**Final Candidate HEAD Commit (including report archive):** `4303ef5230388301e711d881d10f01b1539e92c5`  
 **Production Repository:** `mnp210/GitHub-Profile-Pet` (`0a6d08448220be11cd54ccf6cb2d35f560b1cc69` — **STRICTLY UNTOUCHED**)  
 **Test Repositories:** `mnp210/GitHub-Profile-Pet-Test`, `mnp210/GitHub-Profile-Pet-Test-Fork`  
 
@@ -184,5 +185,6 @@ Production Static Build (npm run build): CLEAN (Next.js static export generated 
 ## 11. Final Candidate Commit Lineage
 
 - **Candidate Working Tree:** Clean.
-- **Candidate HEAD Commit:** `db55da60fdeb032889e12cf3b4e783ad43480736`
+- **Implementation Code HEAD Commit:** `db55da60fdeb032889e12cf3b4e783ad43480736`
+- **Final Candidate HEAD Commit (including report archive):** `4303ef5230388301e711d881d10f01b1539e92c5`
 - **Production Repository Immutability:** `mnp210/GitHub-Profile-Pet` remains untouched at `0a6d08448220be11cd54ccf6cb2d35f560b1cc69` with 0 commits, 0 pushes, and 0 workflow dispatches.

@@ -64,7 +64,7 @@ export interface ReconcileResult {
  */
 export async function reconcileGitCommits(
   options: GitCommitReconcileOptions
-): Promise<{ commits: ProcessActivityEventInput[]; latestSha?: string; hitCheckpoint: boolean; totalExamined: number }> {
+): Promise<{ commits: ProcessActivityEventInput[]; latestSha?: string; hitCheckpoint: boolean; totalExamined: number; hasMoreCommits: boolean }> {
   const targetRef = options.targetRef ?? 'HEAD';
   const maxCommits = options.maxCommits ?? 5000;
   const sinceIso =
@@ -140,10 +140,11 @@ export async function reconcileGitCommits(
       });
     }
 
-    return { commits: discovered, latestSha, hitCheckpoint, totalExamined };
+    const hasMoreCommits = logLines.length >= maxCommits && !hitCheckpoint;
+    return { commits: discovered, latestSha, hitCheckpoint, totalExamined, hasMoreCommits };
   } catch {
     // If git log fails (e.g. empty repository or shallow clone without history), return empty safely
-    return { commits: [], hitCheckpoint: false, totalExamined: 0 };
+    return { commits: [], hitCheckpoint: false, totalExamined: 0, hasMoreCommits: false };
   }
 }
 
@@ -480,6 +481,13 @@ export async function performCompleteReconciliation(options: ReconcileOptions): 
   });
   allEvents.push(...gitCommitResult.commits);
 
+  if (gitCommitResult.hasMoreCommits) {
+    completedFully = false;
+    warnings.push(
+      `Git commit reconciliation reached maximum commit boundary (${options.maxCommits ?? 5000}) without reaching checkpoint. Traversal was truncated.`
+    );
+  }
+
   let latestIssue: number | undefined;
   let latestPr: number | undefined;
   let rateLimitRemaining: number | undefined;
@@ -524,9 +532,9 @@ export async function performCompleteReconciliation(options: ReconcileOptions): 
     rateLimitRemaining,
     rateLimitLimit,
     checkpoints: {
-      lastCommitSha: gitCommitResult.latestSha,
-      lastIssueNumber: latestIssue,
-      lastPrNumber: latestPr,
+      lastCommitSha: completedFully ? gitCommitResult.latestSha : options.stopAtSha,
+      lastIssueNumber: completedFully ? latestIssue : options.stopAtIssueNumber,
+      lastPrNumber: completedFully ? latestPr : options.stopAtPrNumber,
       reconciledAt: nowUtc,
     },
     warnings,

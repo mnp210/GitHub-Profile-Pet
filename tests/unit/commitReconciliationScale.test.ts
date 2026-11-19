@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import * as assert from 'node:assert/strict';
 import {
   reconcileGitCommits,
+  performCompleteReconciliation,
 } from '../../src/features/pet-engine/activity/index.ts';
 
 describe('Commit Reconciliation Scale & Boundary Tests (Sprint 4.1)', () => {
@@ -96,5 +97,40 @@ describe('Commit Reconciliation Scale & Boundary Tests (Sprint 4.1)', () => {
     assert.equal(result.commits.length, 1);
     assert.equal(result.commits[0].eventId, 'commit:qualifyingsha');
     assert.equal(result.commits[0].actor, 'carol');
+  });
+
+  it('detects when commit log hits maxCommits limit without reaching checkpoint (hasMoreCommits: true)', async () => {
+    // Generate exactly 10 commits with maxCommits = 10 and no stopAtSha hit
+    const mockCommits: string[] = [];
+    const nowMs = Date.now();
+    for (let i = 1; i <= 10; i++) {
+      const sha = `truncsha${i}`;
+      const timestamp = new Date(nowMs - i * 60000).toISOString();
+      mockCommits.push(`${sha}\tuser${i}\tuser@dev.local\tfeat: commit ${i}\t${timestamp}`);
+    }
+    const mockStdout = mockCommits.join('\n');
+
+    const commitResult = await reconcileGitCommits({
+      baseDir: process.cwd(),
+      maxCommits: 10,
+      execFn: async () => ({ stdout: mockStdout, stderr: '' }),
+    });
+
+    assert.equal(commitResult.totalExamined, 10);
+    assert.equal(commitResult.hasMoreCommits, true, 'hasMoreCommits must be true when log length reaches limit');
+
+    // Test in performCompleteReconciliation
+    const reconResult = await performCompleteReconciliation({
+      baseDir: process.cwd(),
+      maxCommits: 10,
+      stopAtSha: 'nonexistent-checkpoint-sha',
+      fetchFn: async () => new Response(JSON.stringify([]), { status: 200 }),
+    });
+
+    // When commit reconciliation is truncated, completedFully must be false
+    assert.equal(reconResult.completedFully, false, 'completedFully must be false when commit limit is hit');
+    assert.ok(reconResult.warnings.some((w) => w.includes('maximum commit boundary') || w.includes('truncated')));
+    // Checkpoint must NOT advance past unexamined history
+    assert.equal(reconResult.checkpoints.lastCommitSha, 'nonexistent-checkpoint-sha', 'lastCommitSha must be preserved on incomplete sweep');
   });
 });
