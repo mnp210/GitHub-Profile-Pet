@@ -614,7 +614,7 @@ export async function executeBaselinePipeline(
   let syncResult: ContributionSyncResult | undefined;
   const remoteFenceCheck =
     options.remoteFenceCheck ??
-    (options.skipCleanPreflight || dryRun
+    (options.skipCleanPreflight || dryRun || skipPush
       ? async (sha: string) => ({ matches: true, currentRemoteSha: sha })
       : undefined);
 
