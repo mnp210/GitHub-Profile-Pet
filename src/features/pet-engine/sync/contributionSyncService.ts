@@ -635,10 +635,12 @@ export async function syncContributions(
 
     // 9. Atomic Multi-Document Generation Lockstep Commit (AC-27)
     const nextGeneration = state.generation + 1;
+    const nowIso = new Date(nowMs).toISOString();
     const nextPet: PetStateDocument = {
       ...finalPetState,
       generation: nextGeneration,
-      updatedAt: new Date(nowMs).toISOString(),
+      lastOfflineResolutionTime: finalPetState.lastOfflineResolutionTime ?? nowIso,
+      updatedAt: nowIso,
     };
     const nextContributions: ContributionLedgerDocument = {
       ...reconciliation.nextContributionLedger,
