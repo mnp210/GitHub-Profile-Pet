@@ -6,4 +6,5 @@ export * from './types.ts';
 export * from './constants.ts';
 export * from './intervalIndex.ts';
 export * from './reconciliation.ts';
+export * from './activityTransactionJournal.ts';
 export * from './activityProcessor.ts';

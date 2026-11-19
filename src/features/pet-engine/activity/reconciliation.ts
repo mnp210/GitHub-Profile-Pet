@@ -15,10 +15,20 @@ import {
   isEventStale,
 } from './activityProcessor.ts';
 import {
+  MAX_ACTIVITY_AGE_DAYS,
   MIN_RATE_LIMIT_THRESHOLD,
 } from './constants.ts';
 
 const execFileAsync = promisify(execFile);
+
+export interface GitCommitReconcileOptions {
+  baseDir: string;
+  targetRef?: string;
+  maxCommits?: number;
+  sinceIso?: string;
+  stopAtSha?: string;
+  execFn?: (cmd: string, args: string[], options: { cwd: string }) => Promise<{ stdout: string; stderr: string }>;
+}
 
 export interface ReconcileOptions {
   baseDir: string;
@@ -26,6 +36,10 @@ export interface ReconcileOptions {
   token?: string;
   repository?: string; // "owner/repo"
   maxCommits?: number;
+  sinceIso?: string;
+  stopAtSha?: string;
+  stopAtIssueNumber?: number;
+  stopAtPrNumber?: number;
   nowUtc?: string;
   fetchFn?: typeof fetch;
 }
@@ -41,28 +55,43 @@ export interface ReconcileResult {
     reconciledAt: string;
   };
   warnings: string[];
+  completedFully: boolean;
 }
 
 /**
- * Reconciles recent Git commits using `git log`.
+ * Reconciles Git commits within the activity lookback window using `git log`.
+ * Supports full-history window scanning and stopping at the previous checkpoint commit SHA.
  */
 export async function reconcileGitCommits(
-  baseDir: string,
-  targetRef: string = 'HEAD',
-  maxCommits: number = 30
-): Promise<{ commits: ProcessActivityEventInput[]; latestSha?: string }> {
-  try {
-    const { stdout } = await execFileAsync(
-      'git',
-      ['log', '-n', String(maxCommits), '--format=%H%x09%an%x09%ae%x09%s%x09%cI', targetRef],
-      { cwd: baseDir }
-    );
+  options: GitCommitReconcileOptions
+): Promise<{ commits: ProcessActivityEventInput[]; latestSha?: string; hitCheckpoint: boolean; totalExamined: number }> {
+  const targetRef = options.targetRef ?? 'HEAD';
+  const maxCommits = options.maxCommits ?? 5000;
+  const sinceIso =
+    options.sinceIso ??
+    new Date(Date.now() - MAX_ACTIVITY_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const stopSha = options.stopAtSha?.trim().toLowerCase();
 
+  const gitArgs = [
+    'log',
+    `-n`,
+    String(maxCommits),
+    `--since=${sinceIso}`,
+    '--format=%H%x09%an%x09%ae%x09%s%x09%cI',
+    targetRef,
+  ];
+
+  try {
+    const exec = options.execFn ?? execFileAsync;
+    const { stdout } = await exec('git', gitArgs, { cwd: options.baseDir });
     const logLines = stdout.split(/\r?\n/).filter((l) => l.trim().length > 0);
     const discovered: ProcessActivityEventInput[] = [];
     let latestSha: string | undefined;
+    let hitCheckpoint = false;
+    let totalExamined = 0;
 
     for (const line of logLines) {
+      totalExamined++;
       const parts = line.split('\t');
       const sha = parts[0]?.trim();
       const authorName = parts[1]?.trim();
@@ -76,6 +105,30 @@ export async function reconcileGitCommits(
         latestSha = cleanSha;
       }
 
+      // If we encounter the checkpoint SHA from a previous successful run, stop traversing older history
+      if (stopSha && cleanSha === stopSha) {
+        hitCheckpoint = true;
+        break;
+      }
+
+      // Check bot actors
+      if (isBotActor(authorName)) {
+        continue;
+      }
+
+      // Check ignored commit messages
+      const isIgnored =
+        /\[(?:skip ci|ci skip)\]/i.test(subject) ||
+        /^pet: (?:update state|record activity)/i.test(subject);
+      if (isIgnored) {
+        continue;
+      }
+
+      // Check staleness
+      if (commitDate && isEventStale(commitDate)) {
+        continue;
+      }
+
       discovered.push({
         eventType: 'commit',
         eventId: `commit:${cleanSha}`,
@@ -87,21 +140,26 @@ export async function reconcileGitCommits(
       });
     }
 
-    return { commits: discovered, latestSha };
+    return { commits: discovered, latestSha, hitCheckpoint, totalExamined };
   } catch {
-    // If git log fails (e.g. shallow clone, no commits yet, or not a git repository), return empty
-    return { commits: [] };
+    // If git log fails (e.g. empty repository or shallow clone without history), return empty safely
+    return { commits: [], hitCheckpoint: false, totalExamined: 0 };
   }
 }
 
 /**
- * Reconciles issues, pull requests, merges, and reviews from the GitHub REST API.
+ * Reconciles issues, pull requests, merges, and reviews from the GitHub REST API
+ * using resilient loop-based pagination, rate-limit awareness, and stop thresholds.
  */
 export async function reconcileGitHubApiEvents(
   token: string,
   repository: string,
   options: {
     nowUtc?: string;
+    stopAtIssueNumber?: number;
+    stopAtPrNumber?: number;
+    maxPages?: number;
+    pageSize?: number;
     fetchFn?: typeof fetch;
   } = {}
 ): Promise<{
@@ -111,22 +169,26 @@ export async function reconcileGitHubApiEvents(
   rateLimitRemaining?: number;
   rateLimitLimit?: number;
   warnings: string[];
+  completedFully: boolean;
 }> {
   const customFetch = options.fetchFn ?? fetch;
   const nowUtc = options.nowUtc ?? new Date().toISOString();
+  const maxPages = options.maxPages ?? 10;
+  const pageSize = options.pageSize ?? 100;
   const [owner, repo] = repository.split('/');
   const warnings: string[] = [];
   const discovered: ProcessActivityEventInput[] = [];
+  let completedFully = true;
 
   if (!owner || !repo) {
     warnings.push(`Invalid repository format: "${repository}". Expected "owner/repo".`);
-    return { events: [], warnings };
+    return { events: [], warnings, completedFully: false };
   }
 
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github.v3+json',
     Authorization: `Bearer ${token}`,
-    'User-Agent': 'github-profile-pet-reconciliation/1.0',
+    'User-Agent': 'github-profile-pet-reconciliation/2.0',
   };
 
   let rateLimitRemaining: number | undefined;
@@ -144,6 +206,7 @@ export async function reconcileGitHubApiEvents(
 
     if (rateLimitRemaining !== undefined && rateLimitRemaining < MIN_RATE_LIMIT_THRESHOLD) {
       warnings.push(`GitHub API rate limit critical (${rateLimitRemaining} remaining). Halting reconciliation.`);
+      completedFully = false;
       return false;
     }
     return true;
@@ -152,12 +215,18 @@ export async function reconcileGitHubApiEvents(
   let latestIssueNumber: number | undefined;
   let latestPrNumber: number | undefined;
 
-  // 1. Reconcile Issues
-  try {
-    const issuesUrl = `https://api.github.com/repos/${owner}/${repo}/issues?state=all&sort=created&direction=desc&per_page=30`;
-    const issuesRes = await customFetch(issuesUrl, { headers });
+  // 1. Paginated Issue Reconciliation
+  issueLoop: for (let page = 1; page <= maxPages; page++) {
+    try {
+      const issuesUrl = `https://api.github.com/repos/${owner}/${repo}/issues?state=all&sort=created&direction=desc&per_page=${pageSize}&page=${page}`;
+      const issuesRes = await customFetch(issuesUrl, { headers });
 
-    if (issuesRes.ok) {
+      if (!issuesRes.ok) {
+        warnings.push(`GitHub Issues API returned status ${issuesRes.status}: ${issuesRes.statusText}`);
+        completedFully = false;
+        break;
+      }
+
       const canContinue = await checkRateLimit(issuesRes);
       const issues = (await issuesRes.json()) as Array<{
         number: number;
@@ -168,9 +237,18 @@ export async function reconcileGitHubApiEvents(
         pull_request?: unknown;
       }>;
 
+      if (!Array.isArray(issues) || issues.length === 0) {
+        break; // End of issues stream
+      }
+
       for (const issue of issues) {
         if (!latestIssueNumber || issue.number > latestIssueNumber) {
           latestIssueNumber = issue.number;
+        }
+
+        // Check if we hit checkpoint issue number
+        if (options.stopAtIssueNumber && issue.number <= options.stopAtIssueNumber) {
+          break issueLoop;
         }
 
         // GitHub /issues includes PRs; filter out PRs here
@@ -184,7 +262,9 @@ export async function reconcileGitHubApiEvents(
         if (isCareActionIssue(labelNames, issue.title)) continue;
 
         // Check staleness (> 14 days)
-        if (isEventStale(issue.created_at, nowUtc)) continue;
+        if (isEventStale(issue.created_at, nowUtc)) {
+          break issueLoop; // Since sorted descending by created_at, older issues are all stale
+        }
 
         discovered.push({
           eventType: 'issue_opened',
@@ -196,23 +276,31 @@ export async function reconcileGitHubApiEvents(
         });
       }
 
-      if (!canContinue) {
-        return { events: discovered, latestIssueNumber, latestPrNumber, rateLimitRemaining, rateLimitLimit, warnings };
+      if (!canContinue || issues.length < pageSize) {
+        break;
       }
-    } else {
-      warnings.push(`GitHub Issues API returned status ${issuesRes.status}: ${issuesRes.statusText}`);
+    } catch (err) {
+      warnings.push(`Failed to fetch issues on page ${page}: ${(err as Error).message}`);
+      completedFully = false;
+      break;
     }
-  } catch (err) {
-    warnings.push(`Failed to fetch issues: ${(err as Error).message}`);
   }
 
-  // 2. Reconcile Pull Requests (Opened and Merged)
+  // 2. Paginated Pull Request Reconciliation (Opened & Merged)
   const candidatePullsForReview: number[] = [];
-  try {
-    const pullsUrl = `https://api.github.com/repos/${owner}/${repo}/pulls?state=all&sort=created&direction=desc&per_page=30`;
-    const pullsRes = await customFetch(pullsUrl, { headers });
 
-    if (pullsRes.ok) {
+  // 2a. PRs Opened (sorted by created desc)
+  prOpenLoop: for (let page = 1; page <= maxPages; page++) {
+    try {
+      const pullsUrl = `https://api.github.com/repos/${owner}/${repo}/pulls?state=all&sort=created&direction=desc&per_page=${pageSize}&page=${page}`;
+      const pullsRes = await customFetch(pullsUrl, { headers });
+
+      if (!pullsRes.ok) {
+        warnings.push(`GitHub Pulls API returned status ${pullsRes.status}: ${pullsRes.statusText}`);
+        completedFully = false;
+        break;
+      }
+
       const canContinue = await checkRateLimit(pullsRes);
       const pulls = (await pullsRes.json()) as Array<{
         number: number;
@@ -223,26 +311,78 @@ export async function reconcileGitHubApiEvents(
         merged_by?: { login: string } | null;
       }>;
 
+      if (!Array.isArray(pulls) || pulls.length === 0) {
+        break;
+      }
+
       for (const pr of pulls) {
         if (!latestPrNumber || pr.number > latestPrNumber) {
           latestPrNumber = pr.number;
         }
 
-        // PR Opened
-        if (!isBotActor(pr.user?.login) && pr.user?.type !== 'Bot') {
-          if (!isEventStale(pr.created_at, nowUtc)) {
-            discovered.push({
-              eventType: 'pr_opened',
-              eventId: `pr_opened:${pr.number}`,
-              actor: pr.user.login,
-              timestamp: pr.created_at,
-              details: pr.title,
-            });
-          }
+        if (options.stopAtPrNumber && pr.number <= options.stopAtPrNumber) {
+          break prOpenLoop;
         }
 
-        // PR Merged
+        // PR Opened
+        if (!isBotActor(pr.user?.login) && pr.user?.type !== 'Bot') {
+          if (isEventStale(pr.created_at, nowUtc)) {
+            break prOpenLoop;
+          }
+
+          discovered.push({
+            eventType: 'pr_opened',
+            eventId: `pr_opened:${pr.number}`,
+            actor: pr.user.login,
+            timestamp: pr.created_at,
+            details: pr.title,
+          });
+
+          if (candidatePullsForReview.length < 20) {
+            candidatePullsForReview.push(pr.number);
+          }
+        }
+      }
+
+      if (!canContinue || pulls.length < pageSize) {
+        break;
+      }
+    } catch (err) {
+      warnings.push(`Failed to fetch pulls on page ${page}: ${(err as Error).message}`);
+      completedFully = false;
+      break;
+    }
+  }
+
+  // 2b. PRs Merged (sorted by updated desc for closed PRs)
+  prMergeLoop: for (let page = 1; page <= maxPages; page++) {
+    try {
+      const closedUrl = `https://api.github.com/repos/${owner}/${repo}/pulls?state=closed&sort=updated&direction=desc&per_page=${pageSize}&page=${page}`;
+      const closedRes = await customFetch(closedUrl, { headers });
+
+      if (!closedRes.ok) {
+        warnings.push(`GitHub Closed Pulls API returned status ${closedRes.status}`);
+        completedFully = false;
+        break;
+      }
+
+      const canContinue = await checkRateLimit(closedRes);
+      const closedPulls = (await closedRes.json()) as Array<{
+        number: number;
+        title: string;
+        user: { login: string; type?: string };
+        created_at: string;
+        merged_at?: string | null;
+        merged_by?: { login: string } | null;
+      }>;
+
+      if (!Array.isArray(closedPulls) || closedPulls.length === 0) {
+        break;
+      }
+
+      for (const pr of closedPulls) {
         if (pr.merged_at) {
+          // Verify correct merger attribution
           const merger = pr.merged_by?.login || pr.user?.login || 'unknown';
           if (!isBotActor(merger) && !isEventStale(pr.merged_at, nowUtc)) {
             discovered.push({
@@ -255,32 +395,28 @@ export async function reconcileGitHubApiEvents(
             });
           }
         }
-
-        // Keep up to 5 recent PRs for review inspection
-        if (candidatePullsForReview.length < 5) {
-          candidatePullsForReview.push(pr.number);
-        }
       }
 
-      if (!canContinue) {
-        return { events: discovered, latestIssueNumber, latestPrNumber, rateLimitRemaining, rateLimitLimit, warnings };
+      if (!canContinue || closedPulls.length < pageSize) {
+        break;
       }
-    } else {
-      warnings.push(`GitHub Pulls API returned status ${pullsRes.status}: ${pullsRes.statusText}`);
+    } catch (err) {
+      warnings.push(`Failed to fetch merged pulls on page ${page}: ${(err as Error).message}`);
+      completedFully = false;
+      break;
     }
-  } catch (err) {
-    warnings.push(`Failed to fetch pulls: ${(err as Error).message}`);
   }
 
-  // 3. Reconcile Reviews for Recent Pull Requests
+  // 3. Paginated Reviews for Active Pull Requests
   for (const prNumber of candidatePullsForReview) {
     if (rateLimitRemaining !== undefined && rateLimitRemaining < MIN_RATE_LIMIT_THRESHOLD) {
       warnings.push(`Halting review reconciliation due to rate limit threshold.`);
+      completedFully = false;
       break;
     }
 
     try {
-      const reviewsUrl = `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/reviews?per_page=20`;
+      const reviewsUrl = `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/reviews?per_page=100`;
       const reviewsRes = await customFetch(reviewsUrl, { headers });
 
       if (reviewsRes.ok) {
@@ -298,6 +434,7 @@ export async function reconcileGitHubApiEvents(
           if (isBotActor(review.user?.login) || review.user?.type === 'Bot') continue;
           if (!review.submitted_at || isEventStale(review.submitted_at, nowUtc)) continue;
 
+          // Crucial attribution: reviewer is the actor, not the PR author!
           discovered.push({
             eventType: 'review_submitted',
             eventId: `review:${review.id}`,
@@ -309,6 +446,7 @@ export async function reconcileGitHubApiEvents(
       }
     } catch (err) {
       warnings.push(`Failed to fetch reviews for PR #${prNumber}: ${(err as Error).message}`);
+      completedFully = false;
     }
   }
 
@@ -319,6 +457,7 @@ export async function reconcileGitHubApiEvents(
     rateLimitRemaining,
     rateLimitLimit,
     warnings,
+    completedFully,
   };
 }
 
@@ -329,14 +468,17 @@ export async function performCompleteReconciliation(options: ReconcileOptions): 
   const nowUtc = options.nowUtc ?? new Date().toISOString();
   const allEvents: ProcessActivityEventInput[] = [];
   const warnings: string[] = [];
+  let completedFully = true;
 
-  // 1. Reconcile Git commits
-  const { commits, latestSha } = await reconcileGitCommits(
-    options.baseDir,
-    options.targetRef ?? 'HEAD',
-    options.maxCommits ?? 30
-  );
-  allEvents.push(...commits);
+  // 1. Reconcile Git commits within the lookback window
+  const gitCommitResult = await reconcileGitCommits({
+    baseDir: options.baseDir,
+    targetRef: options.targetRef ?? 'HEAD',
+    maxCommits: options.maxCommits ?? 5000,
+    sinceIso: options.sinceIso,
+    stopAtSha: options.stopAtSha,
+  });
+  allEvents.push(...gitCommitResult.commits);
 
   let latestIssue: number | undefined;
   let latestPr: number | undefined;
@@ -347,6 +489,8 @@ export async function performCompleteReconciliation(options: ReconcileOptions): 
   if (options.token && options.repository) {
     const apiResult = await reconcileGitHubApiEvents(options.token, options.repository, {
       nowUtc,
+      stopAtIssueNumber: options.stopAtIssueNumber,
+      stopAtPrNumber: options.stopAtPrNumber,
       fetchFn: options.fetchFn,
     });
 
@@ -356,6 +500,9 @@ export async function performCompleteReconciliation(options: ReconcileOptions): 
     rateLimitRemaining = apiResult.rateLimitRemaining;
     rateLimitLimit = apiResult.rateLimitLimit;
     warnings.push(...apiResult.warnings);
+    if (!apiResult.completedFully) {
+      completedFully = false;
+    }
   } else {
     warnings.push('GitHub API reconciliation skipped: GITHUB_TOKEN or GITHUB_REPOSITORY not configured.');
   }
@@ -377,11 +524,12 @@ export async function performCompleteReconciliation(options: ReconcileOptions): 
     rateLimitRemaining,
     rateLimitLimit,
     checkpoints: {
-      lastCommitSha: latestSha,
+      lastCommitSha: gitCommitResult.latestSha,
       lastIssueNumber: latestIssue,
       lastPrNumber: latestPr,
       reconciledAt: nowUtc,
     },
     warnings,
+    completedFully,
   };
 }

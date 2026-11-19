@@ -31,6 +31,10 @@ import {
   isNumberInIntervals,
   addNumberToIntervals,
 } from './intervalIndex.ts';
+import {
+  executeActivityTransaction,
+  recoverActivityTransaction,
+} from './activityTransactionJournal.ts';
 import type {
   ActivityEventRecord,
   ActivityLedgerDocument,
@@ -183,7 +187,7 @@ export function isDuplicateEvent(
  */
 export function isEventStale(
   eventTimestamp: string | undefined,
-  nowUtc: string,
+  nowUtc: string = new Date().toISOString(),
   maxAgeDays: number = MAX_ACTIVITY_AGE_DAYS
 ): boolean {
   if (!eventTimestamp) return false;
@@ -705,6 +709,11 @@ export async function executeActivityProcessing(options: {
   const activityPath = path.join(baseDir, 'pet', 'ledger', 'activity.json');
   const nowUtc = options.nowMs ? new Date(options.nowMs).toISOString() : new Date().toISOString();
 
+  // Recover any unapplied transactions from interrupted executions
+  if (!options.dryRun) {
+    await recoverActivityTransaction(baseDir);
+  }
+
   // 1. Read or use provided pet state
   let petState: PetStateDocument;
   if (options.currentPetState) {
@@ -792,23 +801,33 @@ export async function executeActivityProcessing(options: {
     updatedLedger.permanentIndex.commitShas = updatedLedger.permanentIndex.commitShas.slice(-MAX_ACTIVE_COMMIT_SHAS);
   }
 
-  // 6. If not dryRun, atomically persist changes
+  // 6. If not dryRun, atomically persist changes via multi-document transaction journal
   if (!options.dryRun) {
-    await atomicWriteJson(activityPath, updatedLedger);
+    const txWrites: Array<{ targetPath: string; data: unknown }> = [
+      { targetPath: activityPath, data: updatedLedger },
+    ];
 
     if (archiveModified) {
-      await saveActivityArchive(baseDir, archive);
+      txWrites.push({
+        targetPath: path.join(baseDir, ACTIVITY_ARCHIVE_RELATIVE_PATH),
+        data: archive,
+      });
     }
 
     if (result.xpAwarded > 0) {
-      await atomicWriteJson(statePath, updatedPet);
+      txWrites.push({
+        targetPath: statePath,
+        data: updatedPet,
+      });
+    }
 
-      // Render updated SVG & README in lockstep
-      if (!options.skipSvgRender) {
-        await publishPetSvg({ baseDir }).catch((err) => {
-          console.warn('SVG publish notice after activity progression:', (err as Error).message);
-        });
-      }
+    await executeActivityTransaction(baseDir, txWrites);
+
+    // Render updated SVG & README in lockstep
+    if (result.xpAwarded > 0 && !options.skipSvgRender) {
+      await publishPetSvg({ baseDir }).catch((err) => {
+        console.warn('SVG publish notice after activity progression:', (err as Error).message);
+      });
     }
   }
 

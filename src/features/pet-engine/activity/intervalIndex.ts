@@ -1,22 +1,29 @@
 /**
-/**
  * GitHub Profile Pet - Integer Interval Range Index
  *
- * Provides ultra-compact, O(log N) lookup and O(1) space complexity for representing
- * arbitrary sets of positive sequential integers (GitHub issue numbers, PR numbers, review IDs).
+ * Provides compact, disjoint interval representation for positive sequential integers
+ * (GitHub issue numbers, PR numbers, review IDs).
  *
- * Example:
- *   Sequential IDs 1 through 50000 are compressed to a single interval: `[[1, 50000]]` (14 bytes).
- *   Disjoint IDs: `[[1, 100], [105, 200]]`
+ * Formal Complexity:
+ * - Lookup: O(log K) via binary search, where K is the number of disjoint stored intervals.
+ * - Storage: O(K) memory, where K is the number of stored disjoint intervals.
+ * - Density Behavior:
+ *     - Contiguous sequences (e.g. 1 through 50,000) collapse into a single interval: `[[1, 50000]]` (K = 1, O(1) space).
+ *     - Sparse or alternating sequences (e.g. 1, 3, 5, 7, ...) produce K separate intervals (O(K) space).
+ *
+ * Invariants:
+ * - Intervals are always non-overlapping, strictly disjoint, and sorted in ascending order.
+ * - Every interval [start, end] satisfies 1 <= start <= end <= Number.MAX_SAFE_INTEGER.
  */
 
 export type IntegerInterval = [number, number]; // [start, end] inclusive
 
 /**
- * Checks whether an integer exists within a list of disjoint, sorted intervals.
+ * Checks whether a positive integer exists within a list of disjoint, sorted intervals.
+ * Time complexity: O(log K) where K = intervals.length.
  */
 export function isNumberInIntervals(intervals: IntegerInterval[] | undefined, target: number): boolean {
-  if (!intervals || intervals.length === 0 || !Number.isInteger(target) || target <= 0) {
+  if (!intervals || intervals.length === 0 || !Number.isSafeInteger(target) || target <= 0) {
     return false;
   }
 
@@ -42,11 +49,12 @@ export function isNumberInIntervals(intervals: IntegerInterval[] | undefined, ta
 }
 
 /**
- * Inserts an integer into a list of sorted, disjoint intervals, merging adjacent or overlapping bounds.
- * Returns a new array of intervals.
+ * Inserts a positive safe integer into a list of sorted, disjoint intervals,
+ * merging adjacent or overlapping bounds.
+ * Time complexity: O(K) where K = intervals.length.
  */
 export function addNumberToIntervals(intervals: IntegerInterval[] | undefined, target: number): IntegerInterval[] {
-  if (!Number.isInteger(target) || target <= 0) {
+  if (!Number.isSafeInteger(target) || target <= 0) {
     return intervals ? [...intervals] : [];
   }
 
@@ -115,4 +123,15 @@ export function addNumberToIntervals(intervals: IntegerInterval[] | undefined, t
   }
 
   return merged;
+}
+
+/**
+ * Inserts multiple integers into intervals efficiently.
+ */
+export function addNumbersToIntervals(intervals: IntegerInterval[] | undefined, targets: number[]): IntegerInterval[] {
+  let current = intervals ? [...intervals] : [];
+  for (const t of targets) {
+    current = addNumberToIntervals(current, t);
+  }
+  return current;
 }
