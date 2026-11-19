@@ -1,0 +1,54 @@
+name: Pet Activity Progression
+
+on:
+  push:
+    branches: [main]
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened, closed]
+  pull_request_review:
+    types: [submitted]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pet-runtime-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  progress-activity:
+    name: Award Activity XP & Update State
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Guard: skip processing if triggered by bot actions or automation commits
+    if: >
+      github.actor != 'github-actions[bot]' &&
+      github.actor != 'dependabot[bot]' &&
+      !contains(github.event.head_commit.message, '[skip ci]') &&
+      !contains(github.event.head_commit.message, '[ci skip]') &&
+      !contains(github.event.head_commit.message, 'pet: update state')
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Process GitHub Activity & Award XP
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          node --experimental-strip-types scripts/process-activity.ts --ref "${{ github.ref_name }}"

@@ -107,6 +107,7 @@ export default function Home() {
     return loadRepoConfig().repo || '';
   });
   const [draftToken, setDraftToken] = useState<string>(() => loadRepoConfig().token || '');
+  const [isRepoUninitialized, setIsRepoUninitialized] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -136,10 +137,14 @@ export default function Home() {
     if (activeRepo) {
       fetchRemotePetState(activeRepo, initialConfig.token).then((res) => {
         if (res.success && res.pet) {
+          setIsRepoUninitialized(false);
           setPet(res.pet);
           saveLocalGameState(res.pet, loadLocalActionHistory());
           setSyncStatusMsg(`Synchronized with ${activeRepo}`);
         } else {
+          if (res.uninitialized) {
+            setIsRepoUninitialized(true);
+          }
           setSyncStatusMsg(res.error || 'Using local adventure save.');
         }
       });
@@ -272,6 +277,8 @@ export default function Home() {
           console.warn('GitHub Action sync notice:', res.error);
         }
       });
+    } else if (repoConfig.repo && !repoConfig.token) {
+      setSyncStatusMsg(`Visitor mode: Action played in local playground. Connect token in ⚡ Sync to dispatch to ${repoConfig.repo}`);
     }
   };
 
@@ -616,6 +623,60 @@ export default function Home() {
 
       {/* 2. MAIN GAME CONTAINER */}
       <main className="flex-1 w-full max-w-[1140px] px-3 sm:px-6 py-4 sm:py-6 space-y-5">
+        {/* REPOSITORY STATUS & TRAINER / VISITOR MODE BADGE */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 px-4 py-2.5 rounded-xl border border-[#252240] bg-[#0e111a]/90 backdrop-blur text-xs">
+          <div className="flex items-center gap-2">
+            {repoConfig.repo ? (
+              repoConfig.token ? (
+                <>
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400/50" />
+                  <span className="text-slate-300 font-medium">
+                    Authorized Trainer:{' '}
+                    <span className="font-mono text-purple-300 font-semibold">{repoConfig.repo}</span>
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-600/40 font-semibold">
+                    Live Sync Active
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-sky-400" />
+                  <span className="text-slate-300 font-medium">
+                    Visitor Mode:{' '}
+                    <span className="font-mono text-sky-300 font-semibold">{repoConfig.repo}</span>
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-600/40 font-semibold">
+                    Interactive Playground (Read-Only)
+                  </span>
+                </>
+              )
+            ) : (
+              <>
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-purple-400" />
+                <span className="text-slate-300 font-medium">
+                  Local Adventure Mode
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-600/40 font-semibold">
+                  Offline Save
+                </span>
+              </>
+            )}
+          </div>
+
+          {isRepoUninitialized && (
+            <div className="flex items-center gap-1.5 text-amber-300 bg-amber-950/60 border border-amber-600/40 px-2.5 py-1 rounded-lg text-[11px]">
+              <span>🐣</span>
+              <span>Pet not yet initialized on GitHub. Showing newborn companion.</span>
+            </div>
+          )}
+
+          {syncStatusMsg && !isRepoUninitialized && (
+            <span className="text-[11px] font-mono text-slate-400 truncate max-w-xs sm:max-w-md">
+              {syncStatusMsg}
+            </span>
+          )}
+        </div>
+
         {/* ACTION FEEDBACK NOTIFICATION BANNER */}
         {feedback && (
           <div

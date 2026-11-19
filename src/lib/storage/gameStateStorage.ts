@@ -122,6 +122,7 @@ export function saveRepoConfig(config: ConnectedRepoConfig): void {
 export async function fetchRemotePetState(repo: string, token?: string): Promise<{
   success: boolean;
   pet?: PetState;
+  uninitialized?: boolean;
   error?: string;
 }> {
   if (!repo || !repo.includes('/')) {
@@ -152,7 +153,15 @@ export async function fetchRemotePetState(repo: string, token?: string): Promise
         const petData = await rawRes.json();
         return { success: true, pet: mapRemotePetToLocal(petData) };
       }
-      return { success: false, error: `GitHub API error: HTTP ${response.status}` };
+
+      const isNotFound = response.status === 404 || rawRes.status === 404;
+      return {
+        success: false,
+        uninitialized: isNotFound,
+        error: isNotFound
+          ? `Repository ${cleanRepo} has not initialized a pet yet (pet/state/pet.json not found).`
+          : `GitHub API error: HTTP ${response.status}`,
+      };
     }
 
     const petData = await response.json();
