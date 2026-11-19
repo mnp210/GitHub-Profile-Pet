@@ -27,8 +27,19 @@ import {
 import type { GitHubContributionProvider } from '../contribution/index.ts';
 import { redactSensitiveData, resolveOwnerIdentity } from '../contribution/index.ts';
 import { validatePristineInstallation } from '../validation/index.ts';
-import type { ContributionLedgerDocument } from '../domain/types.ts';
+import type {
+  ActionLedgerDocument,
+  ContributionLedgerDocument,
+  PetSpecies,
+  PetStateDocument,
+} from '../domain/types.ts';
 import { ENGINE_SCHEMA_VERSION } from '../domain/constants.ts';
+import { saveRepositoryState } from '../persistence/stateRepository.ts';
+import { assertValidPetState } from '../validation/stateValidator.ts';
+import {
+  assertValidActionLedger,
+  assertValidContributionLedger,
+} from '../validation/ledgerValidator.ts';
 
 const execFileAsync = promisify(execFile);
 
@@ -299,6 +310,8 @@ export async function executeBaselinePipeline(
   const contribPath = path.join(baseDir, 'pet', 'ledger', 'contributions.json');
   let contribDoc: ContributionLedgerDocument | null = null;
   let originalContribBytes = '';
+  let originalPetBytes = '';
+  let originalActionsBytes = '';
   try {
     const rawContent = await fs.readFile(contribPath, 'utf-8');
     originalContribBytes = rawContent;
@@ -379,28 +392,118 @@ export async function executeBaselinePipeline(
       };
     }
 
-    // Explicit confirmation provided: validate complete state model using validatePristineInstallation (R3.22-01)
-    const pristineCheck = await validatePristineInstallation(baseDir, {
-      allowForeignBaseline: true,
-      expectedOwnerDatabaseId: rawExpectedDbId,
-      expectedOwnerLogin: targetOwnerLogin,
-    });
+    // 1. Transaction Journal & Concurrency Lock Hygiene Check
+    const journalDir = path.join(baseDir, 'pet', '.journal');
+    const lockPath = path.join(baseDir, 'pet', '.lock');
 
-    if (!pristineCheck.valid) {
+    try {
+      const journalEntries = await fs.readdir(journalDir).catch(() => []);
+      if (journalEntries.length > 0) {
+        return {
+          success: false,
+          status: 'integrity_failed',
+          sourceCommitSha,
+          destinationRef: targetBranch,
+          details: `Baseline Refused (F-04): Active or uncommitted transaction journal detected in ${journalDir} (${journalEntries.length} entries). Pristine reset cannot proceed with pending transactions.`,
+          error: new Error('Active transaction journal detected'),
+        };
+      }
+    } catch {
       return {
         success: false,
         status: 'integrity_failed',
         sourceCommitSha,
         destinationRef: targetBranch,
-        details: `Baseline Refused (F-04): Complete-state pristine validation failed for foreign fork reinitialization:\n - ${pristineCheck.errors.join('\n - ')}`,
-        error: new Error(`Complete-state pristine validation failed: ${pristineCheck.errors.join('; ')}`),
+        details: `Baseline Refused (F-04): Failed to inspect transaction journal directory at ${journalDir}.`,
+        error: new Error('Failed to inspect transaction journal'),
       };
     }
 
-    // Reset foreign ledger to pristine uninitialized state bound to current owner
-    contribDoc = {
+    try {
+      const lockExists = await fs.access(lockPath).then(() => true).catch(() => false);
+      if (lockExists) {
+        return {
+          success: false,
+          status: 'integrity_failed',
+          sourceCommitSha,
+          destinationRef: targetBranch,
+          details: `Baseline Refused (F-04): Active lock file detected at ${lockPath}. Pristine reset cannot proceed while lock is active.`,
+          error: new Error('Active concurrency lock detected'),
+        };
+      }
+    } catch {
+      // access check handled
+    }
+
+    // 2. Read and backup all 3 authoritative state files
+    const petPath = path.join(baseDir, 'pet', 'state', 'pet.json');
+    const actionsPath = path.join(baseDir, 'pet', 'ledger', 'actions.json');
+    let currentPetDoc: PetStateDocument | null = null;
+
+    try {
+      originalPetBytes = await fs.readFile(petPath, 'utf-8');
+      originalActionsBytes = await fs.readFile(actionsPath, 'utf-8');
+      currentPetDoc = JSON.parse(originalPetBytes);
+    } catch (err: unknown) {
+      return {
+        success: false,
+        status: 'integrity_failed',
+        sourceCommitSha,
+        destinationRef: targetBranch,
+        details: `Preflight Check Failed (F-04): Failed to read existing state documents: ${(err as Error).message}`,
+        error: err as Error,
+      };
+    }
+
+    // 3. Construct canonical pristine replacement documents for the new owner
+    const nowIso = new Date(options.nowMs ?? Date.now()).toISOString();
+    const validSpeciesList: PetSpecies[] = [
+      'cat', 'dragon', 'fox', 'slime', 'shadow_claw', 'ignis_ember', 'kitsune_sol', 'bloop_matrix',
+    ];
+    const candidateSpecies = currentPetDoc?.species as PetSpecies | undefined;
+    const resolvedSpecies: PetSpecies = (candidateSpecies && validSpeciesList.includes(candidateSpecies)) ? candidateSpecies : 'cat';
+    const candidateName = typeof currentPetDoc?.name === 'string' ? currentPetDoc.name.trim() : '';
+    const resolvedName = (candidateName.length > 0 && candidateName.length <= 50) ? candidateName : 'Shadow Claw';
+
+    const pristinePetDoc: PetStateDocument = {
       schemaVersion: ENGINE_SCHEMA_VERSION,
-      generation: typeof contribDoc.generation === 'number' && contribDoc.generation >= 1 ? contribDoc.generation : 1,
+      generation: 1,
+      name: resolvedName,
+      species: resolvedSpecies,
+      level: 1,
+      xp: 0,
+      maxExp: 100,
+      energy: 100,
+      energyAccumulator: 0,
+      hunger: 70,
+      hungerDecayAccumulator: 0,
+      happiness: 70,
+      happinessDecayAccumulator: 0,
+      mood: 'Happy',
+      evolutionStage: 'Hatchling',
+      lastInteractionTime: null,
+      lastOfflineResolutionTime: nowIso,
+      lastSimulatedAt: null,
+      lastWelcomeBonusClaimedAt: null,
+      updatedAt: nowIso,
+    };
+
+    const pristineActionsDoc: ActionLedgerDocument = {
+      schemaVersion: ENGINE_SCHEMA_VERSION,
+      generation: 1,
+      recentActions: [],
+      processedRequestRegistry: {
+        highWaterIssueNumber: 0,
+        sparseProcessedIssueNumbers: [],
+        retiredNonActionGaps: [],
+        unresolvedGaps: [],
+      },
+      pendingFeedback: [],
+    };
+
+    const pristineContribDoc: ContributionLedgerDocument = {
+      schemaVersion: ENGINE_SCHEMA_VERSION,
+      generation: 1,
       ownerDatabaseId: rawExpectedDbId,
       ownerLogin: targetOwnerLogin,
       dailyHwm: {},
@@ -413,9 +516,69 @@ export async function executeBaselinePipeline(
       monthlyHistoricalSummary: [],
     };
 
-    if (!dryRun) {
-      await fs.writeFile(contribPath, JSON.stringify(contribDoc, null, 2) + '\n', 'utf-8');
+    // 4. In-memory validation
+    try {
+      assertValidPetState(pristinePetDoc);
+      assertValidActionLedger(pristineActionsDoc);
+      assertValidContributionLedger(pristineContribDoc);
+    } catch (valErr: unknown) {
+      return {
+        success: false,
+        status: 'integrity_failed',
+        sourceCommitSha,
+        destinationRef: targetBranch,
+        details: `Preflight Check Failed (F-04): Pristine state template validation failed: ${(valErr as Error).message}`,
+        error: valErr as Error,
+      };
     }
+
+    // 5. Persist reset state transactionally
+    if (!dryRun) {
+      try {
+        await saveRepositoryState(baseDir, {
+          pet: pristinePetDoc,
+          contributions: pristineContribDoc,
+          actions: pristineActionsDoc,
+        });
+      } catch (saveErr: unknown) {
+        // Attempt rollback
+        await fs.writeFile(petPath, originalPetBytes, 'utf-8').catch(() => {});
+        await fs.writeFile(contribPath, originalContribBytes, 'utf-8').catch(() => {});
+        await fs.writeFile(actionsPath, originalActionsBytes, 'utf-8').catch(() => {});
+        return {
+          success: false,
+          status: 'integrity_failed',
+          sourceCommitSha,
+          destinationRef: targetBranch,
+          details: `Preflight Check Failed (F-04): Transactional reset failed: ${(saveErr as Error).message}`,
+          error: saveErr as Error,
+        };
+      }
+
+      // 6. Post-reset verification using validatePristineInstallation
+      const postResetCheck = await validatePristineInstallation(baseDir, {
+        allowForeignBaseline: false,
+        expectedOwnerDatabaseId: rawExpectedDbId,
+        expectedOwnerLogin: targetOwnerLogin,
+      });
+
+      if (!postResetCheck.valid) {
+        // Rollback all 3 files
+        await fs.writeFile(petPath, originalPetBytes, 'utf-8').catch(() => {});
+        await fs.writeFile(contribPath, originalContribBytes, 'utf-8').catch(() => {});
+        await fs.writeFile(actionsPath, originalActionsBytes, 'utf-8').catch(() => {});
+        return {
+          success: false,
+          status: 'integrity_failed',
+          sourceCommitSha,
+          destinationRef: targetBranch,
+          details: `Baseline Refused (F-04): Post-reset pristine validation failed:\n - ${postResetCheck.errors.join('\n - ')}`,
+          error: new Error(`Post-reset pristine validation failed: ${postResetCheck.errors.join('; ')}`),
+        };
+      }
+    }
+
+    contribDoc = pristineContribDoc;
   } else {
     // Standard / pristine baseline checks
     if (contribDoc.installationBaseline?.completed === true) {
@@ -455,6 +618,16 @@ export async function executeBaselinePipeline(
       ? async (sha: string) => ({ matches: true, currentRemoteSha: sha })
       : undefined);
 
+  const restoreOriginalBytesIfFailed = async () => {
+    if (isForeignOwner && options.reinitializeForeignFork && !dryRun) {
+      const petPath = path.join(baseDir, 'pet', 'state', 'pet.json');
+      const actionsPath = path.join(baseDir, 'pet', 'ledger', 'actions.json');
+      await fs.writeFile(petPath, originalPetBytes, 'utf-8').catch(() => {});
+      await fs.writeFile(contribPath, originalContribBytes, 'utf-8').catch(() => {});
+      await fs.writeFile(actionsPath, originalActionsBytes, 'utf-8').catch(() => {});
+    }
+  };
+
   try {
     syncResult = await syncContributions({
       baseDir,
@@ -471,9 +644,7 @@ export async function executeBaselinePipeline(
       targetOwnerLogin,
     });
   } catch (err: unknown) {
-    if (isForeignOwner && options.reinitializeForeignFork && !dryRun) {
-      await fs.writeFile(contribPath, originalContribBytes, 'utf-8').catch(() => {});
-    }
+    await restoreOriginalBytesIfFailed();
     return {
       success: false,
       status: 'error',
@@ -483,12 +654,6 @@ export async function executeBaselinePipeline(
       error: err as Error,
     };
   }
-
-  const restoreOriginalBytesIfFailed = async () => {
-    if (isForeignOwner && options.reinitializeForeignFork && !dryRun) {
-      await fs.writeFile(contribPath, originalContribBytes, 'utf-8').catch(() => {});
-    }
-  };
 
   if (syncResult.status === 'baseline_refused') {
     await restoreOriginalBytesIfFailed();

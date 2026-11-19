@@ -303,7 +303,7 @@ export async function syncContributions(
       // runtime contribution sync adopts the immutable numeric ownerDatabaseId already persisted in the established ledger.
       // Because the ledger's ownerDatabaseId was validated as a positive integer above,
       // this is guaranteed to be an immutable numeric ID and can never be confused with a mutable login.
-      expectedOwnerDatabaseId = localLedgerRaw.ownerDatabaseId;
+      expectedOwnerDatabaseId = localLedgerRaw.ownerDatabaseId ?? undefined;
     }
   }
 

@@ -100,6 +100,7 @@ By default, the pet automatically resolves your username and numeric database ID
 ### Step 4: Establish the One-Time Contribution Baseline
 > [!IMPORTANT]
 > **Baseline establishment is a strict one-time initialization step.** It records your starting contribution counts so you only earn pet rewards for new, genuine activity.
+> Ensure your repository working tree is clean (no uncommitted or untracked changes) before dispatching baseline establishment.
 > **DO NOT** rerun this workflow to fix ordinary publication or interaction issues; once established, the baseline is permanently protected against overwriting.
 
 1. Navigate to the **Actions** tab in your repository.
@@ -124,11 +125,11 @@ You can verify successful baseline initialization directly on GitHub:
 Add the dynamic SVG badge to your special profile repository (`<username>/<username>/README.md`):
 
 ```markdown
-<!-- START_SECTION:github-profile-pet -->
+<!-- START_SECTION:profile-pet -->
 <p align="center">
   <img src="https://raw.githubusercontent.com/<YOUR_USERNAME>/GitHub-Profile-Pet/main/public/pet.svg" alt="My GitHub Profile Pet" width="450" height="200" />
 </p>
-<!-- END_SECTION:github-profile-pet -->
+<!-- END_SECTION:profile-pet -->
 ```
 
 *(Replace `<YOUR_USERNAME>` with your actual GitHub username).*

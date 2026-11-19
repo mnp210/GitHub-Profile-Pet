@@ -447,7 +447,7 @@ export function isPristineContributionLedger(
 
   if (L.monotonicPublicHwm !== undefined && L.monotonicPublicHwm !== 0) return false;
 
-  if (L.ownerDatabaseId !== undefined && verifiedOwnerDatabaseId !== undefined) {
+  if (L.ownerDatabaseId !== undefined && L.ownerDatabaseId !== null && verifiedOwnerDatabaseId !== undefined) {
     if (L.ownerDatabaseId !== verifiedOwnerDatabaseId) return false;
   }
 

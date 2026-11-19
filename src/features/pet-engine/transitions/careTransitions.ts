@@ -70,8 +70,8 @@ export function executeCareAction(params: {
   const speciesId = normalizeSpeciesId(pet.species);
 
   // 0. Stale Event Check: eventTimestampMs must not be older than pet.lastInteractionTime
-  const lastInteractionMs = new Date(pet.lastInteractionTime).getTime();
-  if (nowMs < lastInteractionMs) {
+  const lastInteractionMs = pet.lastInteractionTime ? new Date(pet.lastInteractionTime).getTime() : 0;
+  if (lastInteractionMs > 0 && nowMs < lastInteractionMs) {
     return {
       nextPetState: { ...pet },
       nextRecentActions: [...history],
