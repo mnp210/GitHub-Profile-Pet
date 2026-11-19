@@ -60,6 +60,70 @@
       },
       "additionalProperties": false
     },
+    "permanentIndex": {
+      "type": "object",
+      "required": [
+        "commitShas",
+        "issueIntervals",
+        "prOpenedIntervals",
+        "prMergedIntervals",
+        "reviewIntervals"
+      ],
+      "properties": {
+        "commitShas": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "issueIntervals": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1 },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "prOpenedIntervals": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1 },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "prMergedIntervals": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1 },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "reviewIntervals": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1 },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "checkpoints": {
+      "type": "object",
+      "required": ["reconciledAt"],
+      "properties": {
+        "lastCommitSha": { "type": "string" },
+        "lastIssueNumber": { "type": "integer", "minimum": 1 },
+        "lastPrNumber": { "type": "integer", "minimum": 1 },
+        "reconciledAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
     "recentEvents": {
       "type": "array",
       "items": {

@@ -2,8 +2,9 @@
  * GitHub Profile Pet - GitHub Activity Processor CLI & Action Entrypoint
  *
  * Automatically parses incoming GitHub Actions events (push, issues, pull_request,
- * pull_request_review) or CLI arguments, awards activity XP, updates pet state,
- * renders the SVG badge, updates the README menu, and commits via atomic fast-forward push.
+ * pull_request_review) or CLI arguments, runs complete activity reconciliation across
+ * Git commits and GitHub API, awards activity XP, updates pet state, renders the SVG badge,
+ * updates the README menu, and commits via atomic fast-forward push.
  *
  * Usage:
  *   node --experimental-strip-types scripts/process-activity.ts [--ref main]
@@ -15,16 +16,19 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import {
   executeActivityProcessing,
+  performCompleteReconciliation,
   type ActivityType,
   type ProcessActivityEventInput,
   type ProcessActivityResult,
   type ActivityLedgerDocument,
+  type ActivityArchiveDocument,
 } from '../src/features/pet-engine/activity/index.ts';
 import type { PetStateDocument } from '../src/features/pet-engine/domain/types.ts';
 
 export const ACTIVITY_PUBLICATION_MANIFEST_PATHS = [
   'pet/state/pet.json',
   'pet/ledger/activity.json',
+  'pet/ledger/archive/activity_archive.json',
   'public/pet.svg',
   'README.md',
 ] as const;
@@ -166,7 +170,6 @@ async function main() {
         const commits = pushEvent.commits || [];
 
         for (const commit of commits) {
-          // Process distinct commits
           if (commit.distinct === false) continue;
 
           const actor = commit.author.username || commit.author.name || pushEvent.pusher?.name || 'unknown';
@@ -214,7 +217,6 @@ async function main() {
       } else if (eventName === 'pull_request_review') {
         const reviewEvent = eventJson as GitHubReviewEvent;
         const state = (reviewEvent.review?.state || '').toLowerCase();
-        // Reward substantive reviews (approved or changes_requested)
         if (reviewEvent.action === 'submitted' && (state === 'approved' || state === 'changes_requested')) {
           eventsToProcess.push({
             eventType: 'review_submitted',
@@ -231,44 +233,37 @@ async function main() {
     }
   }
 
-  // 3. Git Commit History Reconciliation Sweep (Durable Catch-Up)
-  // Reconciles recent commits in the working copy to discover any commits not yet awarded
+  // 3. Complete Activity Reconciliation (Git Commits + GitHub API Issues/PRs/Reviews)
+  let reconciliationCheckpoints: { lastCommitSha?: string; lastIssueNumber?: number; lastPrNumber?: number; reconciledAt: string } | undefined;
   try {
-    const gitLogResult = await execGit(
-      ['log', '-n', '30', '--format=%H%x09%an%x09%ae%x09%s%x09%cI', 'HEAD'],
-      baseDir
-    );
+    const gitToken = process.env.GITHUB_TOKEN;
+    const gitRepo = process.env.GITHUB_REPOSITORY;
 
-    const logLines = gitLogResult.stdout.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    for (const line of logLines) {
-      const parts = line.split('\t');
-      const sha = parts[0];
-      const authorName = parts[1];
-      const subject = parts[3] || '';
-      const commitDate = parts[4] || '';
+    const recon = await performCompleteReconciliation({
+      baseDir,
+      targetRef,
+      token: gitToken,
+      repository: gitRepo,
+      maxCommits: 30,
+    });
 
-      if (!sha || !authorName) continue;
-      const cleanSha = sha.trim().toLowerCase();
+    reconciliationCheckpoints = recon.checkpoints;
+    if (recon.warnings.length > 0) {
+      for (const w of recon.warnings) {
+        console.log(`[RECONCILIATION NOTICE] ${w}`);
+      }
+    }
 
-      // Check if already queued in eventsToProcess
+    for (const discovered of recon.discoveredEvents) {
       const alreadyQueued = eventsToProcess.some(
-        (e) => e.eventType === 'commit' && e.eventId.replace(/^commit:/i, '').toLowerCase() === cleanSha
+        (e) => e.eventType === discovered.eventType && e.eventId.toLowerCase() === discovered.eventId.toLowerCase()
       );
-      if (alreadyQueued) continue;
-
-      eventsToProcess.push({
-        eventType: 'commit',
-        eventId: `commit:${cleanSha}`,
-        actor: authorName,
-        commitMessage: subject,
-        details: subject ? subject.slice(0, 100) : 'Commit reconciliation',
-        timestamp: commitDate,
-        ref: targetRef,
-      });
+      if (!alreadyQueued) {
+        eventsToProcess.push(discovered);
+      }
     }
   } catch (err) {
-    // If not in a git repo or log fails (e.g. shallow clone or initial commit), continue gracefully
-    console.log('[INFO] Git history reconciliation skipped:', (err as Error).message);
+    console.log('[INFO] Reconciliation sweep skipped or encountered error:', (err as Error).message);
   }
 
   if (eventsToProcess.length === 0) {
@@ -282,6 +277,7 @@ async function main() {
   const processedResults: ProcessActivityResult[] = [];
   let currentPet: PetStateDocument | undefined;
   let currentLedger: ActivityLedgerDocument | undefined;
+  let currentArchive: ActivityArchiveDocument | undefined;
 
   for (const eventInput of eventsToProcess) {
     try {
@@ -291,10 +287,12 @@ async function main() {
         dryRun,
         currentPetState: currentPet,
         currentActivityLedger: currentLedger,
+        currentArchive,
       });
 
       currentPet = outcome.petState;
       currentLedger = outcome.activityLedger;
+      currentArchive = outcome.activityArchive;
       processedResults.push(outcome.result);
       totalXpAwarded += outcome.result.xpAwarded;
 
@@ -304,6 +302,11 @@ async function main() {
     } catch (err) {
       console.error(`[ERROR] Processing event ${eventInput.eventId} failed:`, (err as Error).message);
     }
+  }
+
+  // Update checkpoints in ledger if available
+  if (currentLedger && reconciliationCheckpoints) {
+    currentLedger.checkpoints = reconciliationCheckpoints;
   }
 
   console.log(`[COMPLETE] Total Activity XP awarded: ${totalXpAwarded}`);
