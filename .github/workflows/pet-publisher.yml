@@ -44,7 +44,9 @@ jobs:
       - name: Run Safe Git Publication Pipeline
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PET_OWNER_DATABASE_ID: '298821706'
-          PET_OWNER_LOGIN: 'mnp210'
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY_OWNER_ID: ${{ github.repository_owner_id }}
+          PET_OWNER_LOGIN: ${{ vars.PET_OWNER_LOGIN }}
+          PET_OWNER_DATABASE_ID: ${{ vars.PET_OWNER_DATABASE_ID }}
         run: |
           node --experimental-strip-types scripts/publish-pipeline.ts --ref "${{ github.ref_name }}"

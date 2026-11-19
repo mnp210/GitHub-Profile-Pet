@@ -14,6 +14,7 @@ import {
   executeBaselinePipeline,
   type SyncExecutionMode,
 } from '../src/features/pet-engine/publication/index.ts';
+import { resolveOwnerIdentity } from '../src/features/pet-engine/contribution/index.ts';
 
 export function parseArgs(args: string[]): {
   refName?: string;
@@ -88,6 +89,30 @@ async function main() {
     console.log('[publish-pipeline] Option: SKIP PUSH (commit locally, skip remote push)');
   }
 
+  const token = (process.env.GITHUB_TOKEN ?? process.env.TEST_TOKEN ?? '').trim();
+  if (!token && !options.dryRun) {
+    console.error('::error::[publish-pipeline] Publication failed (missing_token): GITHUB_TOKEN environment variable is required for publication.');
+    process.exit(1);
+  }
+
+  const baseDir = options.baseDir ?? process.cwd();
+  let expectedOwnerDatabaseId = options.expectedOwnerDatabaseId;
+  let targetOwnerLogin: string | undefined;
+
+  try {
+    const identity = resolveOwnerIdentity({ baseDir, env: process.env, allowLedgerFallback: true });
+    targetOwnerLogin = identity.login;
+    if (expectedOwnerDatabaseId === undefined && identity.databaseId) {
+      expectedOwnerDatabaseId = identity.databaseId;
+    }
+    console.log(`[publish-pipeline] Resolved Target Owner: @${identity.login} (databaseId: ${expectedOwnerDatabaseId ?? 'unspecified'})`);
+  } catch (err: unknown) {
+    if (mode === 'baseline_only') {
+      console.error(`::error::[publish-pipeline] Owner identity resolution failed: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  }
+
   if (options.baselineOnly) {
     console.log('[publish-pipeline] Routing to isolated baseline establishment pipeline...');
     const result = await executeBaselinePipeline({
@@ -96,7 +121,8 @@ async function main() {
       dryRun: options.dryRun,
       skipPush: options.skipPush,
       baseDir: options.baseDir,
-      expectedOwnerDatabaseId: options.expectedOwnerDatabaseId,
+      expectedOwnerDatabaseId,
+      targetOwnerLogin,
     });
 
     if (!result.success) {
@@ -125,7 +151,8 @@ async function main() {
     skipPush: options.skipPush,
     baseDir: options.baseDir,
     mode,
-    expectedOwnerDatabaseId: options.expectedOwnerDatabaseId,
+    expectedOwnerDatabaseId,
+    targetOwnerLogin,
   });
 
   if (!result.success) {

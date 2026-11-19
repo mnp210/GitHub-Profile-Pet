@@ -36,7 +36,7 @@ import {
   BaselineAlreadyEstablishedError,
 } from '../sync/index.ts';
 import type { GitHubContributionProvider } from '../contribution/index.ts';
-import { redactSensitiveData } from '../contribution/index.ts';
+import { redactSensitiveData, resolveOwnerIdentity } from '../contribution/index.ts';
 import { isPristineContributionLedger } from '../validation/ledgerValidator.ts';
 import type { ContributionLedgerDocument } from '../domain/types.ts';
 
@@ -102,6 +102,7 @@ export interface PublicationPipelineOptions {
   skipAuthoritativeFileCheck?: boolean;
   mode?: SyncExecutionMode;
   expectedOwnerDatabaseId?: number;
+  targetOwnerLogin?: string;
 }
 
 export interface PublicationPipelineResult {
@@ -378,13 +379,28 @@ export async function executePublicationPipeline(
 
   // 5. Preflight Check: Installation Baseline Guard (F-04)
   const mode: SyncExecutionMode = options.mode ?? 'runtime';
+  const resolvedId = (() => {
+    try {
+      return resolveOwnerIdentity({ baseDir, env, allowLedgerFallback: true });
+    } catch {
+      return undefined;
+    }
+  })();
+
   const expectedOwnerDatabaseId =
     options.expectedOwnerDatabaseId ??
+    resolvedId?.databaseId ??
     (options.env?.PET_OWNER_DATABASE_ID
       ? parseInt(options.env.PET_OWNER_DATABASE_ID, 10)
-      : process.env.PET_OWNER_DATABASE_ID
-        ? parseInt(process.env.PET_OWNER_DATABASE_ID, 10)
-        : undefined);
+      : options.env?.GITHUB_REPOSITORY_OWNER_ID
+        ? parseInt(options.env.GITHUB_REPOSITORY_OWNER_ID, 10)
+        : process.env.PET_OWNER_DATABASE_ID
+          ? parseInt(process.env.PET_OWNER_DATABASE_ID, 10)
+          : process.env.GITHUB_REPOSITORY_OWNER_ID
+            ? parseInt(process.env.GITHUB_REPOSITORY_OWNER_ID, 10)
+            : undefined);
+
+  const targetOwnerLogin = options.targetOwnerLogin ?? resolvedId?.login;
 
   const contribPath = path.join(baseDir, 'pet', 'ledger', 'contributions.json');
   let contribDoc: ContributionLedgerDocument | null = null;
@@ -504,6 +520,7 @@ export async function executePublicationPipeline(
       remoteFenceCheck: options.remoteFenceCheck,
       mode,
       expectedOwnerDatabaseId,
+      targetOwnerLogin,
     });
   } catch (err: unknown) {
     return {

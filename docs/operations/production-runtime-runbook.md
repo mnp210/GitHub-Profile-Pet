@@ -2,7 +2,7 @@
 
 **Document ID:** `docs/operations/production-runtime-runbook.md`  
 **Milestone:** Phase 3C2.3-A.2 (Final Operational Recovery, Documentation Acceptance & Path A Hardening Reconciliation)  
-**Target Repository:** `mnp210/GitHub-Profile-Pet`  
+**Target Repository:** `<owner>/<repo>` (Operational Reference)  
 **Status:** Approved Reference  
 
 ---
@@ -173,5 +173,5 @@ If GitHub pauses scheduled crons after 60 days of inactivity, the workflows must
 - **Diagnostic Dispatch Distinction:** Triggering `workflow_dispatch` alone does NOT re-enable an automatically disabled scheduled workflow.
 
 ### 4.6 Capacity and Cost Qualifications
-- **Public Repositories:** Standard hosted runners are free of runner-minute charges for public repositories, subject to GitHub usage policies and platform capacity. "Free of charge" does not mean unlimited execution capacity, unlimited concurrency, or guaranteed scheduling precision.
-- **Private Repositories:** Runner minutes are rounded up to the nearest whole minute per job. In an illustrative scenario of 48 runs/day at 1 min/job across a 30-day month, usage is ~1,440 billed minutes/month. This is an illustrative calculation for capacity planning and depends on actual runtime and other account workflows.
+- **Public Repositories:** Standard hosted runners (`ubuntu-latest`: 4 vCPUs, 16 GB RAM, 14 GB SSD) are free of runner-minute charges for public repositories, subject to GitHub usage policies and platform capacity. "Free of charge" does not mean unlimited execution capacity, unlimited concurrency, or guaranteed scheduling precision.
+- **Private Repositories:** Standard hosted runners (`ubuntu-latest`: 2 vCPUs, 8 GB RAM, 14 GB SSD; SKU: `actions_linux`) draw compute from the account's monthly included monetary compute allowance (e.g. $12.00 USD/month on GitHub Free) at the standard Linux runner rate ($0.006/min for 2-core x64). Job durations round up to the nearest whole minute. In an illustrative scenario of 48 runs/day at 1 min/job across a 30-day month, usage is ~1,440 billable minutes (~$8.64 USD/month, or ~72% of a $12.00 allowance). This is an illustrative estimate; all other account workflows and shared compute workloads draw from the same allowance.

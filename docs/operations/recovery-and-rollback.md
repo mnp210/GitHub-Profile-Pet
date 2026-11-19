@@ -2,7 +2,7 @@
 
 **Document ID:** `docs/operations/recovery-and-rollback.md`  
 **Milestone:** Phase 3C2.3-A.2 (Final Operational Recovery, Documentation Acceptance & Path A Hardening Reconciliation)  
-**Target Repository:** `mnp210/GitHub-Profile-Pet`  
+**Target Repository:** `<owner>/<repo>` (Operational Reference)  
 **Status:** Approved Reference  
 
 ---

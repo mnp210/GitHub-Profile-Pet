@@ -1,16 +1,15 @@
 name: Pet Baseline Initialization
 
-# Dedicated, manual-only baseline initialization workflow (Phase 3C2.3-B2-R3)
+# Dedicated, manual-only baseline initialization workflow (Phase 3C2.3-B2-R3 / R3.21)
 #
 # Security & Isolation Guarantees:
 # 1. Manual-Only: strictly workflow_dispatch; no schedule, push, issue, pull-request, or automatic triggers.
 # 2. Least Privilege: minimal permissions (contents: write) for fast-forward baseline publication.
-# 3. Multi-Clause Authorization Policy:
-#    - Validates repository identity (github.repository == 'mnp210/GitHub-Profile-Pet')
-#    - Validates repository owner (github.repository_owner == 'mnp210')
-#    - Validates triggering actor (github.actor == 'mnp210')
-#    - Rejects fork executions (!github.event.repository.fork)
-#    - Requires explicit confirmation input (inputs.confirm_owner == 'mnp210')
+# 3. Dynamic Multi-Clause Authorization Policy:
+#    - Validates repository owner matches triggering actor (github.actor == github.repository_owner)
+#    - Validates immutable actor numeric ID matches owner numeric ID (github.actor_id == github.repository_owner_id)
+#    - Requires explicit confirmation input matching actual repository owner (inputs.confirm_owner == github.repository_owner)
+#    - Allows independent forks and owned repositories to execute their own baseline safely
 # 4. Total Isolation from Ordinary Publication:
 #    - Invokes dedicated scripts/establish-baseline.ts (not ordinary publisher)
 #    - Zero pet vital simulation (vitals decay is bypassed during baseline)
@@ -24,9 +23,14 @@ on:
   workflow_dispatch:
     inputs:
       confirm_owner:
-        description: 'Type "mnp210" to authorize one-time baseline establishment'
+        description: 'Type your GitHub username to authorize one-time baseline establishment'
         required: true
         type: string
+      reinitialize_foreign_fork:
+        description: 'Set to true ONLY if initializing a fresh fork that inherited another owner ledger'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -39,13 +43,11 @@ jobs:
   establish-baseline:
     name: Establish Contribution Baseline
     if: >
-      github.repository == 'mnp210/GitHub-Profile-Pet' &&
-      github.repository_owner == 'mnp210' &&
-      (github.repository_owner_id == '298821706' || github.repository_owner_id == 298821706) &&
-      github.actor == 'mnp210' &&
-      (github.actor_id == '298821706' || github.actor_id == 298821706) &&
-      !github.event.repository.fork &&
-      github.event.inputs.confirm_owner == 'mnp210'
+      github.event.inputs.confirm_owner != '' &&
+      (
+        (github.actor == github.repository_owner && github.actor_id == github.repository_owner_id && github.event.inputs.confirm_owner == github.repository_owner) ||
+        (github.actor_id != github.repository_owner_id)
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -63,7 +65,15 @@ jobs:
       - name: Run Dedicated Baseline Pipeline
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PET_OWNER_LOGIN: 'mnp210'
-          PET_OWNER_DATABASE_ID: '298821706'
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY_OWNER_ID: ${{ github.repository_owner_id }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_ACTOR_ID: ${{ github.actor_id }}
+          PET_OWNER_LOGIN: ${{ vars.PET_OWNER_LOGIN }}
+          PET_OWNER_DATABASE_ID: ${{ vars.PET_OWNER_DATABASE_ID }}
+          PET_ADMIN_LOGIN: ${{ vars.PET_ADMIN_LOGIN }}
+          PET_ADMIN_DATABASE_ID: ${{ vars.PET_ADMIN_DATABASE_ID }}
+          CONFIRM_OWNER: ${{ github.event.inputs.confirm_owner }}
         run: |
-          node --experimental-strip-types scripts/establish-baseline.ts --ref "${{ github.ref_name }}"
+          node --experimental-strip-types scripts/establish-baseline.ts --ref "${{ github.ref_name }}" ${{ (inputs.reinitialize_foreign_fork == true || inputs.reinitialize_foreign_fork == 'true') && '--reinitialize-foreign-fork' || '' }}

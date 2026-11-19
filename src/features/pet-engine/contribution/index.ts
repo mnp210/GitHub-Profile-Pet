@@ -4,4 +4,5 @@
 export * from './types.ts';
 export * from './contributionProvider.ts';
 export * from './identityResolver.ts';
+export * from './adminAuthorization.ts';
 export * from './nativeGraphQLClient.ts';

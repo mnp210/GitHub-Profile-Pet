@@ -427,6 +427,7 @@ describe('Phase 3C2.3-B2-R2: Baseline Guard Test Suite', () => {
       token: 'fake-token',
       env: { PET_OWNER_LOGIN: 'mnp210' },
       mode: 'baseline_only',
+      nowMs: new Date('2026-11-18T12:00:00Z').getTime(),
     });
 
     assert.equal(result.status, 'baseline_established');
@@ -460,6 +461,7 @@ describe('Phase 3C2.3-B2-R2: Baseline Guard Test Suite', () => {
       token: 'fake-token',
       env: { PET_OWNER_LOGIN: 'mnp210' },
       mode: 'baseline_only',
+      nowMs: new Date('2026-11-18T12:00:00Z').getTime(),
     });
 
     assert.equal(result.status, 'baseline_refused');
@@ -490,6 +492,7 @@ describe('Phase 3C2.3-B2-R2: Baseline Guard Test Suite', () => {
       token: 'fake-token',
       env: { PET_OWNER_LOGIN: 'mnp210' },
       mode: 'baseline_only',
+      nowMs: new Date('2026-11-18T12:00:00Z').getTime(),
     });
 
     assert.equal(result.status, 'integrity_failed');
@@ -507,6 +510,7 @@ describe('Phase 3C2.3-B2-R2: Baseline Guard Test Suite', () => {
       token: 'fake-token',
       env: { PET_OWNER_LOGIN: 'mnp210' },
       mode: 'baseline_only',
+      nowMs: new Date('2026-11-18T12:00:00Z').getTime(),
     });
 
     assert.equal(result.status, 'provider_failed');

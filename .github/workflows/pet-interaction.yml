@@ -54,5 +54,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY_OWNER_ID: ${{ github.repository_owner_id }}
+          PET_OWNER_LOGIN: ${{ vars.PET_OWNER_LOGIN }}
+          PET_OWNER_DATABASE_ID: ${{ vars.PET_OWNER_DATABASE_ID }}
         run: |
           node --experimental-strip-types scripts/process-inbox.ts --ref "${{ github.ref_name }}"

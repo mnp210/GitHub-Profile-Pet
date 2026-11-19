@@ -39,7 +39,7 @@ import {
   type DeliverPendingFeedbackResult,
   DefaultGitHubInboxClient,
 } from '../inbox/index.ts';
-import { redactSensitiveData } from '../contribution/index.ts';
+import { redactSensitiveData, resolveOwnerIdentity } from '../contribution/index.ts';
 import {
   PUBLICATION_MANIFEST_PATHS,
   verifyRequiredAuthoritativeFiles,
@@ -105,6 +105,18 @@ export async function executeInboxPublicationPipeline(
   const repository = env.GITHUB_REPOSITORY ?? 'owner/github-profile-pet';
   const maxRetries = Math.max(1, options.maxRetries ?? 3);
   const client = options.client ?? new DefaultGitHubInboxClient(token || '');
+
+  let trustedAuthorId = options.trustedAuthorId;
+  if (trustedAuthorId === undefined && options.allowAnyAuthor !== true) {
+    try {
+      const identity = resolveOwnerIdentity({ baseDir, env, allowLedgerFallback: true });
+      if (typeof identity.databaseId === 'number' && Number.isInteger(identity.databaseId) && identity.databaseId > 0) {
+        trustedAuthorId = identity.databaseId;
+      }
+    } catch {
+      // Best-effort resolution: if identity is unresolvable, trustedAuthorId remains undefined and processInbox fails closed
+    }
+  }
 
   const gitEnv: Record<string, string | undefined> = {
     ...process.env,
@@ -430,7 +442,7 @@ async function stageAndCommitManifest(
         deferFeedback: true,
         botLogin: options.botLogin,
         allowAnyAuthor: options.allowAnyAuthor,
-        trustedAuthorId: options.trustedAuthorId,
+        trustedAuthorId,
         maxIssuesPerBatch: options.maxIssuesPerBatch,
         nowMs: options.nowMs,
       });

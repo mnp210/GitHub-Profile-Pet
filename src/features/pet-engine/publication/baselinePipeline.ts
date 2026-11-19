@@ -25,9 +25,10 @@ import {
   BaselineAlreadyEstablishedError,
 } from '../sync/index.ts';
 import type { GitHubContributionProvider } from '../contribution/index.ts';
-import { redactSensitiveData } from '../contribution/index.ts';
-import { isPristineContributionLedger } from '../validation/ledgerValidator.ts';
+import { redactSensitiveData, resolveOwnerIdentity } from '../contribution/index.ts';
+import { validatePristineInstallation } from '../validation/index.ts';
 import type { ContributionLedgerDocument } from '../domain/types.ts';
+import { ENGINE_SCHEMA_VERSION } from '../domain/constants.ts';
 
 const execFileAsync = promisify(execFile);
 
@@ -70,6 +71,8 @@ export interface BaselinePipelineOptions {
   skipBranchCheck?: boolean;
   skipAuthoritativeFileCheck?: boolean;
   expectedOwnerDatabaseId?: number;
+  targetOwnerLogin?: string;
+  reinitializeForeignFork?: boolean;
 }
 
 export interface BaselinePipelineResult {
@@ -295,8 +298,10 @@ export async function executeBaselinePipeline(
   // 5. Preflight Check: Baseline Guard (F-04)
   const contribPath = path.join(baseDir, 'pet', 'ledger', 'contributions.json');
   let contribDoc: ContributionLedgerDocument | null = null;
+  let originalContribBytes = '';
   try {
     const rawContent = await fs.readFile(contribPath, 'utf-8');
+    originalContribBytes = rawContent;
     contribDoc = JSON.parse(rawContent);
   } catch (err: unknown) {
     return {
@@ -320,30 +325,126 @@ export async function executeBaselinePipeline(
     };
   }
 
-  if (contribDoc.installationBaseline?.completed === true) {
+  let resolvedOwner: ReturnType<typeof resolveOwnerIdentity> | undefined;
+  try {
+    resolvedOwner = resolveOwnerIdentity({ baseDir, env, allowLedgerFallback: false });
+  } catch {
+    // If not resolvable from env, try with ledger fallback or fall back to options
+  }
+
+  const targetOwnerLogin = options.targetOwnerLogin ?? resolvedOwner?.login ?? env.PET_OWNER_LOGIN ?? env.GITHUB_REPOSITORY_OWNER;
+  const rawExpectedDbId =
+    options.expectedOwnerDatabaseId ??
+    resolvedOwner?.databaseId ??
+    (env.PET_OWNER_DATABASE_ID
+      ? parseInt(env.PET_OWNER_DATABASE_ID, 10)
+      : env.GITHUB_REPOSITORY_OWNER_ID
+        ? parseInt(env.GITHUB_REPOSITORY_OWNER_ID, 10)
+        : undefined);
+
+  // Check if existing ledger matches target owner
+  const isOwnerMatch =
+    (typeof rawExpectedDbId === 'number' && typeof contribDoc.ownerDatabaseId === 'number' && contribDoc.ownerDatabaseId === rawExpectedDbId) ||
+    (typeof targetOwnerLogin === 'string' && typeof contribDoc.ownerLogin === 'string' && contribDoc.ownerLogin.toLowerCase() === targetOwnerLogin.toLowerCase());
+
+  const isForeignOwner =
+    typeof contribDoc.ownerDatabaseId === 'number' &&
+    contribDoc.ownerDatabaseId > 0 &&
+    typeof rawExpectedDbId === 'number' &&
+    rawExpectedDbId > 0 &&
+    contribDoc.ownerDatabaseId !== rawExpectedDbId;
+
+  // Rule 1: Existing matching owner baseline completed -> STRICTLY REFUSE
+  if (isOwnerMatch && contribDoc.installationBaseline?.completed === true) {
     return {
       success: false,
       status: 'baseline_refused',
       sourceCommitSha,
       destinationRef: targetBranch,
-      details: 'Baseline Refused (F-04): Installation baseline has already been established and cannot be overwritten.',
+      details: 'Baseline Refused (F-04): Installation baseline has already been established for this repository owner and cannot be overwritten.',
       error: new BaselineAlreadyEstablishedError(),
     };
   }
 
-  const rawExpectedDbId =
-    options.expectedOwnerDatabaseId ??
-    (env.PET_OWNER_DATABASE_ID ? parseInt(env.PET_OWNER_DATABASE_ID, 10) : undefined);
+  // Rule 2: Foreign-owner baseline detected (inherited fork or transfer)
+  if (isForeignOwner) {
+    if (!options.reinitializeForeignFork) {
+      return {
+        success: false,
+        status: 'baseline_refused',
+        sourceCommitSha,
+        destinationRef: targetBranch,
+        details: `Baseline Refused (F-04): Inherited foreign baseline detected belonging to @${contribDoc.ownerLogin ?? 'unknown'} (databaseId: ${contribDoc.ownerDatabaseId}). Current repository owner is @${targetOwnerLogin ?? 'unknown'} (databaseId: ${rawExpectedDbId}). To safely initialize this fresh fork for @${targetOwnerLogin ?? 'unknown'}, rerun baseline establishment with --reinitialize-foreign-fork (or set reinitialize_foreign_fork: true in workflow dispatch).`,
+        error: new Error('Inherited foreign baseline detected. Reinitialization confirmation required.'),
+      };
+    }
 
-  if (!isPristineContributionLedger(contribDoc, rawExpectedDbId)) {
-    return {
-      success: false,
-      status: 'integrity_failed',
-      sourceCommitSha,
-      destinationRef: targetBranch,
-      details: 'Baseline Refused (F-04): Contribution ledger is not in a valid pristine state (partially initialized, corrupt, or ownerDatabaseId mismatch).',
-      error: new Error('Contribution ledger is not in a valid pristine state.'),
+    // Explicit confirmation provided: validate complete state model using validatePristineInstallation (R3.22-01)
+    const pristineCheck = await validatePristineInstallation(baseDir, {
+      allowForeignBaseline: true,
+      expectedOwnerDatabaseId: rawExpectedDbId,
+      expectedOwnerLogin: targetOwnerLogin,
+    });
+
+    if (!pristineCheck.valid) {
+      return {
+        success: false,
+        status: 'integrity_failed',
+        sourceCommitSha,
+        destinationRef: targetBranch,
+        details: `Baseline Refused (F-04): Complete-state pristine validation failed for foreign fork reinitialization:\n - ${pristineCheck.errors.join('\n - ')}`,
+        error: new Error(`Complete-state pristine validation failed: ${pristineCheck.errors.join('; ')}`),
+      };
+    }
+
+    // Reset foreign ledger to pristine uninitialized state bound to current owner
+    contribDoc = {
+      schemaVersion: ENGINE_SCHEMA_VERSION,
+      generation: typeof contribDoc.generation === 'number' && contribDoc.generation >= 1 ? contribDoc.generation : 1,
+      ownerDatabaseId: rawExpectedDbId,
+      ownerLogin: targetOwnerLogin,
+      dailyHwm: {},
+      dailyRewardOrdinal: {},
+      dailyAccruedXp: {},
+      hourlyIncrementUsage: {},
+      hourlySliceUsage: {},
+      monotonicPublicHwm: 0,
+      slices: [],
+      monthlyHistoricalSummary: [],
     };
+
+    if (!dryRun) {
+      await fs.writeFile(contribPath, JSON.stringify(contribDoc, null, 2) + '\n', 'utf-8');
+    }
+  } else {
+    // Standard / pristine baseline checks
+    if (contribDoc.installationBaseline?.completed === true) {
+      return {
+        success: false,
+        status: 'baseline_refused',
+        sourceCommitSha,
+        destinationRef: targetBranch,
+        details: 'Baseline Refused (F-04): Installation baseline has already been established and cannot be overwritten.',
+        error: new BaselineAlreadyEstablishedError(),
+      };
+    }
+
+    const pristineCheck = await validatePristineInstallation(baseDir, {
+      allowForeignBaseline: false,
+      expectedOwnerDatabaseId: rawExpectedDbId,
+      expectedOwnerLogin: targetOwnerLogin,
+    });
+
+    if (!pristineCheck.valid) {
+      return {
+        success: false,
+        status: 'integrity_failed',
+        sourceCommitSha,
+        destinationRef: targetBranch,
+        details: `Baseline Refused (F-04): Complete-state pristine validation failed for installation:\n - ${pristineCheck.errors.join('\n - ')}`,
+        error: new Error(`Complete-state pristine validation failed: ${pristineCheck.errors.join('; ')}`),
+      };
+    }
   }
 
   // 6. Execute Isolated Contribution Synchronization in baseline_only mode
@@ -367,8 +468,12 @@ export async function executeBaselinePipeline(
       mode: 'baseline_only',
       skipSimulation: true,
       expectedOwnerDatabaseId: rawExpectedDbId,
+      targetOwnerLogin,
     });
   } catch (err: unknown) {
+    if (isForeignOwner && options.reinitializeForeignFork && !dryRun) {
+      await fs.writeFile(contribPath, originalContribBytes, 'utf-8').catch(() => {});
+    }
     return {
       success: false,
       status: 'error',
@@ -379,7 +484,14 @@ export async function executeBaselinePipeline(
     };
   }
 
+  const restoreOriginalBytesIfFailed = async () => {
+    if (isForeignOwner && options.reinitializeForeignFork && !dryRun) {
+      await fs.writeFile(contribPath, originalContribBytes, 'utf-8').catch(() => {});
+    }
+  };
+
   if (syncResult.status === 'baseline_refused') {
+    await restoreOriginalBytesIfFailed();
     return {
       success: false,
       status: 'baseline_refused',
@@ -392,6 +504,7 @@ export async function executeBaselinePipeline(
   }
 
   if (syncResult.status === 'integrity_failed') {
+    await restoreOriginalBytesIfFailed();
     return {
       success: false,
       status: 'integrity_failed',
@@ -404,6 +517,7 @@ export async function executeBaselinePipeline(
   }
 
   if (syncResult.status === 'conflict') {
+    await restoreOriginalBytesIfFailed();
     await execGit(['checkout', '--', ...BASELINE_MANIFEST_PATHS]).catch(() => {});
     return {
       success: false,
@@ -416,6 +530,7 @@ export async function executeBaselinePipeline(
   }
 
   if (syncResult.status === 'provider_failed') {
+    await restoreOriginalBytesIfFailed();
     return {
       success: false,
       status: 'provider_failed',
