@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generation": 9,
+  "generation": 10,
   "name": "Shadow Claw",
   "species": "cat",
   "level": 2,
@@ -8,15 +8,15 @@
   "maxExp": 200,
   "energy": 100,
   "energyAccumulator": 0,
-  "hunger": 95,
-  "hungerDecayAccumulator": 0.5045938,
-  "happiness": 48,
-  "happinessDecayAccumulator": 0.5045938,
+  "hunger": 92,
+  "hungerDecayAccumulator": 0.5363303,
+  "happiness": 45,
+  "happinessDecayAccumulator": 0.5363303,
   "mood": "Focused",
   "evolutionStage": "Hatchling",
   "lastInteractionTime": "2026-11-15T00:00:00.000Z",
-  "lastOfflineResolutionTime": "2026-11-21T01:50:45.938Z",
-  "lastSimulatedAt": "2026-11-21T01:50:45.938Z",
+  "lastOfflineResolutionTime": "2026-11-21T10:16:03.303Z",
+  "lastSimulatedAt": "2026-11-21T10:16:03.303Z",
   "lastWelcomeBonusClaimedAt": null,
-  "updatedAt": "2026-11-21T01:50:45.938Z"
+  "updatedAt": "2026-11-21T10:16:03.303Z"
 }
