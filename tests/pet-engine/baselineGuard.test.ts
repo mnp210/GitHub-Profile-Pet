@@ -575,12 +575,14 @@ describe('Phase 3C2.3-B2-R2: Baseline Guard Test Suite', () => {
     assert.equal(invariant.satisfied, true);
 
     // 2. Establish baseline
+    const testNowMs = new Date('2026-11-18T12:00:00.000Z').getTime();
     await syncContributions({
       baseDir: tempBaseDir,
       provider,
       token: 'fake-token',
       env: { PET_OWNER_LOGIN: 'mnp210' },
       mode: 'baseline_only',
+      nowMs: testNowMs,
     });
 
     loaded = await loadRepositoryState(tempBaseDir);
@@ -603,6 +605,7 @@ describe('Phase 3C2.3-B2-R2: Baseline Guard Test Suite', () => {
       token: 'fake-token',
       env: { PET_OWNER_LOGIN: 'mnp210' },
       mode: 'runtime',
+      nowMs: testNowMs + 3600000,
     });
 
     assert.equal(runResult.status, 'completed');

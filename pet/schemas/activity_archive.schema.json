@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/github-profile-pet/schemas/activity_archive.schema.json",
+  "title": "ActivityArchiveDocument",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "archivedCommitShas",
+    "archivedEventCount",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "archivedCommitShas": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "archivedEventCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

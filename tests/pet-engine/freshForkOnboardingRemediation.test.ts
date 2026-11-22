@@ -249,6 +249,7 @@ describe('Phase 3C2.3-B2-R3.38 — Onboarding Remediation Regression Suite', () 
         })
       );
 
+      const nowMs = new Date('2026-11-19T12:00:00.000Z').getTime();
       const res = await executeBaselinePipeline({
         baseDir: tempDir,
         provider,
@@ -262,6 +263,7 @@ describe('Phase 3C2.3-B2-R3.38 — Onboarding Remediation Regression Suite', () 
         skipBranchCheck: true,
         skipAuthoritativeFileCheck: true,
         gitExecutor: mockGitExecutor,
+        nowMs,
       });
 
       assert.equal(res.success, true, res.details);
@@ -479,6 +481,7 @@ describe('Phase 3C2.3-B2-R3.38 — Onboarding Remediation Regression Suite', () 
         createMockSnapshot({ login: 'alice-dev', databaseId: 445566, yesterdayCommits: 1, todayCommits: 1 })
       );
 
+      const nowMs = new Date('2026-11-19T12:00:00.000Z').getTime();
       const res = await executeBaselinePipeline({
         baseDir: tempDir,
         provider,
@@ -492,6 +495,7 @@ describe('Phase 3C2.3-B2-R3.38 — Onboarding Remediation Regression Suite', () 
         skipBranchCheck: true,
         skipAuthoritativeFileCheck: true,
         gitExecutor: mockGitExecutor,
+        nowMs,
       });
 
       assert.equal(res.success, false);
@@ -529,6 +533,7 @@ describe('Phase 3C2.3-B2-R3.38 — Onboarding Remediation Regression Suite', () 
         createMockSnapshot({ login: 'alice-dev', databaseId: 445566, yesterdayCommits: 1, todayCommits: 1 })
       );
 
+      const nowMs = new Date('2026-11-19T12:00:00.000Z').getTime();
       const res = await executeBaselinePipeline({
         baseDir: tempDir,
         provider,
@@ -542,6 +547,7 @@ describe('Phase 3C2.3-B2-R3.38 — Onboarding Remediation Regression Suite', () 
         skipBranchCheck: true,
         skipAuthoritativeFileCheck: true,
         gitExecutor: mockGitExecutor,
+        nowMs,
       });
 
       assert.equal(res.success, false);

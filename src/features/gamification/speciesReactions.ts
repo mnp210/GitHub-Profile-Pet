@@ -6,6 +6,7 @@ export type ReactionTrigger = ActionType | 'level_up' | 'exhausted' | 'full';
 export const SPECIES_REACTIONS: Record<SpeciesId, Record<ReactionTrigger, string>> = {
   cat: {
     pet: 'Purrs contentedly and rubs its fuzzy void ears against your cursor.',
+    play: 'Chases an arcane laser pointer across the terminal and pounces with joy!',
     train: 'Hones void claws on your terminal logs with lethal agility!',
     feed: 'Nibbles a byte-sized salmon commit and grooms whiskers.',
     rest: 'Curls into a snug pixelated orb and dozes quietly.',
@@ -15,6 +16,7 @@ export const SPECIES_REACTIONS: Record<SpeciesId, Record<ReactionTrigger, string
   },
   dragon: {
     pet: 'Puffs a warm ember smoke-ring and leans into your hand.',
+    play: 'Leaps into the air catching floating ember orbs with playful glee!',
     train: 'Practices blazing flame breath against stale git branches!',
     feed: 'Gnashes happily on a spicy flame-roasted commit banquet.',
     rest: 'Slumbers atop a warm pile of merged pull requests.',
@@ -24,6 +26,7 @@ export const SPECIES_REACTIONS: Record<SpeciesId, Record<ReactionTrigger, string
   },
   fox: {
     pet: 'Yips playfully and swishes its voluminous bushy tail.',
+    play: 'Pounces playfully on a digital tumbleweed with boundless cheer!',
     train: 'Darts nimbly through rapid code review obstacle courses!',
     feed: 'Crunches golden solar berries with sparkling eyes.',
     rest: 'Tucks bushy tail over snout and drifts into serene sleep.',
@@ -33,6 +36,7 @@ export const SPECIES_REACTIONS: Record<SpeciesId, Record<ReactionTrigger, string
   },
   slime: {
     pet: 'Jiggles warmly with iridescent gelatinous bubbles.',
+    play: 'Bounces like a joyful superball, emitting harmonic chimes!',
     train: 'Splashes matrix gel into rigorous tactical shapes!',
     feed: 'Absorbs green bug-fix pellets and swells happily.',
     rest: 'Settles into a calm, translucent resting puddle.',

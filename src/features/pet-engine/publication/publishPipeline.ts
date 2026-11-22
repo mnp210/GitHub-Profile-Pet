@@ -30,6 +30,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import {
   syncContributions,
+  checkRemoteGenerationFence,
   type ContributionSyncResult,
   type SyncExecutionMode,
   MissingBaselineError,
@@ -517,7 +518,10 @@ export async function executePublicationPipeline(
       dryRun,
       sourceCommitSha,
       provider: options.provider,
-      remoteFenceCheck: options.remoteFenceCheck,
+      remoteFenceCheck:
+        options.remoteFenceCheck ??
+        ((sha: string) =>
+          checkRemoteGenerationFence(sha, gitRemote, `refs/heads/${targetBranch}`, baseDir)),
       mode,
       expectedOwnerDatabaseId,
       targetOwnerLogin,

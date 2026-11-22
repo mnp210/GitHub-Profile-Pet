@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/github-profile-pet/schemas/activity.schema.json",
+  "title": "ActivityLedgerDocument",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generation",
+    "dailyAccruedXp",
+    "processedRegistry",
+    "recentEvents",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "dailyAccruedXp": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "processedRegistry": {
+      "type": "object",
+      "required": [
+        "commitShas",
+        "issueNumbers",
+        "prOpenedNumbers",
+        "prMergedNumbers",
+        "reviewIds"
+      ],
+      "properties": {
+        "commitShas": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "issueNumbers": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "prOpenedNumbers": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "prMergedNumbers": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "reviewIds": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "permanentIndex": {
+      "type": "object",
+      "required": [
+        "commitShas",
+        "issueIntervals",
+        "prOpenedIntervals",
+        "prMergedIntervals",
+        "reviewIntervals"
+      ],
+      "properties": {
+        "commitShas": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "issueIntervals": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1 },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "prOpenedIntervals": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1 },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "prMergedIntervals": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1 },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "reviewIntervals": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1 },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "checkpoints": {
+      "type": "object",
+      "required": ["reconciledAt"],
+      "properties": {
+        "lastCommitSha": { "type": "string" },
+        "lastIssueNumber": { "type": "integer", "minimum": 1 },
+        "lastPrNumber": { "type": "integer", "minimum": 1 },
+        "reconciledAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "recentEvents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "eventId",
+          "eventType",
+          "actor",
+          "timestamp",
+          "xpAwarded",
+          "status"
+        ],
+        "properties": {
+          "eventId": { "type": "string" },
+          "eventType": {
+            "type": "string",
+            "enum": [
+              "commit",
+              "issue_opened",
+              "pr_opened",
+              "pr_merged",
+              "review_submitted"
+            ]
+          },
+          "actor": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "xpAwarded": { "type": "integer", "minimum": 0 },
+          "status": {
+            "type": "string",
+            "enum": [
+              "rewarded",
+              "skipped_bot",
+              "skipped_duplicate",
+              "skipped_daily_cap",
+              "skipped_care_action",
+              "skipped_stale",
+              "invalid"
+            ]
+          },
+          "details": { "type": "string" },
+          "ref": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

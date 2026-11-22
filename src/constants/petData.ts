@@ -1,5 +1,5 @@
-import { EvolutionMilestone, PetSpeciesMeta, PetState } from '@/types/pet';
-import { ActivityMetric } from '@/types/activity';
+import type { EvolutionMilestone, PetSpeciesMeta, PetState } from '../types/pet.ts';
+import type { ActivityMetric } from '../types/activity.ts';
 
 export const SPECIES_METADATA: Record<string, PetSpeciesMeta> = {
   cat: {

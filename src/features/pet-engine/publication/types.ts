@@ -18,6 +18,10 @@ export interface PublishPetOptions {
   theme?: 'dark' | 'light' | 'transparent';
   /** Optional custom dialogue message */
   customMessage?: string;
+  /** Repository name (e.g. "owner/repo") for README menu links */
+  repo?: string;
+  /** Hosted game base URL for README menu navigation links */
+  hostedGameUrl?: string;
 }
 
 export interface PublishResult {

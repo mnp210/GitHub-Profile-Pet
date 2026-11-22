@@ -43,14 +43,15 @@ export function executePetAction(params: {
   action: ActionType;
   history: ActionHistoryEntry[];
   nowMs: number;
+  cooldownMs?: number;
 }): ActionResult {
-  const { pet, action, history, nowMs } = params;
+  const { pet, action, history, nowMs, cooldownMs = ACTION_COOLDOWN_MS } = params;
 
-  // 1. Cooldown Check: Ensure actions are not triggered faster than ACTION_COOLDOWN_MS
+  // 1. Cooldown Check: Ensure actions are not triggered faster than cooldown
   const lastEntry = history.length > 0 ? history[history.length - 1] : null;
-  if (lastEntry && nowMs - lastEntry.timestamp < ACTION_COOLDOWN_MS) {
+  if (lastEntry && nowMs - lastEntry.timestamp < cooldownMs) {
     const elapsed = nowMs - lastEntry.timestamp;
-    const remaining = ACTION_COOLDOWN_MS - elapsed;
+    const remaining = cooldownMs - elapsed;
     return {
       success: false,
       rejectedReason: `Action Cooldown: Please wait ${Math.ceil(remaining / 100) / 10}s before next action.`,
@@ -69,6 +70,19 @@ export function executePetAction(params: {
     return {
       success: false,
       rejectedReason: `Insufficient Energy: Training requires ${TRAINING_ENERGY_COST} energy (currently ${pet.energy}). Use REST first.`,
+      updatedPet: { ...pet },
+      updatedHistory: history,
+      reaction: getSpeciesReaction(pet.species, 'exhausted'),
+      didLevelUp: false,
+      levelsGained: 0,
+      milestones: getUpdatedMilestones(pet.level),
+    };
+  }
+
+  if (action === 'play' && pet.energy < 10) {
+    return {
+      success: false,
+      rejectedReason: `Insufficient Energy: Playing requires 10 energy (currently ${pet.energy}). Use REST first.`,
       updatedPet: { ...pet },
       updatedHistory: history,
       reaction: getSpeciesReaction(pet.species, 'exhausted'),
