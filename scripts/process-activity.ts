@@ -29,6 +29,8 @@ import type { PetStateDocument } from '../src/features/pet-engine/domain/types.t
 
 export const ACTIVITY_PUBLICATION_MANIFEST_PATHS = [
   'pet/state/pet.json',
+  'pet/ledger/contributions.json',
+  'pet/ledger/actions.json',
   'pet/ledger/activity.json',
   'pet/ledger/archive/activity_archive.json',
   'public/pet.svg',
@@ -207,6 +209,30 @@ async function runProcessingCycle(options: {
 
   // If in Git workspace, publish changes
   if (totalXpAwarded > 0 && !dryRun) {
+    // Harmonize generation across contributions and actions ledgers so atomic triplet stays synchronized
+    if (currentPet?.generation) {
+      try {
+        const contribPath = path.join(baseDir, 'pet/ledger/contributions.json');
+        const actionsPath = path.join(baseDir, 'pet/ledger/actions.json');
+        const [contribRaw, actionsRaw] = await Promise.all([
+          fs.readFile(contribPath, 'utf-8').catch(() => null),
+          fs.readFile(actionsPath, 'utf-8').catch(() => null),
+        ]);
+        if (contribRaw) {
+          const contribData = JSON.parse(contribRaw);
+          contribData.generation = currentPet.generation;
+          await fs.writeFile(contribPath, JSON.stringify(contribData, null, 2) + '\n', 'utf-8');
+        }
+        if (actionsRaw) {
+          const actionsData = JSON.parse(actionsRaw);
+          actionsData.generation = currentPet.generation;
+          await fs.writeFile(actionsPath, JSON.stringify(actionsData, null, 2) + '\n', 'utf-8');
+        }
+      } catch (err) {
+        console.log('[WARN] Failed to harmonize ledger generations:', (err as Error).message);
+      }
+    }
+
     const { stdout: statusOut } = await execGit(['status', '--porcelain'], baseDir);
     const modified = statusOut
       .split(/\r?\n/)
