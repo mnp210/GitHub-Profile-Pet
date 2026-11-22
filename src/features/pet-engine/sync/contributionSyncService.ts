@@ -680,9 +680,10 @@ export async function syncContributions(
 
     // 11. Stage 1 Pre-Push Remote Generation Fence Check (AC-28, AC-29)
     if (options.sourceCommitSha) {
+      const branchRef = `refs/heads/${(options.env?.GITHUB_REF_NAME ?? 'main').replace(/^refs\/heads\//, '')}`;
       const fenceCheckFn =
         options.remoteFenceCheck ??
-        ((sha: string) => checkRemoteGenerationFence(sha, 'origin', 'refs/heads/main', baseDir));
+        ((sha: string) => checkRemoteGenerationFence(sha, 'origin', branchRef, baseDir));
       const fenceResult = await fenceCheckFn(options.sourceCommitSha);
       if (!fenceResult.matches) {
         return {
