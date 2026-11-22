@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generation": 4,
+  "generation": 5,
   "ownerDatabaseId": 298821706,
   "ownerLogin": "mnp210",
   "installationBaseline": {
@@ -15,18 +15,22 @@
   "dailyHwm": {
     "2026-11-17": 1,
     "2026-11-18": 20,
-    "2026-11-19": 22
+    "2026-11-19": 22,
+    "2026-11-21": 0,
+    "2026-11-22": 0
   },
   "dailyRewardOrdinal": {
     "2026-11-17": 0,
     "2026-11-18": 14,
-    "2026-11-19": 22
+    "2026-11-19": 22,
+    "2026-11-21": 0,
+    "2026-11-22": 0
   },
   "lastSyncReceipt": {
-    "timestamp": "2026-11-19T13:57:49.949Z",
+    "timestamp": "2026-11-22T15:23:21.053Z",
     "status": "success",
-    "incrementsProcessed": 5,
-    "notes": "Reconciled 2 snapshot(s). Observed delta: 32. Evaluated: 5."
+    "incrementsProcessed": 0,
+    "notes": "Reconciled 2 snapshot(s). Observed delta: 0. Evaluated: 0."
   },
   "dailyAccruedXp": {
     "2026-11-18": 80,
@@ -34,7 +38,8 @@
   },
   "hourlyIncrementUsage": {
     "2026-11-19T03": 4,
-    "2026-11-19T13": 5
+    "2026-11-19T13": 5,
+    "2026-11-22T15": 0
   },
   "hourlySliceUsage": {},
   "monotonicPublicHwm": 22,
@@ -153,11 +158,11 @@
       "dailyOrdinal": 10,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-20T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-18_ord_11",
@@ -165,11 +170,11 @@
       "dailyOrdinal": 11,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-20T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-18_ord_12",
@@ -177,11 +182,11 @@
       "dailyOrdinal": 12,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-20T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-18_ord_13",
@@ -189,11 +194,11 @@
       "dailyOrdinal": 13,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-20T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-18_ord_14",
@@ -201,11 +206,11 @@
       "dailyOrdinal": 14,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-20T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_1",
@@ -213,11 +218,11 @@
       "dailyOrdinal": 1,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_2",
@@ -225,11 +230,11 @@
       "dailyOrdinal": 2,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_3",
@@ -237,11 +242,11 @@
       "dailyOrdinal": 3,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_4",
@@ -249,11 +254,11 @@
       "dailyOrdinal": 4,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_5",
@@ -261,11 +266,11 @@
       "dailyOrdinal": 5,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_6",
@@ -273,11 +278,11 @@
       "dailyOrdinal": 6,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_7",
@@ -285,11 +290,11 @@
       "dailyOrdinal": 7,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_8",
@@ -297,11 +302,11 @@
       "dailyOrdinal": 8,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_9",
@@ -309,11 +314,11 @@
       "dailyOrdinal": 9,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_10",
@@ -321,11 +326,11 @@
       "dailyOrdinal": 10,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_11",
@@ -333,11 +338,11 @@
       "dailyOrdinal": 11,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_12",
@@ -345,11 +350,11 @@
       "dailyOrdinal": 12,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_13",
@@ -357,11 +362,11 @@
       "dailyOrdinal": 13,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_14",
@@ -369,11 +374,11 @@
       "dailyOrdinal": 14,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_15",
@@ -381,11 +386,11 @@
       "dailyOrdinal": 15,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_16",
@@ -393,11 +398,11 @@
       "dailyOrdinal": 16,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_17",
@@ -405,11 +410,11 @@
       "dailyOrdinal": 17,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_18",
@@ -417,11 +422,11 @@
       "dailyOrdinal": 18,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_19",
@@ -429,11 +434,11 @@
       "dailyOrdinal": 19,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_20",
@@ -441,11 +446,11 @@
       "dailyOrdinal": 20,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_21",
@@ -453,11 +458,11 @@
       "dailyOrdinal": 21,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     },
     {
       "sliceId": "slice_2026-11-19_ord_22",
@@ -465,11 +470,11 @@
       "dailyOrdinal": 22,
       "discoveredAt": "2026-11-19T13:57:49.949Z",
       "units": 1,
-      "status": "pending",
+      "status": "expired",
       "rewardedXp": 0,
       "rewardedSatiety": 0,
       "expiryAt": "2026-11-21T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-22T15:23:21.053Z"
     }
   ],
   "monthlyHistoricalSummary": []
