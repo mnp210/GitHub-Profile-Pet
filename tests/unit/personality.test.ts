@@ -3,10 +3,6 @@ import assert from 'node:assert/strict';
 import {
   ALL_PERSONALITIES,
   PERSONALITY_PROFILES,
-  CURIOUS,
-  DETERMINED,
-  PLAYFUL,
-  CALM,
   getDefaultPersonalityForSpecies,
   getPersonalityProfile,
   selectNextBehaviour,
@@ -14,11 +10,10 @@ import {
   getAmbientThought,
   mapBehaviourToSpriteState,
   type BehaviourContext,
-  type PersonalityId,
 } from '../../src/features/personality/index.ts';
 import { validatePetState } from '../../src/features/pet-engine/validation/stateValidator.ts';
-import type { PetStateDocument } from '../../src/features/pet-engine/domain/types.ts';
-import type { PetState } from '../../src/types/pet.ts';
+import type { PetStateDocument, PersonalityType } from '../../src/features/pet-engine/domain/types.ts';
+import type { PetState, SpeciesId } from '../../src/types/pet.ts';
 import { executePetAction } from '../../src/features/gamification/gameplay.ts';
 
 function createValidPetDoc(overrides: Partial<PetStateDocument> = {}): PetStateDocument {
@@ -95,7 +90,7 @@ describe('Sprint 5.1A — Companion Personalities & Profiles', () => {
     assert.equal(getDefaultPersonalityForSpecies('dragon'), 'determined');
     assert.equal(getDefaultPersonalityForSpecies('fox'), 'playful');
     assert.equal(getDefaultPersonalityForSpecies('slime'), 'calm');
-    assert.equal(getDefaultPersonalityForSpecies('unknown' as any), 'curious');
+    assert.equal(getDefaultPersonalityForSpecies('unknown' as unknown as SpeciesId), 'curious');
   });
 
   it('TC-PERS-03: Gracefully handles unknown or null personality retrieval', () => {
@@ -269,7 +264,7 @@ describe('Sprint 5.1A — Schema Validation & Compatibility', () => {
   });
 
   it('TC-SCHEMA-03: PetStateDocument schema validator rejects invalid personality values', () => {
-    const doc = createValidPetDoc({ personality: 'hyperactive' as any });
+    const doc = createValidPetDoc({ personality: 'hyperactive' as unknown as PersonalityType });
     const res = validatePetState(doc);
     assert.equal(res.valid, false);
     assert.match(res.errors[0], /Invalid personality/);

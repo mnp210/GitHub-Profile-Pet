@@ -6,6 +6,8 @@ import { PetSelector } from '@/components/pet/PetSelector';
 import { PetStatus } from '@/components/pet/PetStatus';
 import { PetEvolution } from '@/components/pet/PetEvolution';
 import { PersonalityPanel } from '@/components/pet/PersonalityPanel';
+import { MiniGameHub } from '@/components/minigames/MiniGameHub';
+import type { MiniGameId } from '@/features/minigames/types';
 import { INITIAL_PET_STATE, SPECIES_METADATA } from '@/constants/petData';
 import { PetState, SpeciesId, PersonalityType } from '@/types/pet';
 import { executePetAction, ActionResult } from '@/features/gamification/gameplay';
@@ -80,6 +82,8 @@ export default function Home() {
     return loaded;
   });
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
+  const [isMiniGameModalOpen, setIsMiniGameModalOpen] = useState<boolean>(false);
+  const [defaultMiniGameId, setDefaultMiniGameId] = useState<MiniGameId | undefined>(undefined);
   const [isCodexModalOpen, setIsCodexModalOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return new URLSearchParams(window.location.search).get('action')?.toLowerCase().trim() === 'stats';
@@ -648,6 +652,17 @@ export default function Home() {
             <span className="hidden md:inline">{isMuted ? 'Muted' : 'Sound ON'}</span>
           </button>
 
+          {/* Companion Play Zone Mini-Games */}
+          <button
+            onClick={() => setIsMiniGameModalOpen(true)}
+            className="px-2.5 py-1 rounded-lg border border-indigo-700/60 bg-indigo-950/70 hover:bg-indigo-900/80 text-indigo-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
+            title="Interactive Activities & Mini-Games"
+            aria-label="Open Play Zone Mini-Games"
+          >
+            <span>🎮</span>
+            <span className="hidden sm:inline">Play Zone</span>
+          </button>
+
           {/* Evolution Codex */}
           <button
             onClick={() => setIsCodexModalOpen(true)}
@@ -776,6 +791,10 @@ export default function Home() {
               isActionsSyncing={isActionsSyncing}
               thoughtBubble={thoughtBubble}
               currentBehaviour={currentBehaviour}
+              onOpenMiniGames={(gameId) => {
+                setDefaultMiniGameId(gameId as MiniGameId | undefined);
+                setIsMiniGameModalOpen(true);
+              }}
             />
 
             {/* COMPANION PERSONALITY & LIVING BEHAVIOUR PANEL */}
@@ -1142,6 +1161,17 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* 6. COMPANION PLAY ZONE MINI-GAMES MODAL */}
+      <MiniGameHub
+        pet={pet}
+        isOpen={isMiniGameModalOpen}
+        defaultGameId={defaultMiniGameId}
+        onClose={() => {
+          setIsMiniGameModalOpen(false);
+          setDefaultMiniGameId(undefined);
+        }}
+      />
     </div>
   );
 }

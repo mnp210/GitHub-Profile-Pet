@@ -27,6 +27,7 @@ interface PetDisplayProps {
   isActionsSyncing?: boolean;
   thoughtBubble?: string;
   currentBehaviour?: string;
+  onOpenMiniGames?: (defaultGameId?: string) => void;
 }
 
 export const PetDisplay: React.FC<PetDisplayProps> = ({
@@ -38,6 +39,7 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
   isActionsSyncing = false,
   thoughtBubble,
   currentBehaviour,
+  onOpenMiniGames,
 }) => {
   const [particles, setParticles] = useState<ParticleEffect[]>([]);
   const [animationState, setAnimationState] = useState<SpriteAnimationState>('idle');
@@ -283,6 +285,24 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
           <span className="text-[10px] text-pink-400 font-normal font-mono">+12 Joy (+6 XP)</span>
         </button>
       </div>
+
+      {/* COMPANION PLAY ZONE MINI-GAMES LAUNCHER */}
+      {onOpenMiniGames && (
+        <div className="w-full mt-3">
+          <button
+            onClick={() => onOpenMiniGames()}
+            className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-purple-950/80 via-indigo-950/80 to-purple-950/80 hover:from-purple-900/90 hover:via-indigo-900/90 hover:to-purple-900/90 border border-purple-500/40 hover:border-purple-400 text-purple-200 text-xs font-bold flex items-center justify-center gap-2 shadow-md transition-all active:scale-[0.99] cursor-pointer"
+            title="Launch interactive companion mini-games"
+            aria-label="Open Companion Play Zone"
+          >
+            <span className="text-base">🎮</span>
+            <span>Companion Play Zone — Reflex, Memory & Rhythm Mini-games</span>
+            <span className="text-[10px] text-purple-400 font-mono font-normal hidden sm:inline">
+              (0 XP · Pure Fun)
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };
