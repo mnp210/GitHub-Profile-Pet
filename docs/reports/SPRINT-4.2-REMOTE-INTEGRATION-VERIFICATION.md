@@ -4,9 +4,9 @@
 **Candidate Workspace:** `D:\Projects\GitHub-Profile-Pet-R3.7-Candidate`  
 **Candidate Branch:** `candidate/playable-virtual-pet-game`  
 **Dedicated Test/Staging Branch:** `test/sprint-4-1`  
-**Validated Candidate Local SHA:** `ced31983b192836a53f45b66eb25cc1aff5937ab`  
+**Current Synchronized HEAD SHA:** `22297692209015859919b252e65c12e0ce5bbe0d`  
 **Remote Target Repository:** `mnp210/GitHub-Profile-Pet-R3.40-Staging` (authorized target environment)  
-**Remote Test Branch SHA:** `ced31983b192836a53f45b66eb25cc1aff5937ab` (independently verified via `git ls-remote`)  
+**Remote Test Branch SHA:** `22297692209015859919b252e65c12e0ce5bbe0d` (independently verified via `git ls-remote`)  
 **Production Repository:** `mnp210/GitHub-Profile-Pet` (**STRICTLY UNTOUCHED** — verified read-only)  
 **Production Remote HEAD:** `86ed9da57b4444f744c429babd7d2be1a2c41e63`  
 
@@ -16,21 +16,22 @@
 
 ### Commit Lineage
 The commit lineage from Sprint 4.0 to Sprint 4.2 HEAD was verified via `git log --format="%H %h %ad %s"`:
-1. `ced31983b192836a53f45b66eb25cc1aff5937ab` (`ced3198`): `fix(publication): target current branch in Stage 1 remote generation fence check`
-2. `0192cbf47849d221a50af8e17579ea4af15645c3` (`0192cbf`): `test(pet-engine): pin deterministic execution time in baseline regression tests`
-3. `82986356b01b65c04536d8a11f2e691ff48c9421` (`8298635`): `docs(reports): archive comprehensive Sprint 4.2 remote integration verification report`
-4. `e7e81beff81e5e9f0f49f1d1d2ca92a9c556b78d` (`e7e81be`): `fix(activity): use recoverActivityTransaction in publication conflict retry and expand recovery tests`
-5. `0ee9437a6f21aac31c6dec45e563354de93107d4` (`0ee9437`): `docs(reports): archive Sprint 4.2 remote integration & hosted validation report`
-6. `27d79844707844abd3935332d3e5c7696d646800` (`27d7984`): `feat(activity): enforce commit limit checkpoint protection and journal purge on publication conflict reset`
-7. `4303ef5230388301e711d881d10f01b1539e92c5` (`4303ef5`): `docs(reports): archive Sprint 4.1 engineering report`
-8. `db55da60fdeb032889e12cf3b4e783ad43480736` (`db55da6`): `feat(activity): complete Sprint 4.1 scalable reconciliation, transaction journal, and pagination`
-9. `6a6fc769d08840e0de3773a032d937b7aea9bbb1` (`6a6fc76`): `feat(activity): implement permanent deduplication intervals, historical archive spillover, and complete reconciliation [skip ci]`
+1. `22297692209015859919b252e65c12e0ce5bbe0d` (`2229769`): `docs(reports): archive verified Sprint 4.2 remote execution acceptance report`
+2. `6e874fbcfa4e93f626e3ed7f332f340d93740e18` (`6e874fb`): `pet: update state and visual badge [skip ci]` (automated runner commit)
+3. `ced31983b192836a53f45b66eb25cc1aff5937ab` (`ced3198`): `fix(publication): target current branch in Stage 1 remote generation fence check`
+4. `0192cbf47849d221a50af8e17579ea4af15645c3` (`0192cbf`): `test(pet-engine): pin deterministic execution time in baseline regression tests`
+5. `82986356b01b65c04536d8a11f2e691ff48c9421` (`8298635`): `docs(reports): archive comprehensive Sprint 4.2 remote integration verification report`
+6. `e7e81beff81e5e9f0f49f1d1d2ca92a9c556b78d` (`e7e81be`): `fix(activity): use recoverActivityTransaction in publication conflict retry and expand recovery tests`
+7. `0ee9437a6f21aac31c6dec45e563354de93107d4` (`0ee9437`): `docs(reports): archive Sprint 4.2 remote integration & hosted validation report`
+8. `27d79844707844abd3935332d3e5c7696d646800` (`27d7984`): `feat(activity): enforce commit limit checkpoint protection and journal purge on publication conflict reset`
+9. `4303ef5230388301e711d881d10f01b1539e92c5` (`4303ef5`): `docs(reports): archive Sprint 4.1 engineering report`
+10. `db55da60fdeb032889e12cf3b4e783ad43480736` (`db55da6`): `feat(activity): complete Sprint 4.1 scalable reconciliation, transaction journal, and pagination`
+11. `6a6fc769d08840e0de3773a032d937b7aea9bbb1` (`6a6fc76`): `feat(activity): implement permanent deduplication intervals, historical archive spillover, and complete reconciliation [skip ci]`
 
 ### SHA Resolution & Consistency
-- Historical SHA report resolution: `27d79844707844abd3935332d3e5c7696d646800` was the initial Sprint 4.2 checkpoint commit. `8298635` was the subsequent archived checkpoint. During Sprint 4.2 execution, test clock determinism was hardened (`0192cbf`) and remote generation fence target-branch awareness was implemented (`ced3198`).
-- **Candidate Local SHA:** `ced31983b192836a53f45b66eb25cc1aff5937ab`
-- **Test Branch Local SHA:** `ced31983b192836a53f45b66eb25cc1aff5937ab`
-- **Remote Branch SHA (`staging/test/sprint-4-1`):** `ced31983b192836a53f45b66eb25cc1aff5937ab`
+- **Candidate Local SHA:** `22297692209015859919b252e65c12e0ce5bbe0d`
+- **Test Branch Local SHA:** `22297692209015859919b252e65c12e0ce5bbe0d`
+- **Remote Branch SHA (`staging/test/sprint-4-1`):** `22297692209015859919b252e65c12e0ce5bbe0d`
 - **Confirmation:** Local candidate branch, local test branch, and remote test branch SHAs match 100% byte-for-byte.
 
 ---
@@ -45,6 +46,7 @@ Every check was independently executed from a clean candidate working tree:
 | **Pet Engine Tests** | `node --test --experimental-strip-types tests/pet-engine/*.test.ts` | **547 / 547 passed** (43 suites, 0 failed, 190.9s) | **PASS** |
 | **README Pet Menu Tests** | `node --test --experimental-strip-types tests/unit/readmeMenu.test.ts` | **17 / 17 passed** (7 suites, 0 failed, 0.25s) | **PASS** |
 | **Publication Pipeline Tests** | `node --test --experimental-strip-types tests/pet-engine/publishPipeline.test.ts` | **28 / 28 passed** (1 suite, 0 failed, 33.1s) | **PASS** |
+| **Security & Recovery Tests** | `node --test --experimental-strip-types tests/unit/tokenSecurityHardening.test.ts tests/unit/transactionJournalRecovery.test.ts` | **13 / 13 passed** (5 suites, 0 failed, 0.31s) | **PASS** |
 | **Combined Test Suite** | Unit + Pet Engine | **747 / 747 passed** (100% pass rate) | **PASS** |
 | **TypeScript Compilation** | `npx tsc --noEmit` | **0 errors** | **PASS** |
 | **ESLint Static Analysis** | `npm run lint` | **0 errors, 0 warnings** | **PASS** |
@@ -57,14 +59,14 @@ Every check was independently executed from a clean candidate working tree:
 ## 3. Remote Push & Branch Verification
 
 - **Target Repository:** `mnp210/GitHub-Profile-Pet-R3.40-Staging`
-  - Selected and authorized by user input after confirming `mnp210/GitHub-Profile-Pet-Test` was absent on GitHub.
+  - Authorized by user instruction after verifying `mnp210/GitHub-Profile-Pet-Test` was absent on GitHub.
 - **Git Push Command:** `git push -u staging test/sprint-4-1`
-- **Authentication:** GitHub CLI OAuth device flow with `workflow` scope configured.
-- **Push Method:** Standard fast-forward Git push (`0192cbf..ced3198`). Zero force-push, zero rebase.
+- **Authentication:** GitHub CLI OAuth device flow with `workflow` scope.
+- **Push Protocol:** Fast-forward Git push with `gh` credential helper. Zero force-push, zero rebase of remote history.
 - **Remote SHA Verification:**
   ```text
   $ git ls-remote staging refs/heads/test/sprint-4-1
-  ced31983b192836a53f45b66eb25cc1aff5937ab  refs/heads/test/sprint-4-1
+  22297692209015859919b252e65c12e0ce5bbe0d  refs/heads/test/sprint-4-1
   ```
   Matches local candidate HEAD exactly.
 
@@ -148,7 +150,8 @@ Three separate remote GitHub Actions workflows were dispatched on the remote run
 - **Diagnosis:**
   - `mnp210/GitHub-Profile-Pet-R3.40-Staging` is a **private** repository (`"isPrivate": true`).
   - Under GitHub Free plans, GitHub Pages is supported only on public repositories. Enabling Pages on private repositories requires GitHub Pro, Team, or Enterprise.
-  - Per Sprint 4.2 guidelines ("If configuration fails due to permissions, explain the precise blocker and continue with other safe verification tasks"), this constitutes a documented non-critical plan limitation on the private staging repository.
+  - Per instructions, staging was NOT made public and the account was NOT upgraded.
+  - This constitutes a documented external plan limitation on the private staging repository.
 - **Local Static Export Verification:**
   - Static export was built cleanly via Next.js Turbopack (`npm run build`).
   - Serving directory `out/` locally via Python HTTP server on port 3000 verified `HTTP/1.0 200 OK` (36,843 bytes HTML).
@@ -185,7 +188,7 @@ Three separate remote GitHub Actions workflows were dispatched on the remote run
 
 - Local tests pass: **747 / 747 passed (100%)**.
 - TypeScript & ESLint: **0 errors, 0 warnings**.
-- Candidate SHA matches test branch SHA: **`ced31983b192836a53f45b66eb25cc1aff5937ab`**.
+- Candidate SHA matches test branch SHA: **`22297692209015859919b252e65c12e0ce5bbe0d`**.
 - Remote push independently verified on remote staging repository.
 - Remote Actions runs independently verified on GitHub runner:
   - `Pet SVG Publication` (Run `45038022799`): **SUCCESS**
@@ -194,3 +197,87 @@ Three separate remote GitHub Actions workflows were dispatched on the remote run
 - Security checks pass with zero credentials leaked.
 - Production repository remains **100% untouched**.
 - GitHub Pages on staging blocked solely by private repository free-tier plan constraint.
+
+---
+
+## 8. Final Verification Closure Audit (Sprint 4.2 Closure)
+
+### A. Remote State Reconciliation
+1. **Staging Fetch & Synchronization:** Executed `git fetch staging`. Remote ref `staging/test/sprint-4-1` points to `22297692209015859919b252e65c12e0ce5bbe0d`.
+2. **Candidate & Test Alignment:**
+   - `candidate/playable-virtual-pet-game`: `22297692209015859919b252e65c12e0ce5bbe0d`
+   - `test/sprint-4-1`: `22297692209015859919b252e65c12e0ce5bbe0d`
+   - `staging/test/sprint-4-1`: `22297692209015859919b252e65c12e0ce5bbe0d`
+   - `git diff test/sprint-4-1 staging/test/sprint-4-1` returns 0 differences (100% synchronized).
+3. **Automated Runner Commit `6e874fb` Audit:**
+   - Inspected `git diff-tree --no-commit-id --name-only -r 6e874fbcfa4e93f626e3ed7f332f340d93740e18`:
+     - `pet/ledger/actions.json`
+     - `pet/ledger/contributions.json`
+     - `pet/state/pet.json`
+     - `public/pet.svg`
+   - **Verification:** Only the 4 authorized manifest files were changed. Zero code, script, workflow, or configuration files were touched by the automated runner.
+4. **History Preservation:** Remote history was never force-pushed, overwritten, or reset.
+
+### B. Pages Verification Without Production Risk
+1. **Repository Privacy & Plan Confirmation:**
+   - Verified via `gh repo view mnp210/GitHub-Profile-Pet-R3.40-Staging --json isPrivate`: `"isPrivate": true`.
+   - Verified via `gh api repos/mnp210/GitHub-Profile-Pet-R3.40-Staging/pages`: HTTP 404 / 422 (`Your current plan does not support GitHub Pages for this repository`).
+2. **Safety Compliance:**
+   - Staging was NOT made public.
+   - Account was NOT upgraded or modified.
+   - Production was NOT used as a test environment.
+3. **Minimum Safe Requirement for Future Deployment:**
+   - When deploying to production (which is public) or a dedicated public test repo, GitHub Pages can be activated via:
+     `gh api --method POST repos/<OWNER>/<REPO>/pages -f "build_type=workflow"`
+   - Deployment will execute automatically via `.github/workflows/deploy-pages.yml`.
+
+### C. Activity Workflow Safety Verification
+1. **Safety & Isolation:**
+   - `pet-activity.yml` declares `concurrency: group: pet-runtime-${{ github.repository }}`.
+   - Scoped strictly to the executing repository context (`mnp210/GitHub-Profile-Pet-R3.40-Staging`).
+   - `GITHUB_TOKEN` permissions are restricted to `contents: write`, `issues: read`, `pull-requests: read`. It cannot write to external or production repositories.
+2. **Dry-Run Validation:**
+   - Executed `node --experimental-strip-types scripts/process-activity.ts --dry-run --event-type commit --event-id "test:commit:123" --actor "mnp210" --commit-message "test: dry run"`.
+   - Result: Processed 12 qualifying events, calculated +180 XP, and cleanly exited with 0 mutations to working tree (`git status --short` clean).
+3. **Workflow Dispatch Platform Constraint:**
+   - `gh workflow run pet-activity.yml --ref test/sprint-4-1` returns HTTP 404 because GitHub Actions requires workflow definitions to exist on `main` before `workflow_dispatch` is enabled.
+   - In accordance with non-destructive boundaries, candidate code was not merged to staging `main`.
+
+### D. Detailed Job Log Audit
+Inspected full raw job logs for the 3 remote runner executions:
+- **Run 1 (`45038022799`, Job `137255977652`):**
+  - Runner: `ubuntu-26.04` (Worker `{a0e77045-a3ef-48b2-9aee-bb9babd8867d}`, Azure `centralus`)
+  - Checked out SHA: `ced31983b192836a53f45b66eb25cc1aff5937ab`
+  - Destination branch: `test/sprint-4-1`
+  - Executed: `scripts/publish-pipeline.ts --ref "test/sprint-4-1"`
+  - Status: `PUBLISHED`
+  - Published Commit: `6e874fbcfa4e93f626e3ed7f332f340d93740e18`
+- **Run 2 (`45038096908`, Job `137256209444`):**
+  - Runner: `ubuntu-26.04` (Worker `{1a495f36-a0a1-414e-b148-8abe80a4be01}`, Azure `westus`)
+  - Checked out SHA: `6e874fbcfa4e93f626e3ed7f332f340d93740e18`
+  - Destination branch: `test/sprint-4-1`
+  - Executed: `scripts/process-inbox.ts --ref "test/sprint-4-1"`
+  - Status: `NOOP` (0 scanned, 0 processed, 0 mutations)
+- **Run 3 (`45038145408`, Job `137256361165`):**
+  - Runner: `ubuntu-26.04` (Worker `{d5d8431a-9bea-4287-9edc-522aa3a36455}`, Azure `centralus`)
+  - Checked out SHA: `6e874fbcfa4e93f626e3ed7f332f340d93740e18`
+  - Executed: `scripts/diagnostics-contribution-probe.ts`
+  - Status: `PASSED` (rate-limit telemetry matched GraphQL headers; 0 mutations)
+
+### E. Final Security & Regression Verification
+- Security hardening tests: `13 / 13 passed` (`tests/unit/tokenSecurityHardening.test.ts`, `tests/unit/transactionJournalRecovery.test.ts`).
+- Production remote HEAD: verified read-only at `86ed9da57b4444f744c429babd7d2be1a2c41e63` (**100% UNTOUCHED**).
+- Zero secrets committed, zero tokens persisted.
+- Visitor mode read-only verified.
+- Trainer Mode volatile tokens verified.
+- Transaction recovery roll-forward / rollback verified.
+
+### F. Final Closure Verdict
+
+**CONDITIONAL PASS**
+
+All code, local tests (747/747), production builds, security suites, remote push, remote GitHub Actions execution, runner commit generation, and log audits are completely verified.
+
+**Exact Remaining Blockers & Resolution Requirements:**
+1. **GitHub Pages on Staging:** Staging is a private repository on a GitHub Free account. Resolution: Pages will deploy when deployed to the public production repository or if a public test repository is provisioned.
+2. **`workflow_dispatch` on `pet-activity.yml`:** GitHub Actions requires workflows to exist on the default branch (`main`) before manual dispatch is permitted. Resolution: Will activate automatically upon standard merge to `main`.
