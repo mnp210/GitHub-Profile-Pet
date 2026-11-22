@@ -2,6 +2,8 @@ export type SpeciesId = 'cat' | 'dragon' | 'fox' | 'slime';
 
 export type PetMood = 'Energetic' | 'Happy' | 'Focused' | 'Curious' | 'Resting';
 
+export type PersonalityType = 'curious' | 'playful' | 'calm' | 'determined';
+
 export interface EvolutionMilestone {
   stage: number;
   title: string;
@@ -31,6 +33,8 @@ export interface PetState {
   xp: number;
   maxExp: number;
   mood: PetMood;
+  personality?: PersonalityType;
+  behaviourState?: string;
   evolutionStage: string;
   hunger: number; // 0-100
   happiness: number; // 0-100

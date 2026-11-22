@@ -69,7 +69,11 @@
   .animate-pet-cat,
   .animate-pet-dragon,
   .animate-pet-fox,
-  .animate-pet-slime {
+  .animate-pet-slime,
+  .animate-pet-curious,
+  .animate-pet-bounce,
+  .animate-pet-zen,
+  .animate-float-zzz {
     animation: none !important;
   }
 }
@@ -114,6 +118,48 @@
 .animate-pet-slime {
   animation: pet-idle-slime 2.4s ease-in-out infinite;
   transform-origin: bottom center;
+}
+
+@keyframes pet-curious-tilt {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-2px) rotate(-4deg); }
+}
+
+@keyframes pet-bounce-playful {
+  0%, 100% { transform: translateY(0px) scale(1, 1); }
+  30% { transform: translateY(-8px) scale(0.96, 1.04); }
+  60% { transform: translateY(0px) scale(1.04, 0.96); }
+  80% { transform: translateY(-3px) scale(0.98, 1.02); }
+}
+
+@keyframes pet-zen-breathe {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.03, 0.97); }
+}
+
+@keyframes float-zzz {
+  0% { opacity: 0; transform: translateY(0px) translateX(0px); }
+  50% { opacity: 0.9; transform: translateY(-8px) translateX(4px); }
+  100% { opacity: 0; transform: translateY(-16px) translateX(8px); }
+}
+
+.animate-pet-curious {
+  animation: pet-curious-tilt 2.5s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.animate-pet-bounce {
+  animation: pet-bounce-playful 1.6s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.animate-pet-zen {
+  animation: pet-zen-breathe 4s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.animate-float-zzz {
+  animation: float-zzz 2.5s ease-out infinite;
 }
 
 @keyframes wiggle {

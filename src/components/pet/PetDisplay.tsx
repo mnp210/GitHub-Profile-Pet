@@ -5,6 +5,9 @@ import { PetState, PetSpeciesMeta } from '@/types/pet';
 import { PetSprite, SpriteAnimationState } from './PetSprite';
 import { retroAudio } from '@/lib/audio/retroAudio';
 import type { ActionType } from '@/features/gamification/rewards';
+import { getPersonalityProfile } from '@/features/personality/personalities';
+import { mapBehaviourToSpriteState } from '@/features/personality/behaviourEngine';
+import type { BehaviourState } from '@/features/personality/types';
 
 interface ParticleEffect {
   id: number;
@@ -22,6 +25,8 @@ interface PetDisplayProps {
   cooldownRemainingSeconds?: number;
   lastReaction?: string;
   isActionsSyncing?: boolean;
+  thoughtBubble?: string;
+  currentBehaviour?: string;
 }
 
 export const PetDisplay: React.FC<PetDisplayProps> = ({
@@ -31,9 +36,12 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
   cooldownRemainingSeconds = 0,
   lastReaction,
   isActionsSyncing = false,
+  thoughtBubble,
+  currentBehaviour,
 }) => {
   const [particles, setParticles] = useState<ParticleEffect[]>([]);
   const [animationState, setAnimationState] = useState<SpriteAnimationState>('idle');
+  const personalityProfile = getPersonalityProfile(pet.personality, pet.species);
 
   // Spawn visual particle on interaction
   const triggerParticle = (x: number, y: number, text: string, colorClass = 'text-pink-300', icon?: string) => {
@@ -54,8 +62,19 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
   };
 
   const handlePetDirectClick = () => {
-    triggerParticle(150, 100, 'Purr~', 'text-pink-400', '❤️');
-    setAnimationState('happy');
+    const pId = pet.personality || 'curious';
+    const clickText =
+      pId === 'curious'
+        ? 'Tilt~'
+        : pId === 'determined'
+        ? 'Nod!'
+        : pId === 'playful'
+        ? 'Bounce!'
+        : 'Ripple~';
+    triggerParticle(150, 100, clickText, 'text-pink-400', '❤️');
+    const animState =
+      pId === 'curious' ? 'curious' : pId === 'playful' ? 'playing' : 'happy';
+    setAnimationState(animState);
     retroAudio.playPurr();
     onExecuteAction('pet');
     setTimeout(() => setAnimationState('idle'), 800);
@@ -130,6 +149,12 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            <span
+              className={`px-2 py-0.5 text-[10px] font-bold rounded-md border font-mono ${personalityProfile.badgeBg}`}
+              title={`Personality Archetype: ${personalityProfile.name}`}
+            >
+              {personalityProfile.name.split(' ')[0]}
+            </span>
             {cooldownRemainingSeconds > 0 && (
               <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-950/80 text-amber-300 border border-amber-600/60 animate-pulse font-mono">
                 ⏳ Cooldown: {cooldownRemainingSeconds}s
@@ -153,10 +178,10 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
           </div>
         ))}
 
-        {/* REACTION SPEECH BUBBLE */}
-        {lastReaction && (
+        {/* REACTION OR LIVING THOUGHT BUBBLE */}
+        {(lastReaction || thoughtBubble) && (
           <div className="relative z-20 max-w-[85%] bg-[#1a172e]/90 border border-purple-500/30 rounded-xl px-3 py-1.5 text-center text-xs text-purple-200 shadow-lg backdrop-blur-sm animate-fade-in mt-1">
-            <span className="italic font-medium">&ldquo;{lastReaction}&rdquo;</span>
+            <span className="italic font-medium">&ldquo;{lastReaction || thoughtBubble}&rdquo;</span>
           </div>
         )}
 
@@ -164,8 +189,13 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
         <div className="relative z-10 my-auto flex flex-col items-center justify-center">
           <PetSprite
             species={pet.species}
+            personality={pet.personality}
             size={180}
-            animationState={animationState}
+            animationState={
+              animationState === 'idle' && currentBehaviour
+                ? mapBehaviourToSpriteState(currentBehaviour as BehaviourState)
+                : animationState
+            }
             evolutionStage={pet.evolutionStage}
             onClick={handlePetDirectClick}
           />

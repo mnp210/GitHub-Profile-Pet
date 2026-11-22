@@ -15,6 +15,8 @@ export type PetSpecies =
 
 export type PetMood = 'Energetic' | 'Happy' | 'Focused' | 'Curious' | 'Resting';
 
+export type PersonalityType = 'curious' | 'playful' | 'calm' | 'determined';
+
 export type EvolutionStage = 'Hatchling' | 'Juvenile' | 'Ascended' | 'Celestial';
 
 export interface PetStateDocument {
@@ -32,6 +34,7 @@ export interface PetStateDocument {
   happiness: number;  // Clamped 0-100
   happinessDecayAccumulator?: number; // Persistent fractional decay accumulator in [0, 1)
   mood: PetMood;
+  personality?: PersonalityType;
   evolutionStage: EvolutionStage;
   lastInteractionTime: string | null;      // ISO-8601 UTC or null (unoccurred event)
   lastOfflineResolutionTime: string | null; // ISO-8601 UTC or null for pristine templates

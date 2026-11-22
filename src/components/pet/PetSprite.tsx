@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { SpeciesId } from '@/types/pet';
+import { SpeciesId, PersonalityType } from '@/types/pet';
 
 export type SpriteAnimationState =
   | 'idle'
@@ -8,10 +8,14 @@ export type SpriteAnimationState =
   | 'training'
   | 'sleeping'
   | 'playing'
-  | 'clicked';
+  | 'clicked'
+  | 'curious'
+  | 'celebrating'
+  | 'looking_around';
 
 interface PetSpriteProps {
   species: SpeciesId;
+  personality?: PersonalityType;
   size?: number;
   className?: string;
   showShadow?: boolean;
@@ -22,6 +26,7 @@ interface PetSpriteProps {
 
 export const PetSprite: React.FC<PetSpriteProps> = ({
   species,
+  personality,
   size = 180,
   className = '',
   showShadow = true,
@@ -31,33 +36,51 @@ export const PetSprite: React.FC<PetSpriteProps> = ({
 }) => {
   const [blink, setBlink] = useState(false);
 
-  // Natural intermittent blinking cycle every 3-5 seconds
+  // Natural intermittent blinking cycle tailored to personality
   useEffect(() => {
     let blinkTimer: NodeJS.Timeout;
+    const baseInterval =
+      personality === 'calm'
+        ? 4500
+        : personality === 'playful'
+        ? 2200
+        : personality === 'determined'
+        ? 4000
+        : 3000;
+
     const triggerBlink = () => {
       setBlink(true);
       setTimeout(() => setBlink(false), 150);
-      blinkTimer = setTimeout(triggerBlink, 3000 + Math.random() * 2500);
+      blinkTimer = setTimeout(triggerBlink, baseInterval + Math.random() * 2000);
     };
 
-    blinkTimer = setTimeout(triggerBlink, 2000);
+    blinkTimer = setTimeout(triggerBlink, 1500);
     return () => clearTimeout(blinkTimer);
-  }, []);
+  }, [personality]);
 
   const getDynamicAnimationClass = () => {
     switch (animationState) {
       case 'happy':
       case 'clicked':
         return 'animate-bounce';
+      case 'celebrating':
+        return 'animate-bounce scale-105';
+      case 'curious':
+        return 'animate-pet-curious';
+      case 'looking_around':
+        return 'transition-transform duration-300 translate-x-1';
       case 'eating':
         return 'animate-pulse';
       case 'training':
         return 'animate-wiggle';
       case 'sleeping':
-        return 'opacity-75 scale-95';
+        return 'opacity-80 scale-95';
       case 'playing':
-        return 'animate-bounce';
+        return 'animate-pet-bounce';
       default:
+        if (personality === 'curious') return 'animate-pet-curious';
+        if (personality === 'playful') return 'animate-pet-bounce';
+        if (personality === 'calm') return 'animate-pet-zen';
         switch (species) {
           case 'cat':
             return 'animate-pet-cat';
@@ -374,6 +397,16 @@ export const PetSprite: React.FC<PetSpriteProps> = ({
       )}
       {evolutionStage === 'Awakened' && (
         <div className="absolute -inset-3 bg-radial from-indigo-500/20 via-transparent to-transparent rounded-full animate-pulse pointer-events-none" />
+      )}
+
+      {/* Sleeping Zzz Indicator */}
+      {animationState === 'sleeping' && (
+        <div
+          className="absolute -top-3 right-3 z-20 animate-float-zzz pointer-events-none select-none font-mono font-bold text-indigo-300 text-sm tracking-wider drop-shadow-md"
+          aria-hidden="true"
+        >
+          Zzz...
+        </div>
       )}
 
       {/* Pet Character Sprite */}

@@ -5,9 +5,15 @@ import { PetDisplay } from '@/components/pet/PetDisplay';
 import { PetSelector } from '@/components/pet/PetSelector';
 import { PetStatus } from '@/components/pet/PetStatus';
 import { PetEvolution } from '@/components/pet/PetEvolution';
+import { PersonalityPanel } from '@/components/pet/PersonalityPanel';
 import { INITIAL_PET_STATE, SPECIES_METADATA } from '@/constants/petData';
-import { PetState, SpeciesId } from '@/types/pet';
+import { PetState, SpeciesId, PersonalityType } from '@/types/pet';
 import { executePetAction, ActionResult } from '@/features/gamification/gameplay';
+import {
+  selectNextBehaviour,
+  getAmbientThought,
+  getDefaultPersonalityForSpecies,
+} from '@/features/personality';
 import { type ActionHistoryEntry, type ActionType, ACTION_COOLDOWN_MS } from '@/features/gamification/rewards';
 import { getUpdatedMilestones } from '@/features/gamification/progression';
 import { retroAudio } from '@/lib/audio/retroAudio';
@@ -36,6 +42,11 @@ export default function Home() {
   const [actionHistory, setActionHistory] = useState<ActionHistoryEntry[]>(() => loadLocalActionHistory());
   const [cooldownRemainingSec, setCooldownRemainingSec] = useState<number>(0);
   const [lastReaction, setLastReaction] = useState<string>('');
+  const [currentBehaviour, setCurrentBehaviour] = useState<string>('idle_curious');
+  const [thoughtBubble, setThoughtBubble] = useState<string>(() => {
+    const initial = loadLocalPetState();
+    return getAmbientThought(initial.personality || 'curious', initial.species, 0);
+  });
   const [feedback, setFeedback] = useState<{
     message: string;
     type: 'success' | 'warning' | 'level_up' | 'info';
@@ -169,6 +180,33 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [actionHistory]);
 
+  // Living Companion idle behaviour & thought cycle (every 6 seconds, pauses when document is hidden)
+  useEffect(() => {
+    const tickCompanion = () => {
+      if (typeof document !== 'undefined' && document.hidden) return; // Pause in background tab
+
+      const nextBehaviour = selectNextBehaviour({
+        personality: pet.personality || 'curious',
+        species: pet.species,
+        mood: pet.mood,
+        energy: pet.energy,
+        hunger: pet.hunger,
+        happiness: pet.happiness,
+        level: pet.level,
+      });
+
+      setCurrentBehaviour(nextBehaviour);
+
+      // Periodic ambient thought update (35% probability per tick)
+      if (Math.random() < 0.35) {
+        setThoughtBubble(getAmbientThought(pet.personality || 'curious', pet.species));
+      }
+    };
+
+    const intervalId = setInterval(tickCompanion, 6000);
+    return () => clearInterval(intervalId);
+  }, [pet]);
+
   const currentSpeciesMeta = SPECIES_METADATA[pet.species] || SPECIES_METADATA.cat;
 
   // Toggle Sound Effects
@@ -181,13 +219,30 @@ export default function Home() {
   const handleSelectSpecies = (speciesId: SpeciesId) => {
     const meta = SPECIES_METADATA[speciesId];
     retroAudio.playClick();
-    const updated = {
+    const updated: PetState = {
       ...pet,
       species: speciesId,
       name: `${meta.name}`,
+      personality: getDefaultPersonalityForSpecies(speciesId),
     };
     setPet(updated);
     saveLocalGameState(updated, actionHistory);
+    setThoughtBubble(getAmbientThought(updated.personality || 'curious', speciesId));
+  };
+
+  // Switch Companion Personality Archetype
+  const handlePersonalityChange = (newPersonality: PersonalityType) => {
+    const updated: PetState = {
+      ...pet,
+      personality: newPersonality,
+    };
+    setPet(updated);
+    saveLocalGameState(updated, actionHistory);
+    setThoughtBubble(getAmbientThought(newPersonality, pet.species));
+    setFeedback({
+      message: `Adopted ${newPersonality.toUpperCase()} personality archetype!`,
+      type: 'info',
+    });
   };
 
   // Rename Companion
@@ -719,6 +774,16 @@ export default function Home() {
               cooldownRemainingSeconds={cooldownRemainingSec}
               lastReaction={lastReaction}
               isActionsSyncing={isActionsSyncing}
+              thoughtBubble={thoughtBubble}
+              currentBehaviour={currentBehaviour}
+            />
+
+            {/* COMPANION PERSONALITY & LIVING BEHAVIOUR PANEL */}
+            <PersonalityPanel
+              pet={pet}
+              onPersonalityChange={handlePersonalityChange}
+              currentBehaviour={currentBehaviour}
+              thoughtBubble={thoughtBubble}
             />
 
             {/* RECENT ACTION LEDGER LOG */}
