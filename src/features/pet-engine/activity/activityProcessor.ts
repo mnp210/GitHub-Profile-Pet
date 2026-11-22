@@ -13,7 +13,6 @@ import { applyExperience } from '../transitions/progressionEngine.ts';
 import { publishPetSvg } from '../publication/svgPublisher.ts';
 import {
   ACTIVITY_LEDGER_SCHEMA_VERSION,
-  ACTIVITY_ARCHIVE_SCHEMA_VERSION,
   ACTIVITY_ARCHIVE_RELATIVE_PATH,
   ACTIVITY_XP_REWARDS,
   DAILY_ACTIVITY_XP_CAP,
@@ -35,11 +34,17 @@ import {
   executeActivityTransaction,
   recoverActivityTransaction,
 } from './activityTransactionJournal.ts';
+import {
+  isArchiveV2,
+  migrateArchiveV1ToV2,
+  initDefaultActivityArchiveV2,
+} from './compactor.ts';
 import type {
   ActivityEventRecord,
   ActivityLedgerDocument,
   ActivityProcessedRegistry,
   ActivityArchiveDocument,
+  ActivityArchiveV1Document,
   PermanentDeduplicationIndex,
   ActivityType,
   ProcessActivityEventInput,
@@ -74,15 +79,10 @@ export function initDefaultActivityLedger(generation: number = 1): ActivityLedge
 }
 
 /**
- * Creates an empty activity archive document.
+ * Creates an empty activity archive document (v2 format).
  */
 export function initDefaultActivityArchive(): ActivityArchiveDocument {
-  return {
-    schemaVersion: ACTIVITY_ARCHIVE_SCHEMA_VERSION,
-    archivedCommitShas: [],
-    archivedEventCount: 0,
-    updatedAt: new Date().toISOString(),
-  };
+  return initDefaultActivityArchiveV2();
 }
 
 /**
@@ -134,9 +134,19 @@ export function isDuplicateEvent(
   eventType: ActivityType,
   eventId: string,
   permanentIndex?: PermanentDeduplicationIndex,
-  archivedCommitShas?: string[]
+  archivedCommitShas?: string[],
+  archivedEvents?: ActivityEventRecord[] | Set<string>
 ): boolean {
   const cleanId = eventId.trim();
+
+  // If archivedEvents is provided, check eventId across all types
+  if (archivedEvents) {
+    if (archivedEvents instanceof Set) {
+      if (archivedEvents.has(cleanId.toLowerCase())) return true;
+    } else if (Array.isArray(archivedEvents)) {
+      if (archivedEvents.some((e) => e.eventId.toLowerCase() === cleanId.toLowerCase())) return true;
+    }
+  }
 
   switch (eventType) {
     case 'commit': {
@@ -325,7 +335,8 @@ export function evaluateActivityEvent(
   ledger: ActivityLedgerDocument,
   input: ProcessActivityEventInput,
   nowUtc: string = new Date().toISOString(),
-  archivedCommitShas?: string[]
+  archivedCommitShas?: string[],
+  archivedEvents?: ActivityEventRecord[] | Set<string>
 ): {
   updatedPet: PetStateDocument;
   updatedLedger: ActivityLedgerDocument;
@@ -483,7 +494,7 @@ export function evaluateActivityEvent(
   }
 
   // 5. Permanent Deduplication Check
-  if (isDuplicateEvent(ledger.processedRegistry, input.eventType, input.eventId, ledger.permanentIndex, archivedCommitShas)) {
+  if (isDuplicateEvent(ledger.processedRegistry, input.eventType, input.eventId, ledger.permanentIndex, archivedCommitShas, archivedEvents)) {
     const skippedRecord: ActivityEventRecord = {
       eventId: input.eventId,
       eventType: input.eventType,
@@ -666,12 +677,17 @@ export async function atomicWriteJson(targetPath: string, data: unknown): Promis
 
 /**
  * Loads the durable activity archive from disk if present.
+ * Transparently migrates v1 documents to v2 in-memory.
  */
 export async function loadActivityArchive(baseDir: string): Promise<ActivityArchiveDocument | null> {
   const archivePath = path.join(baseDir, ACTIVITY_ARCHIVE_RELATIVE_PATH);
   try {
     const raw = await fs.readFile(archivePath, 'utf-8');
-    return JSON.parse(raw) as ActivityArchiveDocument;
+    const parsed = JSON.parse(raw) as ActivityArchiveDocument;
+    if (parsed.schemaVersion === 1) {
+      return migrateArchiveV1ToV2(parsed as ActivityArchiveV1Document);
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -772,12 +788,14 @@ export async function executeActivityProcessing(options: {
   }
 
   // 4. Evaluate activity event
+  const archivedEventsList = isArchiveV2(archive) ? archive.archivedEvents : undefined;
   const { updatedPet, updatedLedger, result } = evaluateActivityEvent(
     petState,
     activityLedger,
     options.event,
     nowUtc,
-    archive.archivedCommitShas
+    archive.archivedCommitShas,
+    archivedEventsList
   );
 
   // 5. Spillover check: if permanentIndex.commitShas > MAX_ACTIVE_COMMIT_SHAS, archive older commits
@@ -796,7 +814,11 @@ export async function executeActivityProcessing(options: {
       }
     }
 
-    archive.archivedEventCount = archive.archivedCommitShas.length;
+    if (isArchiveV2(archive)) {
+      archive.totalArchivedEvents = Math.max(archive.totalArchivedEvents, archive.archivedCommitShas.length);
+    } else {
+      (archive as ActivityArchiveV1Document).archivedEventCount = archive.archivedCommitShas.length;
+    }
     archive.updatedAt = nowUtc;
     updatedLedger.permanentIndex.commitShas = updatedLedger.permanentIndex.commitShas.slice(-MAX_ACTIVE_COMMIT_SHAS);
   }

@@ -8,3 +8,4 @@ export * from './intervalIndex.ts';
 export * from './reconciliation.ts';
 export * from './activityTransactionJournal.ts';
 export * from './activityProcessor.ts';
+export * from './compactor.ts';

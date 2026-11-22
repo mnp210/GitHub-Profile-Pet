@@ -7,7 +7,9 @@
 import type { ActivityType } from './types.ts';
 
 export const ACTIVITY_LEDGER_SCHEMA_VERSION = 1;
-export const ACTIVITY_ARCHIVE_SCHEMA_VERSION = 1;
+export const ACTIVITY_ARCHIVE_SCHEMA_VERSION = 2;
+export const COMPACTOR_VERSION = '1.0.0';
+export const DEFAULT_COMPACTION_THRESHOLD = 5000;
 
 /**
  * Centrally defined XP rewards for qualifying repository activities.
@@ -64,10 +66,11 @@ export const PET_CARE_ACTION_LABEL_PREFIX = 'pet:';
 export const PET_ACTION_PENDING_LABEL = 'pet-action:pending';
 
 /**
- * Maximum number of recent event records retained in the activity ledger.
- * This is the visible display window for UI inspection.
+ * Maximum number of active event records retained in the active activity ledger.
+ * When the active ledger exceeds this threshold, archive compaction is eligible to run.
  */
-export const MAX_RECENT_EVENTS_RETAINED = 50;
+export const ACTIVE_LEDGER_TARGET_RECORDS = 5000;
+export const MAX_RECENT_EVENTS_RETAINED = 5000;
 
 /**
  * Maximum number of processed identifiers retained per category in the active working deduplication registry.
