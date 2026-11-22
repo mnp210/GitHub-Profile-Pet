@@ -1,0 +1,56 @@
+name: Workflow Failure Alerting
+
+# Automated, deduplicated failure alerting for GitHub Profile Pet production workflows.
+# Triggered upon completion of maintained production workflows.
+# Evaluates failure/timed_out states, checks deduplication fingerprints, and produces/updates
+# tracking issues only when FAILURE_ALERTS_ENABLED=true.
+
+on:
+  workflow_run:
+    workflows:
+      - 'Pet Activity Progression'
+      - 'Pet SVG Publication'
+      - 'Pet Care Action Inbox'
+      - 'Deploy Playable Game to GitHub Pages'
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: failure-alert-${{ github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  evaluate-failure:
+    name: Evaluate Failure & Manage Alert
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Filter: Run only on failure, timeout, or recovery (success) of the monitored workflows.
+    # Exclude cancelled, skipped, or neutral workflows to prevent false alerts.
+    if: >
+      github.event.workflow_run.conclusion == 'failure' ||
+      github.event.workflow_run.conclusion == 'timed_out' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Evaluate Failure & Dispatch Deduplicated Alert
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          FAILURE_ALERTS_ENABLED: ${{ vars.FAILURE_ALERTS_ENABLED || 'false' }}
+        run: |
+          node --experimental-strip-types scripts/alert-workflow-failure.ts

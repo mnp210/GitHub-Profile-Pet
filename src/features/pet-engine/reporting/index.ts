@@ -3,3 +3,4 @@
  */
 
 export * from './stepSummary.ts';
+export * from './failureAlert.ts';
