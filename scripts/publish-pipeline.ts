@@ -9,12 +9,29 @@
  *   node --experimental-strip-types scripts/publish-pipeline.ts [--ref <refName>] [--remote <remote>] [--dry-run] [--skip-push] [--base-dir <dir>]
  */
 
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import {
   runPublicationPipeline,
   executeBaselinePipeline,
   type SyncExecutionMode,
 } from '../src/features/pet-engine/publication/index.ts';
 import { resolveOwnerIdentity } from '../src/features/pet-engine/contribution/index.ts';
+import {
+  writeStepSummary,
+  formatPublisherSummary,
+  formatPublisherFailureSummary,
+} from '../src/features/pet-engine/reporting/index.ts';
+import type { PetStateDocument } from '../src/features/pet-engine/domain/types.ts';
+
+async function loadPetState(baseDir: string): Promise<PetStateDocument | null> {
+  try {
+    const raw = await fs.readFile(path.join(baseDir, 'pet/state/pet.json'), 'utf-8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
 
 export function parseArgs(args: string[]): {
   refName?: string;
@@ -91,7 +108,16 @@ async function main() {
 
   const token = (process.env.GITHUB_TOKEN ?? process.env.TEST_TOKEN ?? '').trim();
   if (!token && !options.dryRun) {
-    console.error('::error::[publish-pipeline] Publication failed (missing_token): GITHUB_TOKEN environment variable is required for publication.');
+    const errMsg = 'GITHUB_TOKEN environment variable is required for publication.';
+    console.error(`::error::[publish-pipeline] Publication failed (missing_token): ${errMsg}`);
+    writeStepSummary(
+      formatPublisherFailureSummary({
+        mode: options.baselineOnly ? 'baseline' : 'passive_simulation',
+        targetRef: options.refName || 'main',
+        status: 'missing_token',
+        details: errMsg,
+      })
+    );
     process.exit(1);
   }
 
@@ -108,7 +134,17 @@ async function main() {
     console.log(`[publish-pipeline] Resolved Target Owner: @${identity.login} (databaseId: ${expectedOwnerDatabaseId ?? 'unspecified'})`);
   } catch (err: unknown) {
     if (mode === 'baseline_only') {
-      console.error(`::error::[publish-pipeline] Owner identity resolution failed: ${(err as Error).message}`);
+      const errMsg = `Owner identity resolution failed: ${(err as Error).message}`;
+      console.error(`::error::[publish-pipeline] ${errMsg}`);
+      writeStepSummary(
+        formatPublisherFailureSummary({
+          mode: 'baseline',
+          targetRef: options.refName || 'main',
+          status: 'identity_resolution_failed',
+          details: errMsg,
+          error: err,
+        })
+      );
       process.exit(1);
     }
   }
@@ -125,11 +161,22 @@ async function main() {
       targetOwnerLogin,
     });
 
+    const petState = await loadPetState(baseDir);
+
     if (!result.success) {
       console.error(`::error::[publish-pipeline] Baseline establishment failed (${result.status}): ${result.details}`);
       if (result.error?.stack) {
         console.error(result.error.stack);
       }
+      writeStepSummary(
+        formatPublisherFailureSummary({
+          mode: 'baseline',
+          targetRef: options.refName || 'main',
+          status: result.status,
+          details: result.details,
+          error: result.error,
+        })
+      );
       process.exit(1);
     }
 
@@ -141,6 +188,21 @@ async function main() {
     if (result.destinationRef) {
       console.log(`[publish-pipeline] Destination Ref: ${result.destinationRef}`);
     }
+
+    writeStepSummary(
+      formatPublisherSummary({
+        mode: 'baseline',
+        targetRef: options.refName || result.destinationRef || 'main',
+        dryRun: options.dryRun,
+        skipPush: options.skipPush,
+        status: result.status,
+        details: result.details,
+        commitSha: result.commitSha,
+        stagedFiles: result.stagedFiles,
+        petState,
+        syncResult: result.syncResult,
+      })
+    );
     return;
   }
 
@@ -155,11 +217,22 @@ async function main() {
     targetOwnerLogin,
   });
 
+  const petState = await loadPetState(baseDir);
+
   if (!result.success) {
     console.error(`::error::[publish-pipeline] Publication failed (${result.status}): ${result.details}`);
     if (result.error?.stack) {
       console.error(result.error.stack);
     }
+    writeStepSummary(
+      formatPublisherFailureSummary({
+        mode: 'passive_simulation',
+        targetRef: options.refName || 'main',
+        status: result.status,
+        details: result.details,
+        error: result.error,
+      })
+    );
     process.exit(1);
   }
 
@@ -172,6 +245,21 @@ async function main() {
     console.log(`[publish-pipeline] Destination Ref: ${result.destinationRef}`);
   }
 
+  writeStepSummary(
+    formatPublisherSummary({
+      mode: 'passive_simulation',
+      targetRef: options.refName || result.destinationRef || 'main',
+      dryRun: options.dryRun,
+      skipPush: options.skipPush,
+      status: result.status,
+      details: result.details,
+      commitSha: result.commitSha,
+      stagedFiles: result.stagedFiles,
+      petState,
+      syncResult: result.syncResult,
+    })
+  );
+
   process.exit(0);
 }
 
@@ -182,6 +270,15 @@ if (process.argv[1] && (process.argv[1].endsWith('publish-pipeline.ts') || proce
     if (error.stack) {
       console.error(error.stack);
     }
+    try {
+      writeStepSummary(
+        formatPublisherFailureSummary({
+          status: 'unhandled_fatal_exception',
+          details: error.message,
+          error,
+        })
+      );
+    } catch {}
     process.exit(1);
   });
 }

@@ -26,6 +26,13 @@ import {
   type ActivityArchiveDocument,
 } from '../src/features/pet-engine/activity/index.ts';
 import type { PetStateDocument } from '../src/features/pet-engine/domain/types.ts';
+import {
+  writeStepSummary,
+  formatActivitySummary,
+  formatActivityFailureSummary,
+  type ProcessedEventTelemetry,
+  type ActivityReconciliationTelemetry,
+} from '../src/features/pet-engine/reporting/index.ts';
 
 export const ACTIVITY_PUBLICATION_MANIFEST_PATHS = [
   'pet/state/pet.json',
@@ -100,11 +107,16 @@ async function runProcessingCycle(options: {
     await recoverActivityTransaction(baseDir);
   }
 
-  // 2. Load current ledger to read reconciliation checkpoints
+  // 2. Load current ledger and state to read reconciliation checkpoints and baseline
   let initialLedger: ActivityLedgerDocument | null = null;
+  let initialPet: PetStateDocument | null = null;
   try {
     const raw = await fs.readFile(path.join(baseDir, 'pet/ledger/activity.json'), 'utf-8');
     initialLedger = JSON.parse(raw);
+  } catch {}
+  try {
+    const rawState = await fs.readFile(path.join(baseDir, 'pet/state/pet.json'), 'utf-8');
+    initialPet = JSON.parse(rawState);
   } catch {}
 
   const stopAtSha = initialLedger?.checkpoints?.lastCommitSha;
@@ -117,6 +129,7 @@ async function runProcessingCycle(options: {
   // 3. Complete Activity Reconciliation (Git Commits + GitHub API Issues/PRs/Reviews)
   let reconciliationCheckpoints: { lastCommitSha?: string; lastIssueNumber?: number; lastPrNumber?: number; reconciledAt: string } | undefined;
   let reconCompletedFully = true;
+  let reconTelemetry: ActivityReconciliationTelemetry | undefined;
   try {
     const gitToken = process.env.GITHUB_TOKEN;
     const gitRepo = process.env.GITHUB_REPOSITORY;
@@ -135,6 +148,18 @@ async function runProcessingCycle(options: {
 
     reconciliationCheckpoints = recon.checkpoints;
     reconCompletedFully = recon.completedFully;
+    reconTelemetry = {
+      commitsDiscovered: recon.discoveredEvents.filter((e) => e.eventType === 'commit').length,
+      issuesDiscovered: recon.discoveredEvents.filter((e) => e.eventType === 'issue_opened').length,
+      prsDiscovered: recon.discoveredEvents.filter((e) => e.eventType === 'pr_opened' || e.eventType === 'pr_merged').length,
+      reviewsDiscovered: recon.discoveredEvents.filter((e) => e.eventType === 'review_submitted').length,
+      lastCommitSha: recon.checkpoints?.lastCommitSha,
+      lastIssueNumber: recon.checkpoints?.lastIssueNumber,
+      lastPrNumber: recon.checkpoints?.lastPrNumber,
+      completedFully: recon.completedFully,
+      warnings: recon.warnings,
+    };
+
     if (recon.warnings.length > 0) {
       for (const w of recon.warnings) {
         console.log(`[RECONCILIATION NOTICE] ${w}`);
@@ -155,6 +180,23 @@ async function runProcessingCycle(options: {
 
   if (eventsToProcess.length === 0) {
     console.log('[NO-OP] No qualifying activity events found in execution context.');
+    writeStepSummary(
+      formatActivitySummary({
+        eventName: process.env.GITHUB_EVENT_NAME || 'manual',
+        targetRef,
+        dryRun,
+        eventsCount: 0,
+        totalXpAwarded: 0,
+        initialPetState: initialPet,
+        updatedPetState: initialPet,
+        processedEvents: [],
+        reconciliation: reconTelemetry,
+        publication: {
+          status: 'NO_CHANGES_COMMITTED',
+        },
+        notes: 'No qualifying activity events found in execution context.',
+      })
+    );
     return;
   }
 
@@ -162,6 +204,7 @@ async function runProcessingCycle(options: {
 
   let totalXpAwarded = 0;
   const processedResults: ProcessActivityResult[] = [];
+  const processedTelemetry: ProcessedEventTelemetry[] = [];
   let currentPet: PetStateDocument | undefined;
   let currentLedger: ActivityLedgerDocument | undefined;
   let currentArchive: ActivityArchiveDocument | undefined;
@@ -183,11 +226,30 @@ async function runProcessingCycle(options: {
       processedResults.push(outcome.result);
       totalXpAwarded += outcome.result.xpAwarded;
 
+      processedTelemetry.push({
+        eventType: eventInput.eventType,
+        eventId: eventInput.eventId,
+        actor: eventInput.actor,
+        xpAwarded: outcome.result.xpAwarded,
+        status: outcome.result.status,
+        details: outcome.result.reason || eventInput.details,
+        ref: eventInput.ref,
+      });
+
       console.log(
         ` - [${outcome.result.status.toUpperCase()}] ${eventInput.eventType} (${eventInput.eventId}): +${outcome.result.xpAwarded} XP (Level ${outcome.result.newLevel}, ${outcome.result.evolutionStage})`
       );
     } catch (err) {
       console.error(`[ERROR] Processing event ${eventInput.eventId} failed:`, (err as Error).message);
+      processedTelemetry.push({
+        eventType: eventInput.eventType,
+        eventId: eventInput.eventId,
+        actor: eventInput.actor,
+        xpAwarded: 0,
+        status: 'invalid',
+        details: (err as Error).message,
+        ref: eventInput.ref,
+      });
     }
   }
 
@@ -206,6 +268,16 @@ async function runProcessingCycle(options: {
   }
 
   console.log(`[COMPLETE] Total Activity XP awarded: ${totalXpAwarded}`);
+
+  // Publication state tracking
+  let pubTelemetry: {
+    status: 'COMMITTED_AND_PUSHED' | 'NO_CHANGES_COMMITTED' | 'DRY_RUN' | 'SKIPPED';
+    commitSha?: string;
+    modifiedFiles?: string[];
+    destinationRef?: string;
+  } = {
+    status: 'NO_CHANGES_COMMITTED',
+  };
 
   // If in Git workspace, publish changes
   if (totalXpAwarded > 0 && !dryRun) {
@@ -248,16 +320,54 @@ async function runProcessingCycle(options: {
       await execGit(['commit', '-m', commitMessage], baseDir);
       console.log(`[GIT] Committed: ${commitMessage}`);
 
+      const { stdout: headShaOut } = await execGit(['rev-parse', 'HEAD'], baseDir);
+      const commitSha = headShaOut.trim();
+
       const gitToken = process.env.GITHUB_TOKEN;
       if (gitToken) {
         console.log(`[GIT] Pushing update to origin/${targetRef}...`);
         await execGit(['push', 'origin', `HEAD:${targetRef}`], baseDir);
         console.log('[GIT] Push successful.');
+        pubTelemetry = {
+          status: 'COMMITTED_AND_PUSHED',
+          commitSha,
+          modifiedFiles: modified,
+          destinationRef: targetRef,
+        };
       } else {
         console.log('[INFO] No GITHUB_TOKEN present; skipped push.');
+        pubTelemetry = {
+          status: 'SKIPPED',
+          commitSha,
+          modifiedFiles: modified,
+          destinationRef: targetRef,
+        };
       }
     }
+  } else if (dryRun) {
+    pubTelemetry = {
+      status: 'DRY_RUN',
+    };
   }
+
+  // Write finalized Step Summary
+  writeStepSummary(
+    formatActivitySummary({
+      eventName: process.env.GITHUB_EVENT_NAME || 'manual',
+      targetRef,
+      dryRun,
+      eventsCount: eventsToProcess.length,
+      totalXpAwarded,
+      initialPetState: initialPet,
+      updatedPetState: currentPet || initialPet,
+      processedEvents: processedTelemetry,
+      reconciliation: reconTelemetry,
+      publication: pubTelemetry,
+      notes: totalXpAwarded === 0
+        ? 'Evaluated events resulted in zero XP (all filtered, duplicate, or capped).'
+        : undefined,
+    })
+  );
 }
 
 async function main() {
@@ -382,6 +492,14 @@ async function main() {
       }
     } catch (err) {
       console.error(`[ERROR] Failed to parse GitHub event payload from ${eventPath}:`, (err as Error).message);
+      writeStepSummary(
+        formatActivityFailureSummary({
+          eventName: process.env.GITHUB_EVENT_NAME || 'manual',
+          targetRef,
+          stage: 'event_payload_parsing',
+          error: err,
+        })
+      );
       process.exit(1);
     }
   }
@@ -395,6 +513,15 @@ async function main() {
     } catch (err) {
       console.warn(`[WARN] Processing cycle attempt ${attempt}/${maxAttempts} failed: ${(err as Error).message}`);
       if (attempt === maxAttempts) {
+        writeStepSummary(
+          formatActivityFailureSummary({
+            eventName: process.env.GITHUB_EVENT_NAME || 'manual',
+            targetRef,
+            stage: 'push_collision_retry_exhausted',
+            error: err,
+            eventsAttempted: cliEvents.length,
+          })
+        );
         if (process.env.GITHUB_ACTIONS) {
           process.exit(1);
         }
@@ -416,5 +543,15 @@ async function main() {
 
 main().catch((err) => {
   console.error('[FATAL]', err);
+  try {
+    writeStepSummary(
+      formatActivityFailureSummary({
+        eventName: process.env.GITHUB_EVENT_NAME || 'manual',
+        targetRef: process.env.GITHUB_REF_NAME || 'main',
+        stage: 'unhandled_fatal_exception',
+        error: err,
+      })
+    );
+  } catch {}
   process.exit(1);
 });

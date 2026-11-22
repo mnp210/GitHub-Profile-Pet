@@ -19,4 +19,5 @@ export * from './inbox/index.ts';
 export * from './contribution/index.ts';
 export * from './simulation/index.ts';
 export * from './sync/index.ts';
+export * from './reporting/index.ts';
 

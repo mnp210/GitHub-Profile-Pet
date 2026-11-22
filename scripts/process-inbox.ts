@@ -10,6 +10,11 @@
 
 import { runInboxPublicationPipeline } from '../src/features/pet-engine/publication/index.ts';
 import { resolveOwnerIdentity } from '../src/features/pet-engine/contribution/index.ts';
+import {
+  writeStepSummary,
+  formatInboxSummary,
+  formatInboxFailureSummary,
+} from '../src/features/pet-engine/reporting/index.ts';
 
 export function parseArgs(args: string[]): {
   refName?: string;
@@ -88,13 +93,28 @@ async function main() {
         `[process-inbox] Authorized Trainer Identity: @${identity.login} (databaseId: ${trustedAuthorId}, source: ${identity.sourceDatabaseId ?? identity.sourceLogin})`
       );
     } else {
-      console.error(
-        '::error::[process-inbox] Failed to resolve trusted owner numeric database ID. Action inbox requires valid trainer identity.'
+      const errMsg = 'Failed to resolve trusted owner numeric database ID. Action inbox requires valid trainer identity.';
+      console.error(`::error::[process-inbox] ${errMsg}`);
+      writeStepSummary(
+        formatInboxFailureSummary({
+          targetRef: options.refName || 'main',
+          status: 'identity_resolution_failed',
+          details: errMsg,
+        })
       );
       process.exit(1);
     }
   } catch (err: unknown) {
-    console.error(`::error::[process-inbox] Identity resolution failed: ${(err as Error).message}`);
+    const errMsg = `Identity resolution failed: ${(err as Error).message}`;
+    console.error(`::error::[process-inbox] ${errMsg}`);
+    writeStepSummary(
+      formatInboxFailureSummary({
+        targetRef: options.refName || 'main',
+        status: 'identity_resolution_failed',
+        details: errMsg,
+        error: err,
+      })
+    );
     process.exit(1);
   }
 
@@ -134,6 +154,14 @@ async function main() {
     if (result.error?.stack) {
       console.error(result.error.stack);
     }
+    writeStepSummary(
+      formatInboxFailureSummary({
+        targetRef: options.refName || result.destinationRef || 'main',
+        status: result.status,
+        details: result.details,
+        error: result.error,
+      })
+    );
     process.exit(1);
   }
 
@@ -146,6 +174,18 @@ async function main() {
     console.log(`[process-inbox] Destination Ref: ${result.destinationRef}`);
   }
 
+  writeStepSummary(
+    formatInboxSummary({
+      targetRef: options.refName || result.destinationRef || 'main',
+      dryRun: options.dryRun,
+      status: result.status,
+      details: result.details,
+      commitSha: result.commitSha,
+      stagedFiles: result.stagedFiles,
+      inboxResult: result.inboxResult,
+    })
+  );
+
   process.exit(0);
 }
 
@@ -156,6 +196,15 @@ if (process.argv[1] && (process.argv[1].endsWith('process-inbox.ts') || process.
     if (error.stack) {
       console.error(error.stack);
     }
+    try {
+      writeStepSummary(
+        formatInboxFailureSummary({
+          status: 'unhandled_fatal_exception',
+          details: error.message,
+          error,
+        })
+      );
+    } catch {}
     process.exit(1);
   });
 }
