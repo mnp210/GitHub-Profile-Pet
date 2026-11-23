@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generation": 39,
+  "generation": 40,
   "ownerDatabaseId": 298821706,
   "ownerLogin": "mnp210",
   "installationBaseline": {
@@ -31,15 +31,15 @@
     "2026-11-23": 0
   },
   "lastSyncReceipt": {
-    "timestamp": "2026-11-23T01:09:46.637Z",
+    "timestamp": "2026-11-23T09:52:04.347Z",
     "status": "success",
-    "incrementsProcessed": 5,
-    "notes": "Reconciled 2 snapshot(s). Observed delta: 0. Evaluated: 5."
+    "incrementsProcessed": 2,
+    "notes": "Reconciled 2 snapshot(s). Observed delta: 0. Evaluated: 2."
   },
   "dailyAccruedXp": {
     "2026-11-18": 105,
     "2026-11-19": 110,
-    "2026-11-22": 110
+    "2026-11-22": 120
   },
   "hourlyIncrementUsage": {
     "2026-11-19T03": 4,
@@ -56,7 +56,8 @@
     "2026-11-22T12": 0,
     "2026-11-22T16": 5,
     "2026-11-22T19": 5,
-    "2026-11-23T01": 5
+    "2026-11-23T01": 5,
+    "2026-11-23T09": 2
   },
   "hourlySliceUsage": {},
   "monotonicPublicHwm": 22,
@@ -679,11 +680,11 @@
       "dailyOrdinal": 16,
       "discoveredAt": "2026-11-22T19:59:33.674Z",
       "units": 1,
-      "status": "pending",
-      "rewardedXp": 0,
-      "rewardedSatiety": 0,
+      "status": "rewarded",
+      "rewardedXp": 5,
+      "rewardedSatiety": 1,
       "expiryAt": "2026-11-24T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-23T09:52:04.347Z"
     },
     {
       "sliceId": "slice_2026-11-22_ord_17",
@@ -691,11 +692,11 @@
       "dailyOrdinal": 17,
       "discoveredAt": "2026-11-22T19:59:33.674Z",
       "units": 1,
-      "status": "pending",
-      "rewardedXp": 0,
-      "rewardedSatiety": 0,
+      "status": "rewarded",
+      "rewardedXp": 5,
+      "rewardedSatiety": 1,
       "expiryAt": "2026-11-24T00:00:00.000Z",
-      "evaluatedAt": null
+      "evaluatedAt": "2026-11-23T09:52:04.347Z"
     }
   ],
   "monthlyHistoricalSummary": []
