@@ -1,8 +1,9 @@
 {
   "schemaVersion": 1,
-  "generation": 34,
+  "generation": 36,
   "dailyAccruedXp": {
-    "2026-11-22": 300
+    "2026-11-22": 300,
+    "2026-11-23": 30
   },
   "processedRegistry": {
     "commitShas": [
@@ -45,7 +46,9 @@
       "9658548d2173dfc19a26f6434c6ed341632c9b2a",
       "1dac52b469145d831f63f084b87d5b7d5c8db1b8",
       "4806632b0f2b9d0e1b32677202c120cde12fd9aa",
-      "ab2f88eaadd144cefbc2f9cfd359cf4c4707d870"
+      "ab2f88eaadd144cefbc2f9cfd359cf4c4707d870",
+      "a664fd928429f44869f44e074230ddf35699f02c",
+      "2dc95c6b331fbb579b1c84476cc23d34411738ee"
     ],
     "issueNumbers": [],
     "prOpenedNumbers": [
@@ -97,7 +100,9 @@
       "9658548d2173dfc19a26f6434c6ed341632c9b2a",
       "1dac52b469145d831f63f084b87d5b7d5c8db1b8",
       "4806632b0f2b9d0e1b32677202c120cde12fd9aa",
-      "ab2f88eaadd144cefbc2f9cfd359cf4c4707d870"
+      "ab2f88eaadd144cefbc2f9cfd359cf4c4707d870",
+      "a664fd928429f44869f44e074230ddf35699f02c",
+      "2dc95c6b331fbb579b1c84476cc23d34411738ee"
     ],
     "issueIntervals": [],
     "prOpenedIntervals": [
@@ -115,6 +120,35 @@
     "reviewIntervals": []
   },
   "recentEvents": [
+    {
+      "eventId": "pr_merged:1",
+      "eventType": "pr_merged",
+      "actor": "mnp210",
+      "timestamp": "2026-11-23T02:03:56.173Z",
+      "xpAwarded": 0,
+      "status": "skipped_duplicate",
+      "details": "Event pr_merged:1 has already been recorded in permanent deduplication index. Replay ignored."
+    },
+    {
+      "eventId": "commit:2dc95c6b331fbb579b1c84476cc23d34411738ee",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-23T02:03:56.163Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "fix(activity): synchronize generation across all state documents to maintain atomic consistency",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:a664fd928429f44869f44e074230ddf35699f02c",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-23T02:03:56.157Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "fix(ledgers): strip UTF-8 BOM from state and ledger JSON files",
+      "ref": "main"
+    },
     {
       "eventId": "pr_merged:1",
       "eventType": "pr_merged",
@@ -582,43 +616,13 @@
       "status": "skipped_bot",
       "details": "Ignored commit with automation or skip-ci message: \"docs: archive repository README pet menu integrati\"",
       "ref": "refs/heads/main"
-    },
-    {
-      "eventId": "commit:7e8e33f7439211856f7d7339bddbc5364b7a00cc",
-      "eventType": "commit",
-      "actor": "mnp210",
-      "timestamp": "2026-11-22T15:58:16.321Z",
-      "xpAwarded": 0,
-      "status": "skipped_bot",
-      "details": "Ignored commit with automation or skip-ci message: \"feat(publication): implement interactive repositor\"",
-      "ref": "refs/heads/main"
-    },
-    {
-      "eventId": "commit:2a96fbc1c85de5d680819706ccd948b192d7ce54",
-      "eventType": "commit",
-      "actor": "mnp210",
-      "timestamp": "2026-11-22T15:58:16.319Z",
-      "xpAwarded": 0,
-      "status": "skipped_bot",
-      "details": "Ignored commit with automation or skip-ci message: \"docs: archive master engineering report on playabl\"",
-      "ref": "refs/heads/main"
-    },
-    {
-      "eventId": "commit:350d66d963239a144c1e3817c97e317f4ae5ab0c",
-      "eventType": "commit",
-      "actor": "mnp210",
-      "timestamp": "2026-11-22T15:58:16.316Z",
-      "xpAwarded": 0,
-      "status": "skipped_bot",
-      "details": "Ignored commit with automation or skip-ci message: \"feat(game): restore interactive animated playable \"",
-      "ref": "refs/heads/main"
     }
   ],
-  "updatedAt": "2026-11-22T15:58:16.436Z",
+  "updatedAt": "2026-11-23T02:03:56.173Z",
   "checkpoints": {
-    "lastCommitSha": "f2cba9e2d17599150f5aba4c835d613902eaffdc",
+    "lastCommitSha": "d6c35ac19ed7604920cb7520e28fa1c83d70fd7b",
     "lastIssueNumber": 2,
     "lastPrNumber": 1,
-    "reconciledAt": "2026-11-22T15:58:14.757Z"
+    "reconciledAt": "2026-11-23T02:03:55.079Z"
   }
 }
