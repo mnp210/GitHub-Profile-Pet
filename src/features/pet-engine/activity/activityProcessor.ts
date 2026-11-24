@@ -420,7 +420,7 @@ export function evaluateActivityEvent(
   }
 
   // 3. Activity Lookback Window / Staleness Boundary Check
-  if (isEventStale(input.timestamp, nowUtc)) {
+  if (!input.allowHistoricalRecovery && isEventStale(input.timestamp, nowUtc)) {
     const skippedRecord: ActivityEventRecord = {
       eventId: input.eventId,
       eventType: input.eventType,

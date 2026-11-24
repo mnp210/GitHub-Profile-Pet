@@ -157,6 +157,7 @@ export async function reconcileGitHubApiEvents(
   repository: string,
   options: {
     nowUtc?: string;
+    sinceIso?: string;
     stopAtIssueNumber?: number;
     stopAtPrNumber?: number;
     maxPages?: number;
@@ -174,6 +175,9 @@ export async function reconcileGitHubApiEvents(
 }> {
   const customFetch = options.fetchFn ?? fetch;
   const nowUtc = options.nowUtc ?? new Date().toISOString();
+  const lookbackDays = options.sinceIso
+    ? Math.max(MAX_ACTIVITY_AGE_DAYS, Math.ceil((new Date(nowUtc).getTime() - new Date(options.sinceIso).getTime()) / (24 * 60 * 60 * 1000)))
+    : MAX_ACTIVITY_AGE_DAYS;
   const maxPages = options.maxPages ?? 10;
   const pageSize = options.pageSize ?? 100;
   const [owner, repo] = repository.split('/');
@@ -327,7 +331,10 @@ export async function reconcileGitHubApiEvents(
 
         // PR Opened
         if (!isBotActor(pr.user?.login) && pr.user?.type !== 'Bot') {
-          if (isEventStale(pr.created_at, nowUtc)) {
+          const isUncheckpointed = options.stopAtPrNumber !== undefined && pr.number > options.stopAtPrNumber;
+          const isStale = isEventStale(pr.created_at, nowUtc, lookbackDays);
+
+          if (!isUncheckpointed && isStale) {
             break prOpenLoop;
           }
 
@@ -337,6 +344,7 @@ export async function reconcileGitHubApiEvents(
             actor: pr.user.login,
             timestamp: pr.created_at,
             details: pr.title,
+            allowHistoricalRecovery: isUncheckpointed || isStale,
           });
 
           if (candidatePullsForReview.length < 20) {
@@ -385,7 +393,9 @@ export async function reconcileGitHubApiEvents(
         if (pr.merged_at) {
           // Verify correct merger attribution
           const merger = pr.merged_by?.login || pr.user?.login || 'unknown';
-          if (!isBotActor(merger) && !isEventStale(pr.merged_at, nowUtc)) {
+          const isStale = isEventStale(pr.merged_at, nowUtc, lookbackDays);
+          const isUncheckpointed = options.stopAtPrNumber !== undefined && pr.number > options.stopAtPrNumber;
+          if (!isBotActor(merger) && (!isStale || isUncheckpointed)) {
             discovered.push({
               eventType: 'pr_merged',
               eventId: `pr_merged:${pr.number}`,
@@ -393,6 +403,7 @@ export async function reconcileGitHubApiEvents(
               timestamp: pr.merged_at,
               details: `Merged PR: ${pr.title}`,
               prMerged: true,
+              allowHistoricalRecovery: isStale || isUncheckpointed,
             });
           }
         }
@@ -497,6 +508,7 @@ export async function performCompleteReconciliation(options: ReconcileOptions): 
   if (options.token && options.repository) {
     const apiResult = await reconcileGitHubApiEvents(options.token, options.repository, {
       nowUtc,
+      sinceIso: options.sinceIso,
       stopAtIssueNumber: options.stopAtIssueNumber,
       stopAtPrNumber: options.stopAtPrNumber,
       fetchFn: options.fetchFn,

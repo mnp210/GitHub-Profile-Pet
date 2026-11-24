@@ -166,7 +166,22 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
   const stopAtSha = initialLedger?.checkpoints?.lastCommitSha;
   const stopAtIssueNumber = initialLedger?.checkpoints?.lastIssueNumber;
   const stopAtPrNumber = initialLedger?.checkpoints?.lastPrNumber;
+  const lastReconciledIso = initialLedger?.checkpoints?.reconciledAt;
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+
+  let effectiveSinceIso = fourteenDaysAgo;
+  if (lastReconciledIso) {
+    const lastTime = new Date(lastReconciledIso).getTime();
+    if (!Number.isNaN(lastTime)) {
+      // Lookback includes 2-day overlap before last successful reconciliation
+      const candidateSince = new Date(lastTime - 2 * 24 * 60 * 60 * 1000).toISOString();
+      if (new Date(candidateSince).getTime() < new Date(fourteenDaysAgo).getTime()) {
+        // Outage lasted > 14 days: dynamically expand lookback window (capped at 90 days to prevent unbounded scanning)
+        const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+        effectiveSinceIso = new Date(Math.max(new Date(ninetyDaysAgo).getTime(), new Date(candidateSince).getTime())).toISOString();
+      }
+    }
+  }
 
   const eventsToProcess: ProcessActivityEventInput[] = [...cliEvents];
 
@@ -187,7 +202,7 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
         token: gitToken,
         repository: gitRepo,
         maxCommits: 5000,
-        sinceIso: fourteenDaysAgo,
+        sinceIso: effectiveSinceIso,
         stopAtSha,
         stopAtIssueNumber,
         stopAtPrNumber,

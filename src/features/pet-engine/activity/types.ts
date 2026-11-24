@@ -161,6 +161,7 @@ export interface ProcessActivityEventInput {
   isBot?: boolean;
   issueLabels?: string[];
   prMerged?: boolean;
+  allowHistoricalRecovery?: boolean;
 }
 
 export interface ProcessActivityResult {
