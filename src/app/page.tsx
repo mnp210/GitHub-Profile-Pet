@@ -8,6 +8,20 @@ import { PetEvolution } from '@/components/pet/PetEvolution';
 import { PersonalityPanel } from '@/components/pet/PersonalityPanel';
 import { MiniGameHub } from '@/components/minigames/MiniGameHub';
 import type { MiniGameId } from '@/features/minigames/types';
+import { ProgressionHubModal } from '@/components/progression/ProgressionHubModal';
+import { UnlockToast, type UnlockToastData } from '@/components/progression/UnlockToast';
+import {
+  loadProgressionState,
+  saveProgressionState,
+  recordInteraction,
+  recordCareAction,
+  recordPersonalityExplored,
+  recordMiniGameCompletion,
+  type ProgressionState,
+  type EvaluationResult,
+  ACHIEVEMENTS_CATALOG,
+  COSMETICS_CATALOG,
+} from '@/features/progression';
 import { INITIAL_PET_STATE, SPECIES_METADATA } from '@/constants/petData';
 import { PetState, SpeciesId, PersonalityType } from '@/types/pet';
 import { executePetAction, ActionResult } from '@/features/gamification/gameplay';
@@ -84,6 +98,50 @@ export default function Home() {
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
   const [isMiniGameModalOpen, setIsMiniGameModalOpen] = useState<boolean>(false);
   const [defaultMiniGameId, setDefaultMiniGameId] = useState<MiniGameId | undefined>(undefined);
+
+  // Progression, Wardrobe & Achievements State
+  const [progression, setProgression] = useState<ProgressionState>(() =>
+    loadProgressionState(pet.personality || 'curious')
+  );
+  const [isProgressionModalOpen, setIsProgressionModalOpen] = useState<boolean>(false);
+  const [progressionTab, setProgressionTab] = useState<'wardrobe' | 'achievements'>('wardrobe');
+  const [unlockToast, setUnlockToast] = useState<UnlockToastData | null>(null);
+
+  const handleProgressionUpdate = (next: ProgressionState) => {
+    setProgression(next);
+    saveProgressionState(next);
+  };
+
+  const handleEvaluationResult = (res: EvaluationResult) => {
+    handleProgressionUpdate(res.updatedState);
+    if (res.newlyUnlockedAchievements.length > 0) {
+      const achId = res.newlyUnlockedAchievements[0];
+      const ach = ACHIEVEMENTS_CATALOG[achId];
+      if (ach) {
+        setUnlockToast({
+          id: achId,
+          type: 'achievement',
+          title: ach.name,
+          subtitle: ach.description,
+          icon: ach.icon,
+        });
+        retroAudio.playLevelUp();
+      }
+    } else if (res.newlyUnlockedCosmetics.length > 0) {
+      const cosId = res.newlyUnlockedCosmetics[0];
+      const cos = COSMETICS_CATALOG[cosId];
+      if (cos) {
+        setUnlockToast({
+          id: cosId,
+          type: 'cosmetic',
+          title: cos.name,
+          subtitle: `Unlocked: ${cos.category}`,
+          icon: cos.icon,
+        });
+        retroAudio.playLevelUp();
+      }
+    }
+  };
   const [isCodexModalOpen, setIsCodexModalOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return new URLSearchParams(window.location.search).get('action')?.toLowerCase().trim() === 'stats';
@@ -247,6 +305,8 @@ export default function Home() {
       message: `Adopted ${newPersonality.toUpperCase()} personality archetype!`,
       type: 'info',
     });
+    const evalRes = recordPersonalityExplored(progression, newPersonality);
+    handleEvaluationResult(evalRes);
   };
 
   // Rename Companion
@@ -298,6 +358,15 @@ export default function Home() {
     setActionHistory(result.updatedHistory);
     setLastReaction(result.reaction);
     saveLocalGameState(result.updatedPet, result.updatedHistory);
+
+    // Evaluate progression achievements
+    if (action === 'pet') {
+      const evalRes = recordInteraction(progression);
+      handleEvaluationResult(evalRes);
+    } else {
+      const evalRes = recordCareAction(progression);
+      handleEvaluationResult(evalRes);
+    }
 
     let rewardText = '';
     if (result.reward) {
@@ -565,7 +634,7 @@ export default function Home() {
 
   // Export Save File
   const handleExportSave = () => {
-    const dataStr = exportSaveData(pet, actionHistory);
+    const dataStr = exportSaveData(pet, actionHistory, progression);
     const blob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -587,6 +656,7 @@ export default function Home() {
       if (res.success && res.pet) {
         setPet(res.pet);
         if (res.history) setActionHistory(res.history);
+        if (res.progression) handleProgressionUpdate(res.progression);
         saveLocalGameState(res.pet, res.history || []);
         setFeedback({ message: 'Save file imported successfully!', type: 'info' });
         retroAudio.playPurr();
@@ -661,6 +731,20 @@ export default function Home() {
           >
             <span>🎮</span>
             <span className="hidden sm:inline">Play Zone</span>
+          </button>
+
+          {/* Wardrobe & Achievements Vault */}
+          <button
+            onClick={() => {
+              setProgressionTab('wardrobe');
+              setIsProgressionModalOpen(true);
+            }}
+            className="px-2.5 py-1 rounded-lg border border-purple-700/60 bg-purple-950/70 hover:bg-purple-900/80 text-purple-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
+            title="Wardrobe, Cosmetics & Achievements"
+            aria-label="Open Wardrobe and Achievements"
+          >
+            <span>✨</span>
+            <span className="hidden sm:inline">Wardrobe</span>
           </button>
 
           {/* Evolution Codex */}
@@ -791,6 +875,11 @@ export default function Home() {
               isActionsSyncing={isActionsSyncing}
               thoughtBubble={thoughtBubble}
               currentBehaviour={currentBehaviour}
+              equippedCosmetics={progression.equipped}
+              onOpenWardrobe={() => {
+                setProgressionTab('wardrobe');
+                setIsProgressionModalOpen(true);
+              }}
               onOpenMiniGames={(gameId) => {
                 setDefaultMiniGameId(gameId as MiniGameId | undefined);
                 setIsMiniGameModalOpen(true);
@@ -1167,10 +1256,31 @@ export default function Home() {
         pet={pet}
         isOpen={isMiniGameModalOpen}
         defaultGameId={defaultMiniGameId}
+        onGameCompleted={(gameId, score, round) => {
+          const evalRes = recordMiniGameCompletion(progression, gameId, score, round);
+          handleEvaluationResult(evalRes);
+        }}
         onClose={() => {
           setIsMiniGameModalOpen(false);
           setDefaultMiniGameId(undefined);
         }}
+      />
+
+      {/* 7. PROGRESSION & WARDROBE HUB MODAL */}
+      <ProgressionHubModal
+        isOpen={isProgressionModalOpen}
+        defaultTab={progressionTab}
+        pet={pet}
+        speciesMeta={currentSpeciesMeta}
+        progression={progression}
+        onUpdateProgression={handleProgressionUpdate}
+        onClose={() => setIsProgressionModalOpen(false)}
+      />
+
+      {/* 8. CELEBRATION TOAST NOTIFICATION */}
+      <UnlockToast
+        toast={unlockToast}
+        onDismiss={() => setUnlockToast(null)}
       />
     </div>
   );

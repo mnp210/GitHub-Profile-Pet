@@ -8,6 +8,11 @@ import type { ActionType } from '@/features/gamification/rewards';
 import { getPersonalityProfile } from '@/features/personality/personalities';
 import { mapBehaviourToSpriteState } from '@/features/personality/behaviourEngine';
 import type { BehaviourState } from '@/features/personality/types';
+import type { EquippedCosmetics } from '@/features/progression/types';
+import { CosmeticAccessoryOverlay } from '@/components/cosmetics/CosmeticAccessoryOverlay';
+import { CosmeticEffectLayer } from '@/components/cosmetics/CosmeticEffectLayer';
+import { EnvironmentBackground } from '@/components/cosmetics/EnvironmentBackground';
+import { CompanionDecorationOverlay } from '@/components/cosmetics/CompanionDecorationOverlay';
 
 interface ParticleEffect {
   id: number;
@@ -28,6 +33,8 @@ interface PetDisplayProps {
   thoughtBubble?: string;
   currentBehaviour?: string;
   onOpenMiniGames?: (defaultGameId?: string) => void;
+  equippedCosmetics?: EquippedCosmetics;
+  onOpenWardrobe?: () => void;
 }
 
 export const PetDisplay: React.FC<PetDisplayProps> = ({
@@ -40,6 +47,8 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
   thoughtBubble,
   currentBehaviour,
   onOpenMiniGames,
+  equippedCosmetics,
+  onOpenWardrobe,
 }) => {
   const [particles, setParticles] = useState<ParticleEffect[]>([]);
   const [animationState, setAnimationState] = useState<SpriteAnimationState>('idle');
@@ -127,12 +136,11 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
     <div className="relative flex flex-col items-center w-full max-w-full">
       {/* ARENA CONTAINER */}
       <div className="relative w-full aspect-16/10 sm:aspect-16/9 min-h-[300px] max-h-[380px] bg-gradient-to-b from-[#090b10] via-[#10131f] to-[#0c0e16] border-2 border-[#2b274c] rounded-2xl p-4 flex flex-col items-center justify-between select-none overflow-hidden shadow-2xl shadow-indigo-950/40">
-        {/* Background Arcane Starfield & Radial Aura */}
-        <div className="absolute inset-0 bg-radial from-purple-900/15 via-transparent to-black/60 pointer-events-none" />
-        <div className="absolute top-2 left-6 w-1 h-1 bg-purple-300 rounded-full animate-ping opacity-60 pointer-events-none" />
-        <div className="absolute top-8 right-10 w-1.5 h-1.5 bg-indigo-300 rounded-full animate-pulse opacity-50 pointer-events-none" />
-        <div className="absolute bottom-16 left-12 w-1 h-1 bg-cyan-300 rounded-full animate-pulse opacity-40 pointer-events-none" />
-        <div className="absolute top-20 left-1/4 w-1 h-1 bg-pink-300 rounded-full animate-ping opacity-50 pointer-events-none" />
+        {/* Environment Backdrop Layer */}
+        <EnvironmentBackground environmentId={equippedCosmetics?.environment ?? 'void_chamber'} />
+
+        {/* Companion Decoration Layer */}
+        <CompanionDecorationOverlay decorationId={equippedCosmetics?.decoration ?? null} />
 
         {/* TOP STATUS BAR: Element, Rarity, Mood & Cooldown Timer */}
         <div className="relative z-10 w-full flex items-center justify-between gap-2">
@@ -189,6 +197,10 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
 
         {/* CENTERED PET SPRITE ARENA */}
         <div className="relative z-10 my-auto flex flex-col items-center justify-center">
+          {/* Visual Effect Layer */}
+          <CosmeticEffectLayer effectId={equippedCosmetics?.effect ?? null} />
+
+          {/* Base Pet Sprite */}
           <PetSprite
             species={pet.species}
             personality={pet.personality}
@@ -200,6 +212,13 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
             }
             evolutionStage={pet.evolutionStage}
             onClick={handlePetDirectClick}
+          />
+
+          {/* Accessory Layer Overlaid directly on Sprite */}
+          <CosmeticAccessoryOverlay
+            accessoryId={equippedCosmetics?.accessory ?? null}
+            species={pet.species}
+            size={180}
           />
         </div>
 
@@ -286,23 +305,35 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
         </button>
       </div>
 
-      {/* COMPANION PLAY ZONE MINI-GAMES LAUNCHER */}
-      {onOpenMiniGames && (
-        <div className="w-full mt-3">
+      {/* COMPANION ACTIVITY & WARDROBE LAUNCHERS */}
+      <div className="w-full mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {onOpenMiniGames && (
           <button
             onClick={() => onOpenMiniGames()}
-            className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-purple-950/80 via-indigo-950/80 to-purple-950/80 hover:from-purple-900/90 hover:via-indigo-900/90 hover:to-purple-900/90 border border-purple-500/40 hover:border-purple-400 text-purple-200 text-xs font-bold flex items-center justify-center gap-2 shadow-md transition-all active:scale-[0.99] cursor-pointer"
+            className="py-2 px-3 rounded-xl bg-gradient-to-r from-purple-950/80 to-indigo-950/80 hover:from-purple-900/90 hover:to-indigo-900/90 border border-purple-500/40 hover:border-purple-400 text-purple-200 text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.99] cursor-pointer"
             title="Launch interactive companion mini-games"
             aria-label="Open Companion Play Zone"
           >
             <span className="text-base">🎮</span>
-            <span>Companion Play Zone — Reflex, Memory & Rhythm Mini-games</span>
-            <span className="text-[10px] text-purple-400 font-mono font-normal hidden sm:inline">
-              (0 XP · Pure Fun)
+            <span>Companion Play Zone</span>
+            <span className="text-[10px] text-purple-400 font-mono font-normal hidden lg:inline">
+              (0 XP)
             </span>
           </button>
-        </div>
-      )}
+        )}
+
+        {onOpenWardrobe && (
+          <button
+            onClick={() => onOpenWardrobe()}
+            className="py-2 px-3 rounded-xl bg-gradient-to-r from-indigo-950/80 to-pink-950/80 hover:from-indigo-900/90 hover:to-pink-900/90 border border-indigo-500/40 hover:border-indigo-400 text-indigo-200 text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.99] cursor-pointer"
+            title="Open Wardrobe & Achievements Vault"
+            aria-label="Open Wardrobe and Achievements Vault"
+          >
+            <span className="text-base">✨</span>
+            <span>Wardrobe & Badges</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 };

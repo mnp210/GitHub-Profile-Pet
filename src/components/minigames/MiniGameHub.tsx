@@ -22,6 +22,7 @@ interface MiniGameHubProps {
   isOpen: boolean;
   onClose: () => void;
   defaultGameId?: MiniGameId;
+  onGameCompleted?: (gameId: MiniGameId, score: number, round?: number) => void;
 }
 
 export const MiniGameHub: React.FC<MiniGameHubProps> = ({
@@ -29,6 +30,7 @@ export const MiniGameHub: React.FC<MiniGameHubProps> = ({
   isOpen,
   onClose,
   defaultGameId,
+  onGameCompleted,
 }) => {
   const [selectedGameId, setSelectedGameId] = useState<MiniGameId | null>(defaultGameId || null);
   const [activeSession, setActiveSession] = useState<GameSession | null>(null);
@@ -81,6 +83,7 @@ export const MiniGameHub: React.FC<MiniGameHubProps> = ({
     });
     setActiveSession(finished);
     setHighScores(loadHighScores());
+    onGameCompleted?.(activeSession.gameId, finalScore, stats.maxStreak);
   };
 
   const handlePlayAgain = () => {

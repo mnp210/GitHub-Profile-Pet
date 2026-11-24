@@ -8,6 +8,9 @@ const LOCAL_STORAGE_HISTORY_KEY = 'gh_pet_action_history_v1';
 const LOCAL_STORAGE_REPO_KEY = 'gh_pet_connected_repo_v1';
 const LOCAL_STORAGE_TOKEN_KEY = 'gh_pet_access_token_v1';
 
+import type { ProgressionState } from '../../features/progression/types.ts';
+import { migrateProgressionState } from '../../features/progression/persistence.ts';
+
 export interface ConnectedRepoConfig {
   repo: string; // e.g. "mnp210/GitHub-Profile-Pet-Test"
   token?: string; // Optional user personal access token
@@ -21,6 +24,7 @@ export interface GamePersistenceData {
   history: ActionHistoryEntry[];
   exportedAt: string;
   version: number;
+  progression?: ProgressionState;
 }
 
 /**
@@ -400,10 +404,15 @@ export async function updateRemoteReadme(
 /**
  * Exports pet state and progress to a downloadable JSON string.
  */
-export function exportSaveData(pet: PetState, history: ActionHistoryEntry[]): string {
+export function exportSaveData(
+  pet: PetState,
+  history: ActionHistoryEntry[],
+  progression?: ProgressionState
+): string {
   const data: GamePersistenceData = {
     pet,
     history,
+    progression,
     exportedAt: new Date().toISOString(),
     version: 1,
   };
@@ -417,6 +426,7 @@ export function importSaveData(jsonString: string): {
   success: boolean;
   pet?: PetState;
   history?: ActionHistoryEntry[];
+  progression?: ProgressionState;
   error?: string;
 } {
   try {
@@ -428,6 +438,7 @@ export function importSaveData(jsonString: string): {
       success: true,
       pet: parsed.pet,
       history: Array.isArray(parsed.history) ? parsed.history : [],
+      progression: parsed.progression ? migrateProgressionState(parsed.progression) : undefined,
     };
   } catch (err) {
     return { success: false, error: (err as Error).message };

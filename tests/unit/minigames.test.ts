@@ -384,8 +384,8 @@ describe('Sprint 5.1B — Economy Invariants & Zero-XP Safeguards', () => {
   it('TC-ECON-02: Game sessions cannot be submitted as GitHub contribution events', () => {
     const session = createGameSession('star_catcher');
     // Session objects have no commit SHA, issue number, PR number, or review ID
-    assert.equal((session as any).sha, undefined);
-    assert.equal((session as any).pull_request, undefined);
-    assert.equal((session as any).issue, undefined);
+    assert.equal((session as unknown as Record<string, unknown>).sha, undefined);
+    assert.equal((session as unknown as Record<string, unknown>).pull_request, undefined);
+    assert.equal((session as unknown as Record<string, unknown>).issue, undefined);
   });
 });
