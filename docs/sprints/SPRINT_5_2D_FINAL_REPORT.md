@@ -4,7 +4,7 @@
 **Auditor:** Antigravity Autonomous Agent  
 **Candidate Workspace:** `D:\Projects\GitHub-Profile-Pet-R3.7-Candidate`  
 **Candidate Branch:** `candidate/playable-virtual-pet-game`  
-**Candidate HEAD:** `7d9ea7db6e4252726555340ccb71717f2359a4e9`  
+**Candidate HEAD:** `16602ba72817d6730a96ecb0df16b8c121733fa8` (Tested Application Code: `7d9ea7db6e4252726555340ccb71717f2359a4e9`)  
 **Production Repository:** `mnp210/GitHub-Profile-Pet`  
 **Production HEAD:** `062da379b8fe35b7d1dd4b7753778588fefab897`  
 **Production Baseline (Fork Point):** `3c7fc20fa2d32409d3194b3b98fbe13d1f34ff52`  
@@ -34,25 +34,27 @@ All release preparation requirements for GitHub Profile Pet — Playable Edition
 
 | Metric / Parameter | Value / Finding | Status |
 | :--- | :--- | :--- |
-| **Candidate HEAD** | `7d9ea7db6e4252726555340ccb71717f2359a4e9` | Verified |
+| **Authoritative Candidate HEAD** | `16602ba72817d6730a96ecb0df16b8c121733fa8` (Docs-only descendant of `7d9ea7d`) | Verified |
+| **Tested Application Commit** | `7d9ea7db6e4252726555340ccb71717f2359a4e9` | Verified |
 | **Production HEAD** | `062da379b8fe35b7d1dd4b7753778588fefab897` (+6 commits ahead of baseline) | Verified |
-| **Common Ancestor** | `3c7fc20fa2d32409d3194b3b98fbe13d1f34ff52` | Verified |
+| **Common Ancestor (Merge Base)** | `3c7fc20fa2d32409d3194b3b98fbe13d1f34ff52` | Verified |
 | **Working Tree** | Clean (0 uncommitted files) | Verified |
-| **Candidate Commits Ahead** | 9 commits (Sprints 5.0B, 5.0C, 5.0D, 5.1A, 5.1B, 5.2A, 5.2B, 5.2C) | Verified |
-| **Net File Changes** | 227 files changed (217 added, 10 modified, 0 deleted, 0 renamed) | Verified |
-| **Protected Files Changed on Candidate** | **0 lines modified** across all 5 live state documents | **PRESERVED** |
+| **Candidate Commits Ahead** | 10 commits (incorporating Sprints 5.0B through 5.2D) | Verified |
+| **Net File Changes** | 234 files changed (211 added, 23 modified, 0 deleted, 0 renamed) | Verified |
+| **Protected Files Changed on Candidate** | **0 lines modified** across all 6 live state documents | **PRESERVED** |
 
 ---
 
 ## 3. Protected-File Preservation Matrix
 
-| File Path | Production Blob (`origin/main`) | Candidate Blob (`HEAD`) | Candidate Diff | Preservation Action |
-| :--- | :--- | :--- | :--- | :--- |
-| `pet/state/pet.json` | `df19d9882dc968fe46b39576c6ef864aa26cce2f` | `c5a2ff87ed16b51c670d6ebfc398eccad17ccc2d` | 0 lines modified | Retain `origin/main` (Lvl 4, 90/400 XP) |
-| `pet/ledger/activity.json` | `9853f8da5db99988a6312b5ec3b6f1fba8661212` | `75cfe3c0bccd21901065f14a7033c88cdc0fbb85` | 0 lines modified | Retain `origin/main` (+30 XP events) |
-| `pet/ledger/actions.json` | `e27538735c8d9f7ef49872c8f63dd9b5e6ce2799` | `ffa65ee3802d5ab7123e438653f99c013d676b66` | 0 lines modified | Retain `origin/main` (Issue HWM) |
-| `pet/ledger/contributions.json` | `bdb0ade4836a7b8ada4a6aa4d6d17121730d9dd2` | `6067330ef4e88771d1a4d920ad04495ba7c29a13` | 0 lines modified | Retain `origin/main` (Daily counters) |
-| `public/pet.svg` | `7bf3946187b7af3a14bc1ebe5ddd6dfcd2ea53c4` | `5951b4a9e4943e62cef57eef73453762f9c02990` | 0 lines modified | Retain `origin/main` (Level 4 SVG) |
+| File Path | Production Blob (`origin/main`) | Candidate Blob (`HEAD`) | Base Blob (`3c7fc20`) | Merge-Tree Blob | Preservation Action |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `pet/state/pet.json` | `df19d9882dc968fe46b39576c6ef864aa26cce2f` | `c5a2ff87ed16b51c670d6ebfc398eccad17ccc2d` | `c5a2ff87ed16b51c670d6ebfc398eccad17ccc2d` | `df19d9882dc968fe46b39576c6ef864aa26cce2f` | Retain `origin/main` (Lvl 4, 90/400 XP) |
+| `pet/ledger/activity.json` | `9853f8da5db99988a6312b5ec3b6f1fba8661212` | `75cfe3c0bccd21901065f14a7033c88cdc0fbb85` | `75cfe3c0bccd21901065f14a7033c88cdc0fbb85` | `9853f8da5db99988a6312b5ec3b6f1fba8661212` | Retain `origin/main` (+30 XP events) |
+| `pet/ledger/archive/activity_archive.json` | *(Does not exist)* | *(Does not exist)* | *(Does not exist)* | *(Does not exist)* | Retain non-existent (Do not seed) |
+| `pet/ledger/actions.json` | `e27538735c8d9f7ef49872c8f63dd9b5e6ce2799` | `ffa65ee3802d5ab7123e438653f99c013d676b66` | `ffa65ee3802d5ab7123e438653f99c013d676b66` | `e27538735c8d9f7ef49872c8f63dd9b5e6ce2799` | Retain `origin/main` (Issue HWM) |
+| `pet/ledger/contributions.json` | `bdb0ade4836a7b8ada4a6aa4d6d17121730d9dd2` | `6067330ef4e88771d1a4d920ad04495ba7c29a13` | `6067330ef4e88771d1a4d920ad04495ba7c29a13` | `bdb0ade4836a7b8ada4a6aa4d6d17121730d9dd2` | Retain `origin/main` (Daily counters) |
+| `public/pet.svg` | `7bf3946187b7af3a14bc1ebe5ddd6dfcd2ea53c4` | `5951b4a9e4943e62cef57eef73453762f9c02990` | `5951b4a9e4943e62cef57eef73453762f9c02990` | `7bf3946187b7af3a14bc1ebe5ddd6dfcd2ea53c4` | Retain `origin/main` (Level 4 SVG) |
 
 ---
 

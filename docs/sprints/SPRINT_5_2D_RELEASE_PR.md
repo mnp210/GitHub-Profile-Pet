@@ -1,6 +1,6 @@
 # Pull Request: feat: release GitHub Profile Pet playable edition
 
-**Source Branch:** `candidate/playable-virtual-pet-game` (`7d9ea7db6e4252726555340ccb71717f2359a4e9`)  
+**Source Branch:** `candidate/playable-virtual-pet-game` (Authoritative HEAD: `16602ba72817d6730a96ecb0df16b8c121733fa8`, Tested Application Code: `7d9ea7db6e4252726555340ccb71717f2359a4e9`)  
 **Target Branch:** `main` (`062da379b8fe35b7d1dd4b7753778588fefab897`)  
 **Repository:** `mnp210/GitHub-Profile-Pet`  
 **Status:** DRAFT / PENDING MAINTAINER AUTHORIZATION (DO NOT PUSH OR MERGE YET)
@@ -54,9 +54,9 @@ All candidate changes have passed comprehensive automated and manual verificatio
 
 ## 3. Security & State Preservation Guarantees
 
-- **Live Production Pet State 100% Preserved:**
-  - `pet/state/pet.json`, `pet/ledger/activity.json`, `pet/ledger/actions.json`, `pet/ledger/contributions.json`, and `public/pet.svg` are **100% untouched** on the candidate branch.
-  - Live progress (Shadow Claw Level 4, 90/400 XP, Gen 42) is automatically retained.
+- **Live Production Pet State 100% Preserved (Six-File Guarantee):**
+  - All 6 protected state and ledger files (`pet/state/pet.json`, `pet/ledger/activity.json`, `pet/ledger/archive/activity_archive.json`, `pet/ledger/actions.json`, `pet/ledger/contributions.json`, and `public/pet.svg`) are **100% untouched** on the candidate branch relative to the merge base.
+  - Live progress (Shadow Claw Level 4, 90/400 XP, Gen 42) and all contribution records are automatically retained without modification.
 - **Zero-XP Economy Invariant:**
   - Mini-games, wardrobe styling, and bonding activities grant **strictly 0 developer contribution XP**.
   - Repository limit of 300 XP / UTC day is strictly preserved.
