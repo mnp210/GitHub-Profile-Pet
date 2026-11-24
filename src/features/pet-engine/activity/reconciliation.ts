@@ -246,9 +246,13 @@ export async function reconcileGitHubApiEvents(
         break; // End of issues stream
       }
 
+      let lowestIssueOnPage: number | undefined;
       for (const issue of issues) {
         if (!latestIssueNumber || issue.number > latestIssueNumber) {
           latestIssueNumber = issue.number;
+        }
+        if (!lowestIssueOnPage || issue.number < lowestIssueOnPage) {
+          lowestIssueOnPage = issue.number;
         }
 
         // Check if we hit checkpoint issue number
@@ -282,6 +286,14 @@ export async function reconcileGitHubApiEvents(
       }
 
       if (!canContinue || issues.length < pageSize) {
+        break;
+      }
+
+      if (page === maxPages && issues.length >= pageSize) {
+        if (!options.stopAtIssueNumber || (lowestIssueOnPage !== undefined && lowestIssueOnPage > options.stopAtIssueNumber)) {
+          warnings.push(`GitHub Issues API reached pagination limit (${maxPages} pages). Additional uncheckpointed issues remain unprocessed.`);
+          completedFully = false;
+        }
         break;
       }
     } catch (err) {
@@ -320,9 +332,13 @@ export async function reconcileGitHubApiEvents(
         break;
       }
 
+      let lowestPrOnPage: number | undefined;
       for (const pr of pulls) {
         if (!latestPrNumber || pr.number > latestPrNumber) {
           latestPrNumber = pr.number;
+        }
+        if (!lowestPrOnPage || pr.number < lowestPrOnPage) {
+          lowestPrOnPage = pr.number;
         }
 
         if (options.stopAtPrNumber && pr.number <= options.stopAtPrNumber) {
@@ -333,6 +349,7 @@ export async function reconcileGitHubApiEvents(
         if (!isBotActor(pr.user?.login) && pr.user?.type !== 'Bot') {
           const isUncheckpointed = options.stopAtPrNumber !== undefined && pr.number > options.stopAtPrNumber;
           const isStale = isEventStale(pr.created_at, nowUtc, lookbackDays);
+          const isOlderThanNormalWindow = isEventStale(pr.created_at, nowUtc, MAX_ACTIVITY_AGE_DAYS);
 
           if (!isUncheckpointed && isStale) {
             break prOpenLoop;
@@ -344,7 +361,7 @@ export async function reconcileGitHubApiEvents(
             actor: pr.user.login,
             timestamp: pr.created_at,
             details: pr.title,
-            allowHistoricalRecovery: isUncheckpointed || isStale,
+            allowHistoricalRecovery: isUncheckpointed || isOlderThanNormalWindow,
           });
 
           if (candidatePullsForReview.length < 20) {
@@ -354,6 +371,14 @@ export async function reconcileGitHubApiEvents(
       }
 
       if (!canContinue || pulls.length < pageSize) {
+        break;
+      }
+
+      if (page === maxPages && pulls.length >= pageSize) {
+        if (!options.stopAtPrNumber || (lowestPrOnPage !== undefined && lowestPrOnPage > options.stopAtPrNumber)) {
+          warnings.push(`GitHub Pull Requests API reached maximum pagination limit (${maxPages} pages). Additional uncheckpointed PRs remain unprocessed.`);
+          completedFully = false;
+        }
         break;
       }
     } catch (err) {
@@ -393,9 +418,10 @@ export async function reconcileGitHubApiEvents(
         if (pr.merged_at) {
           // Verify correct merger attribution
           const merger = pr.merged_by?.login || pr.user?.login || 'unknown';
-          const isStale = isEventStale(pr.merged_at, nowUtc, lookbackDays);
+          const isStaleAgainstLookback = isEventStale(pr.merged_at, nowUtc, lookbackDays);
+          const isOlderThanNormalWindow = isEventStale(pr.merged_at, nowUtc, MAX_ACTIVITY_AGE_DAYS);
           const isUncheckpointed = options.stopAtPrNumber !== undefined && pr.number > options.stopAtPrNumber;
-          if (!isBotActor(merger) && (!isStale || isUncheckpointed)) {
+          if (!isBotActor(merger) && (!isStaleAgainstLookback || isUncheckpointed)) {
             discovered.push({
               eventType: 'pr_merged',
               eventId: `pr_merged:${pr.number}`,
@@ -403,7 +429,7 @@ export async function reconcileGitHubApiEvents(
               timestamp: pr.merged_at,
               details: `Merged PR: ${pr.title}`,
               prMerged: true,
-              allowHistoricalRecovery: isStale || isUncheckpointed,
+              allowHistoricalRecovery: isOlderThanNormalWindow || isUncheckpointed,
             });
           }
         }
@@ -547,7 +573,7 @@ export async function performCompleteReconciliation(options: ReconcileOptions): 
       lastCommitSha: completedFully ? gitCommitResult.latestSha : options.stopAtSha,
       lastIssueNumber: completedFully ? latestIssue : options.stopAtIssueNumber,
       lastPrNumber: completedFully ? latestPr : options.stopAtPrNumber,
-      reconciledAt: nowUtc,
+      reconciledAt: completedFully ? nowUtc : (options.sinceIso ?? nowUtc),
     },
     warnings,
     completedFully,

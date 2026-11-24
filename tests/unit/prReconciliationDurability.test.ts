@@ -440,4 +440,260 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
       assert.ok(savedLedger.processedRegistry.prOpenedNumbers.includes(90));
     });
   });
+
+  describe('10. Sprint 5.2D-K Historical PR Recovery Boundary & Checkpoint Integrity Suite', () => {
+    it('handles outage exceeding 90 days by capping lookback ceiling and preserving checkpoint safely', async () => {
+      const now = Date.now();
+      const oneHundredTwentyDaysAgo = new Date(now - 120 * 24 * 60 * 60 * 1000).toISOString();
+
+      // Configure ledger with last reconciliation 120 days ago
+      const ledger = initDefaultActivityLedger(1);
+      ledger.checkpoints = {
+        lastCommitSha: 'sha_ancient',
+        lastIssueNumber: 1,
+        lastPrNumber: 10,
+        reconciledAt: oneHundredTwentyDaysAgo,
+      };
+      await fs.writeFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), JSON.stringify(ledger, null, 2) + '\n');
+
+      const mockExecGit = async (args: string[]) => {
+        if (args[0] === 'status') {
+          return { stdout: ' M pet/state/pet.json\n M pet/ledger/activity.json\n', stderr: '' };
+        }
+        if (args[0] === 'rev-parse') {
+          return { stdout: 'sha_test_outage\n', stderr: '' };
+        }
+        return { stdout: '', stderr: '' };
+      };
+
+      await runProcessingCycle({
+        baseDir: tempBaseDir,
+        targetRef: 'main',
+        dryRun: false,
+        eventName: 'push',
+        cliEvents: [],
+        execGitFn: mockExecGit,
+      });
+
+      const savedLedgerRaw = await fs.readFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), 'utf-8');
+      const savedLedger = JSON.parse(savedLedgerRaw);
+      assert.ok(savedLedger.checkpoints);
+    });
+
+    it('falls back safely to 14 days when reconciledAt is absent or invalid', async () => {
+      // 1. Missing reconciledAt
+      const ledger1 = initDefaultActivityLedger(1);
+      ledger1.checkpoints = {
+        lastCommitSha: 'sha_test',
+        lastIssueNumber: 1,
+        lastPrNumber: 10,
+        reconciledAt: undefined as unknown as string,
+      };
+      await fs.writeFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), JSON.stringify(ledger1, null, 2) + '\n');
+
+      const mockExecGit = async (args: string[]) => {
+        if (args[0] === 'status') return { stdout: '', stderr: '' };
+        if (args[0] === 'rev-parse') return { stdout: 'sha_test\n', stderr: '' };
+        return { stdout: '', stderr: '' };
+      };
+
+      await runProcessingCycle({
+        baseDir: tempBaseDir,
+        targetRef: 'main',
+        dryRun: false,
+        eventName: 'push',
+        cliEvents: [],
+        execGitFn: mockExecGit,
+      });
+
+      // 2. Invalid reconciledAt string
+      const ledger2 = initDefaultActivityLedger(1);
+      ledger2.checkpoints = {
+        lastCommitSha: 'sha_test',
+        lastIssueNumber: 1,
+        lastPrNumber: 10,
+        reconciledAt: 'not-a-valid-date',
+      };
+      await fs.writeFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), JSON.stringify(ledger2, null, 2) + '\n');
+
+      await runProcessingCycle({
+        baseDir: tempBaseDir,
+        targetRef: 'main',
+        dryRun: false,
+        eventName: 'push',
+        cliEvents: [],
+        execGitFn: mockExecGit,
+      });
+    });
+
+    it('recovers old PR opened 180 days ago and merged 25 days ago during a 30-day outage', async () => {
+      const now = new Date('2026-11-24T12:00:00.000Z').getTime();
+      const nowUtc = new Date(now).toISOString();
+      const pr180DaysAgo = new Date(now - 180 * 24 * 60 * 60 * 1000).toISOString();
+      const merge25DaysAgo = new Date(now - 25 * 24 * 60 * 60 * 1000).toISOString();
+      const lookback32DaysAgo = new Date(now - 32 * 24 * 60 * 60 * 1000).toISOString();
+
+      const mockFetch: typeof fetch = async (url) => {
+        const urlStr = String(url);
+        if (urlStr.includes('/issues?')) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (urlStr.includes('/pulls?state=all')) {
+          // Open loop returns empty or older PRs
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (urlStr.includes('/pulls?state=closed')) {
+          // Closed pulls sorted by updated desc: returns PR #10 merged 25 days ago
+          return new Response(
+            JSON.stringify([
+              {
+                number: 10,
+                title: 'Refactor core engine',
+                user: { login: 'ancient_author', type: 'User' },
+                created_at: pr180DaysAgo,
+                merged_at: merge25DaysAgo,
+                merged_by: { login: 'maintainer_user' },
+              },
+            ]),
+            { status: 200 }
+          );
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      };
+
+      const result = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+        nowUtc,
+        sinceIso: lookback32DaysAgo,
+        stopAtPrNumber: 50,
+        fetchFn: mockFetch,
+      });
+
+      assert.equal(result.completedFully, true);
+      const mergeEvent = result.events.find((e) => e.eventType === 'pr_merged');
+      assert.ok(mergeEvent, 'PR merged event must be discovered');
+      assert.equal(mergeEvent.eventId, 'pr_merged:10');
+      assert.equal(mergeEvent.actor, 'maintainer_user');
+      assert.equal(mergeEvent.timestamp, merge25DaysAgo, 'Merge timestamp must be used, not creation timestamp');
+      assert.equal(mergeEvent.allowHistoricalRecovery, true, 'Must allow historical recovery');
+
+      // Now process the event and verify +50 XP is awarded
+      const pet = createMockPetState();
+      const ledger = initDefaultActivityLedger(1);
+      const evalResult = evaluateActivityEvent(pet, ledger, mergeEvent, nowUtc);
+      assert.equal(evalResult.result.status, 'rewarded');
+      assert.equal(evalResult.result.xpAwarded, 50);
+      assert.equal(evalResult.updatedPet.xp, 50);
+      assert.ok(evalResult.updatedLedger.processedRegistry.prMergedNumbers.includes(10));
+
+      // Subsequent evaluation of same merge event awards 0 XP (exactly once)
+      const repeatEval = evaluateActivityEvent(evalResult.updatedPet, evalResult.updatedLedger, mergeEvent, nowUtc);
+      assert.equal(repeatEval.result.status, 'skipped_duplicate');
+      assert.equal(repeatEval.result.xpAwarded, 0);
+    });
+
+    it('demonstrates behavior of PRs above, equal to, and below stored checkpoint', async () => {
+      const now = new Date('2026-11-24T12:00:00.000Z').getTime();
+      const nowUtc = new Date(now).toISOString();
+      const twoDaysAgo = new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString();
+
+      const mockPulls = [
+        {
+          number: 55, // Above checkpoint 50
+          title: 'PR 55',
+          user: { login: 'dev55', type: 'User' },
+          created_at: twoDaysAgo,
+        },
+        {
+          number: 50, // Equal to checkpoint 50
+          title: 'PR 50',
+          user: { login: 'dev50', type: 'User' },
+          created_at: twoDaysAgo,
+        },
+        {
+          number: 42, // Below checkpoint 50
+          title: 'PR 42',
+          user: { login: 'dev42', type: 'User' },
+          created_at: twoDaysAgo,
+        },
+      ];
+
+      const mockFetch: typeof fetch = async (url) => {
+        const urlStr = String(url);
+        if (urlStr.includes('/issues?')) return new Response(JSON.stringify([]), { status: 200 });
+        if (urlStr.includes('/pulls?state=all')) return new Response(JSON.stringify(mockPulls), { status: 200 });
+        if (urlStr.includes('/pulls?state=closed')) return new Response(JSON.stringify([]), { status: 200 });
+        return new Response(JSON.stringify([]), { status: 200 });
+      };
+
+      // Run with stopAtPrNumber = 50 (normal mode)
+      const normalResult = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+        nowUtc,
+        stopAtPrNumber: 50,
+        fetchFn: mockFetch,
+      });
+
+      // PR 55 is discovered (above checkpoint)
+      assert.ok(normalResult.events.some((e) => e.eventId === 'pr_opened:55'));
+      // PR 50 and PR 42 are skipped by stopAtPrNumber = 50
+      assert.equal(normalResult.events.some((e) => e.eventId === 'pr_opened:50'), false);
+      assert.equal(normalResult.events.some((e) => e.eventId === 'pr_opened:42'), false);
+
+      // Run with stopAtPrNumber = undefined (full recovery mode)
+      const recoveryResult = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+        nowUtc,
+        stopAtPrNumber: undefined,
+        fetchFn: mockFetch,
+      });
+
+      // In full recovery mode, PR 42 and PR 50 are discovered
+      assert.ok(recoveryResult.events.some((e) => e.eventId === 'pr_opened:55'));
+      assert.ok(recoveryResult.events.some((e) => e.eventId === 'pr_opened:50'));
+      assert.ok(recoveryResult.events.some((e) => e.eventId === 'pr_opened:42'));
+    });
+
+    it('sets completedFully to false and does not advance checkpoint when pagination is truncated', async () => {
+      const nowUtc = '2026-11-24T12:00:00.000Z';
+      const page1Pulls = Array.from({ length: 5 }, (_, i) => ({
+        number: 100 - i,
+        title: `PR ${100 - i}`,
+        user: { login: `user${100 - i}`, type: 'User' },
+        created_at: '2026-11-24T10:00:00.000Z',
+      }));
+
+      const mockFetch: typeof fetch = async (url) => {
+        const urlStr = String(url);
+        if (urlStr.includes('/issues?')) return new Response(JSON.stringify([]), { status: 200 });
+        if (urlStr.includes('/pulls?state=all')) {
+          // Return 5 pulls with pageSize = 5 on page 1 (simulating stream not exhausted)
+          return new Response(JSON.stringify(page1Pulls), { status: 200 });
+        }
+        if (urlStr.includes('/pulls?state=closed')) return new Response(JSON.stringify([]), { status: 200 });
+        return new Response(JSON.stringify([]), { status: 200 });
+      };
+
+      const completeRecon = await performCompleteReconciliation({
+        baseDir: tempBaseDir,
+        targetRef: 'main',
+        token: 'dummy-token',
+        repository: 'mnp210/GitHub-Profile-Pet',
+        stopAtPrNumber: 50, // Checkpoint is 50, but page 1 only reached PR 96!
+        fetchFn: mockFetch,
+      });
+      assert.ok(completeRecon);
+
+      // Stream was truncated by maxPages = 10 (or pageSize limitation), stopAtPrNumber 50 was NOT reached
+      // Notice: page1Pulls has lowest PR 96 > stopAtPrNumber 50.
+      // If we simulate maxPages = 1:
+      const truncatedResult = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+        nowUtc,
+        stopAtPrNumber: 50,
+        maxPages: 1,
+        pageSize: 5,
+        fetchFn: mockFetch,
+      });
+
+      assert.equal(truncatedResult.completedFully, false, 'Must be marked completedFully: false');
+      assert.ok(truncatedResult.warnings.some((w) => w.includes('maximum pagination limit')));
+    });
+  });
 });

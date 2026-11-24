@@ -170,6 +170,7 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
 
   let effectiveSinceIso = fourteenDaysAgo;
+  let isCappedAtLookbackCeiling = false;
   if (lastReconciledIso) {
     const lastTime = new Date(lastReconciledIso).getTime();
     if (!Number.isNaN(lastTime)) {
@@ -178,7 +179,12 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
       if (new Date(candidateSince).getTime() < new Date(fourteenDaysAgo).getTime()) {
         // Outage lasted > 14 days: dynamically expand lookback window (capped at 90 days to prevent unbounded scanning)
         const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-        effectiveSinceIso = new Date(Math.max(new Date(ninetyDaysAgo).getTime(), new Date(candidateSince).getTime())).toISOString();
+        if (new Date(candidateSince).getTime() < new Date(ninetyDaysAgo).getTime()) {
+          effectiveSinceIso = ninetyDaysAgo;
+          isCappedAtLookbackCeiling = true;
+        } else {
+          effectiveSinceIso = candidateSince;
+        }
       }
     }
   }
@@ -221,6 +227,11 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
         completedFully: recon.completedFully,
         warnings: recon.warnings,
       };
+
+      if (isCappedAtLookbackCeiling) {
+        const ceilingMsg = `Reconciliation lookback window reached 90-day ceiling. Outage spanned from ${lastReconciledIso}. Events prior to ${effectiveSinceIso} were bounded to avoid unbounded scanning.`;
+        recon.warnings.push(ceilingMsg);
+      }
 
       if (recon.warnings.length > 0) {
         for (const w of recon.warnings) {
