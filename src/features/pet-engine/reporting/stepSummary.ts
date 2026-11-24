@@ -88,10 +88,11 @@ export interface ActivityReconciliationTelemetry {
 }
 
 export interface ActivityPublicationTelemetry {
-  status: 'COMMITTED_AND_PUSHED' | 'NO_CHANGES_COMMITTED' | 'DRY_RUN' | 'SKIPPED';
+  status: 'COMMITTED_AND_PUSHED' | 'NO_CHANGES_COMMITTED' | 'DRY_RUN' | 'SKIPPED' | 'DEFERRED_TO_RECONCILIATION';
   commitSha?: string;
   modifiedFiles?: string[];
   destinationRef?: string;
+  reason?: string;
 }
 
 export interface ActivitySummaryParams {
@@ -240,6 +241,10 @@ export function formatActivitySummary(params: ActivitySummaryParams): string {
       lines.push('- **Outcome:** ℹ️ Clean NO-OP (`NO_CHANGES_COMMITTED`) — no state modifications or XP changes required publication.');
     } else if (publication.status === 'DRY_RUN') {
       lines.push('- **Outcome:** 🔍 Dry-run complete. Working tree and remote unchanged.');
+    } else if (publication.status === 'DEFERRED_TO_RECONCILIATION') {
+      lines.push('- **Outcome:** ⏳ **Deferred to Reconciliation (`DEFERRED_TO_RECONCILIATION`)**');
+      lines.push(`- **Reason:** ${escapeMarkdown(publication.reason || 'Direct Git push is omitted in PR context to protect repository branches and production state.')}`);
+      lines.push('- **Durable Persistence:** Durable ledger recording and pet state update will be reconciled automatically during the next default-branch sweep (on push to main or scheduled cron).');
     } else {
       lines.push(`- **Outcome:** \`${publication.status}\``);
     }
