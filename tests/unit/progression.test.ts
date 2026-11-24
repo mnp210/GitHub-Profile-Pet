@@ -7,31 +7,24 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createInitialProgressionState,
-  createInitialProgressionStats,
   evaluateAchievements,
   equipCosmetic,
   unequipCosmetic,
   resetCosmeticsToDefault,
   recordInteraction,
-  recordCareAction,
   recordPersonalityExplored,
-  recordMiniGameCompletion,
   getAchievementStatuses,
   CURRENT_PROGRESSION_SCHEMA_VERSION,
 } from '../../src/features/progression/engine.ts';
-import type { ProgressionState } from '../../src/features/progression/types.ts';
+import type { CosmeticId } from '../../src/features/progression/types.ts';
 import {
-  COSMETICS_CATALOG,
   COSMETIC_ITEMS_LIST,
-  DEFAULT_UNLOCKED_COSMETICS,
   getCosmeticsByCategory,
   getCosmeticById,
 } from '../../src/features/progression/cosmeticsCatalog.ts';
 import {
-  ACHIEVEMENTS_CATALOG,
   ACHIEVEMENTS_LIST,
   getAchievementsByCategory,
-  getAchievementById,
 } from '../../src/features/progression/achievementsCatalog.ts';
 import {
   migrateProgressionState,
@@ -287,7 +280,7 @@ describe('Sprint 5.2A — State Schema Migration & Persistence', () => {
     const migrated = migrateProgressionState(legacyCorrupt);
     assert.ok(migrated.inventory.includes('void_chamber'));
     assert.ok(migrated.inventory.includes('mini_crown'));
-    assert.ok(!migrated.inventory.includes('hacked_god_weapon' as any));
+    assert.ok(!migrated.inventory.includes('hacked_god_weapon' as unknown as CosmeticId));
 
     // Equipped slots with invalid/unowned items should reset
     assert.equal(migrated.equipped.accessory, null);

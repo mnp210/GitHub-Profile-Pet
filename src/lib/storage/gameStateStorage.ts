@@ -10,6 +10,8 @@ const LOCAL_STORAGE_TOKEN_KEY = 'gh_pet_access_token_v1';
 
 import type { ProgressionState } from '../../features/progression/types.ts';
 import { migrateProgressionState } from '../../features/progression/persistence.ts';
+import type { BondingState } from '../../features/bonding/types.ts';
+import { migrateBondingState } from '../../features/bonding/persistence.ts';
 
 export interface ConnectedRepoConfig {
   repo: string; // e.g. "mnp210/GitHub-Profile-Pet-Test"
@@ -25,6 +27,7 @@ export interface GamePersistenceData {
   exportedAt: string;
   version: number;
   progression?: ProgressionState;
+  bonding?: BondingState;
 }
 
 /**
@@ -407,12 +410,14 @@ export async function updateRemoteReadme(
 export function exportSaveData(
   pet: PetState,
   history: ActionHistoryEntry[],
-  progression?: ProgressionState
+  progression?: ProgressionState,
+  bonding?: BondingState
 ): string {
   const data: GamePersistenceData = {
     pet,
     history,
     progression,
+    bonding,
     exportedAt: new Date().toISOString(),
     version: 1,
   };
@@ -427,6 +432,7 @@ export function importSaveData(jsonString: string): {
   pet?: PetState;
   history?: ActionHistoryEntry[];
   progression?: ProgressionState;
+  bonding?: BondingState;
   error?: string;
 } {
   try {
@@ -439,6 +445,7 @@ export function importSaveData(jsonString: string): {
       pet: parsed.pet,
       history: Array.isArray(parsed.history) ? parsed.history : [],
       progression: parsed.progression ? migrateProgressionState(parsed.progression) : undefined,
+      bonding: parsed.bonding ? migrateBondingState(parsed.bonding) : undefined,
     };
   } catch (err) {
     return { success: false, error: (err as Error).message };

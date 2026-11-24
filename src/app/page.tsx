@@ -10,6 +10,8 @@ import { MiniGameHub } from '@/components/minigames/MiniGameHub';
 import type { MiniGameId } from '@/features/minigames/types';
 import { ProgressionHubModal } from '@/components/progression/ProgressionHubModal';
 import { UnlockToast, type UnlockToastData } from '@/components/progression/UnlockToast';
+import { BondingHubModal } from '@/components/bonding/BondingHubModal';
+import { BondMilestoneToast, type BondNotification } from '@/components/bonding/BondMilestoneToast';
 import {
   loadProgressionState,
   saveProgressionState,
@@ -22,6 +24,19 @@ import {
   ACHIEVEMENTS_CATALOG,
   COSMETICS_CATALOG,
 } from '@/features/progression';
+import {
+  loadLocalBondingState,
+  saveLocalBondingState,
+  migrateBondingState,
+  recordDirectPetting,
+  recordCareActionForBonding,
+  recordMiniGameForBonding,
+  recordWardrobeActionForBonding,
+  recordPersonalityInteractionForBonding,
+  LOCAL_STORAGE_BONDING_KEY,
+  type BondingState,
+  type BondingEventResult,
+} from '@/features/bonding';
 import { INITIAL_PET_STATE, SPECIES_METADATA } from '@/constants/petData';
 import { PetState, SpeciesId, PersonalityType } from '@/types/pet';
 import { executePetAction, ActionResult } from '@/features/gamification/gameplay';
@@ -107,9 +122,14 @@ export default function Home() {
   const [progressionTab, setProgressionTab] = useState<'wardrobe' | 'achievements'>('wardrobe');
   const [unlockToast, setUnlockToast] = useState<UnlockToastData | null>(null);
 
-  const handleProgressionUpdate = (next: ProgressionState) => {
+  const handleProgressionUpdate = (next: ProgressionState, triggerBonding = true) => {
     setProgression(next);
     saveProgressionState(next);
+    if (triggerBonding) {
+      const equippedCount = Object.values(next.equipped).filter(Boolean).length;
+      const bRes = recordWardrobeActionForBonding(bondingState, equippedCount);
+      handleBondingEventResult(bRes);
+    }
   };
 
   const handleEvaluationResult = (res: EvaluationResult) => {
@@ -139,6 +159,90 @@ export default function Home() {
           icon: cos.icon,
         });
         retroAudio.playLevelUp();
+      }
+    }
+  };
+
+  // Companion Bonding & Daily Activities State
+  const [bondingState, setBondingState] = useState<BondingState>(() =>
+    loadLocalBondingState()
+  );
+  const [isBondingModalOpen, setIsBondingModalOpen] = useState<boolean>(false);
+  const [bondingNotifications, setBondingNotifications] = useState<BondNotification[]>([]);
+
+  // Multi-tab synchronization for bonding
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === LOCAL_STORAGE_BONDING_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          setBondingState(migrateBondingState(parsed));
+        } catch (err) {
+          console.warn('Multi-tab bonding sync failed:', err);
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  const handleBondingEventResult = (res: BondingEventResult) => {
+    setBondingState(res.nextState);
+    saveLocalBondingState(res.nextState);
+
+    const newNotifs: BondNotification[] = [];
+
+    // Milestone celebrations
+    for (const m of res.milestonesUnlocked) {
+      newNotifs.push({
+        id: `milestone-${m.id}-${m.level}`,
+        type: 'milestone',
+        title: m.name,
+        message: m.celebrationMessage,
+        icon: '🌟',
+        points: m.requiredPoints,
+      });
+
+      // Grant cosmetic reward if present and not already in progression inventory
+      if (m.rewardCosmeticId && !progression.inventory.includes(m.rewardCosmeticId)) {
+        const nextInv = [...progression.inventory, m.rewardCosmeticId];
+        handleProgressionUpdate({
+          ...progression,
+          inventory: nextInv,
+        });
+      }
+    }
+
+    // Daily activity completion celebrations
+    for (const act of res.activitiesCompleted) {
+      newNotifs.push({
+        id: `activity-${act.id}-${res.nextState.dailyActivities.dateKey}`,
+        type: 'activity',
+        title: act.name,
+        message: 'Daily activity completed!',
+        icon: act.icon,
+        points: act.bondPointsReward,
+      });
+    }
+
+    // Challenge completion celebration
+    if (res.challengeCompleted) {
+      newNotifs.push({
+        id: `challenge-${res.nextState.activeChallenge.challengeId}-${res.nextState.activeChallenge.rotationKey}`,
+        type: 'challenge',
+        title: 'Rotating Challenge Conquered!',
+        message: 'Shared companion challenge completed!',
+        icon: '🏆',
+        points: 25,
+      });
+    }
+
+    if (newNotifs.length > 0) {
+      setBondingNotifications((prev) => [...prev, ...newNotifs]);
+      try {
+        retroAudio.playLevelUp();
+      } catch {
+        // Audio optional
       }
     }
   };
@@ -359,13 +463,17 @@ export default function Home() {
     setLastReaction(result.reaction);
     saveLocalGameState(result.updatedPet, result.updatedHistory);
 
-    // Evaluate progression achievements
+    // Evaluate progression achievements and companion bonding
     if (action === 'pet') {
       const evalRes = recordInteraction(progression);
       handleEvaluationResult(evalRes);
+      const bondRes = recordDirectPetting(bondingState);
+      handleBondingEventResult(bondRes);
     } else {
       const evalRes = recordCareAction(progression);
       handleEvaluationResult(evalRes);
+      const bondRes = recordCareActionForBonding(bondingState);
+      handleBondingEventResult(bondRes);
     }
 
     let rewardText = '';
@@ -634,7 +742,7 @@ export default function Home() {
 
   // Export Save File
   const handleExportSave = () => {
-    const dataStr = exportSaveData(pet, actionHistory, progression);
+    const dataStr = exportSaveData(pet, actionHistory, progression, bondingState);
     const blob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -657,6 +765,10 @@ export default function Home() {
         setPet(res.pet);
         if (res.history) setActionHistory(res.history);
         if (res.progression) handleProgressionUpdate(res.progression);
+        if (res.bonding) {
+          setBondingState(res.bonding);
+          saveLocalBondingState(res.bonding);
+        }
         saveLocalGameState(res.pet, res.history || []);
         setFeedback({ message: 'Save file imported successfully!', type: 'info' });
         retroAudio.playPurr();
@@ -745,6 +857,17 @@ export default function Home() {
           >
             <span>✨</span>
             <span className="hidden sm:inline">Wardrobe</span>
+          </button>
+
+          {/* Companion Bonding & Daily Focus */}
+          <button
+            onClick={() => setIsBondingModalOpen(true)}
+            className="px-2.5 py-1 rounded-lg border border-pink-700/60 bg-pink-950/70 hover:bg-pink-900/80 text-pink-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
+            title="Companion Bonding, Daily Activities & Rotating Challenges"
+            aria-label="Open Companion Bonding & Daily Focus"
+          >
+            <span>🤝</span>
+            <span className="hidden sm:inline">Bond (Lvl {bondingState.bondLevel})</span>
           </button>
 
           {/* Evolution Codex */}
@@ -884,6 +1007,17 @@ export default function Home() {
                 setDefaultMiniGameId(gameId as MiniGameId | undefined);
                 setIsMiniGameModalOpen(true);
               }}
+              onOpenBonding={() => setIsBondingModalOpen(true)}
+              onDirectStroke={() => {
+                const bRes = recordDirectPetting(bondingState);
+                handleBondingEventResult(bRes);
+                const pRes = recordInteraction(progression);
+                handleEvaluationResult(pRes);
+                const chatRes = recordPersonalityInteractionForBonding(bRes.nextState);
+                handleBondingEventResult(chatRes);
+              }}
+              bondLevel={bondingState.bondLevel}
+              bondPoints={bondingState.bondPoints}
             />
 
             {/* COMPANION PERSONALITY & LIVING BEHAVIOUR PANEL */}
@@ -1259,6 +1393,8 @@ export default function Home() {
         onGameCompleted={(gameId, score, round) => {
           const evalRes = recordMiniGameCompletion(progression, gameId, score, round);
           handleEvaluationResult(evalRes);
+          const bondRes = recordMiniGameForBonding(bondingState, gameId, score);
+          handleBondingEventResult(bondRes);
         }}
         onClose={() => {
           setIsMiniGameModalOpen(false);
@@ -1277,10 +1413,25 @@ export default function Home() {
         onClose={() => setIsProgressionModalOpen(false)}
       />
 
-      {/* 8. CELEBRATION TOAST NOTIFICATION */}
+      {/* 8. COMPANION BONDING & DAILY ACTIVITIES HUB MODAL */}
+      <BondingHubModal
+        isOpen={isBondingModalOpen}
+        pet={pet}
+        bondingState={bondingState}
+        onClose={() => setIsBondingModalOpen(false)}
+      />
+
+      {/* 9. CELEBRATION TOAST NOTIFICATION */}
       <UnlockToast
         toast={unlockToast}
         onDismiss={() => setUnlockToast(null)}
+      />
+
+      {/* 10. BONDING MILESTONE & ACTIVITY TOASTS */}
+      <BondMilestoneToast
+        notifications={bondingNotifications}
+        onDismiss={(id) => setBondingNotifications((prev) => prev.filter((n) => n.id !== id))}
+        personality={pet.personality || 'curious'}
       />
     </div>
   );

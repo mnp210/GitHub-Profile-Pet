@@ -35,6 +35,10 @@ interface PetDisplayProps {
   onOpenMiniGames?: (defaultGameId?: string) => void;
   equippedCosmetics?: EquippedCosmetics;
   onOpenWardrobe?: () => void;
+  onOpenBonding?: () => void;
+  onDirectStroke?: () => void;
+  bondLevel?: number;
+  bondPoints?: number;
 }
 
 export const PetDisplay: React.FC<PetDisplayProps> = ({
@@ -49,6 +53,10 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
   onOpenMiniGames,
   equippedCosmetics,
   onOpenWardrobe,
+  onOpenBonding,
+  onDirectStroke,
+  bondLevel = 1,
+  bondPoints = 0,
 }) => {
   const [particles, setParticles] = useState<ParticleEffect[]>([]);
   const [animationState, setAnimationState] = useState<SpriteAnimationState>('idle');
@@ -88,6 +96,7 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
     setAnimationState(animState);
     retroAudio.playPurr();
     onExecuteAction('pet');
+    onDirectStroke?.();
     setTimeout(() => setAnimationState('idle'), 800);
   };
 
@@ -113,6 +122,7 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
       triggerParticle(160, 90, '+12 Happiness', 'text-pink-400', '❤️');
       setAnimationState('happy');
       retroAudio.playPurr();
+      onDirectStroke?.();
     }
 
     onExecuteAction(action);
@@ -305,32 +315,41 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
         </button>
       </div>
 
-      {/* COMPANION ACTIVITY & WARDROBE LAUNCHERS */}
-      <div className="w-full mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+      {/* COMPANION ACTIVITY, WARDROBE & BONDING LAUNCHERS */}
+      <div className="w-full mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
         {onOpenMiniGames && (
           <button
             onClick={() => onOpenMiniGames()}
-            className="py-2 px-3 rounded-xl bg-gradient-to-r from-purple-950/80 to-indigo-950/80 hover:from-purple-900/90 hover:to-indigo-900/90 border border-purple-500/40 hover:border-purple-400 text-purple-200 text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.99] cursor-pointer"
+            className="py-2 px-2.5 rounded-xl bg-gradient-to-r from-purple-950/80 to-indigo-950/80 hover:from-purple-900/90 hover:to-indigo-900/90 border border-purple-500/40 hover:border-purple-400 text-purple-200 text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.99] cursor-pointer"
             title="Launch interactive companion mini-games"
             aria-label="Open Companion Play Zone"
           >
             <span className="text-base">🎮</span>
-            <span>Companion Play Zone</span>
-            <span className="text-[10px] text-purple-400 font-mono font-normal hidden lg:inline">
-              (0 XP)
-            </span>
+            <span>Play Zone</span>
           </button>
         )}
 
         {onOpenWardrobe && (
           <button
             onClick={() => onOpenWardrobe()}
-            className="py-2 px-3 rounded-xl bg-gradient-to-r from-indigo-950/80 to-pink-950/80 hover:from-indigo-900/90 hover:to-pink-900/90 border border-indigo-500/40 hover:border-indigo-400 text-indigo-200 text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.99] cursor-pointer"
+            className="py-2 px-2.5 rounded-xl bg-gradient-to-r from-indigo-950/80 to-pink-950/80 hover:from-indigo-900/90 hover:to-pink-900/90 border border-indigo-500/40 hover:border-indigo-400 text-indigo-200 text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.99] cursor-pointer"
             title="Open Wardrobe & Achievements Vault"
             aria-label="Open Wardrobe and Achievements Vault"
           >
             <span className="text-base">✨</span>
-            <span>Wardrobe & Badges</span>
+            <span>Wardrobe</span>
+          </button>
+        )}
+
+        {onOpenBonding && (
+          <button
+            onClick={() => onOpenBonding()}
+            className="py-2 px-2.5 rounded-xl bg-gradient-to-r from-pink-950/80 to-purple-950/80 hover:from-pink-900/90 hover:to-purple-900/90 border border-pink-500/40 hover:border-pink-400 text-pink-200 text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.99] cursor-pointer"
+            title={`Open Companion Bonding & Daily Focus (${bondPoints} Pts)`}
+            aria-label="Open Companion Bonding & Daily Focus"
+          >
+            <span className="text-base">🤝</span>
+            <span>Bond (Lvl {bondLevel})</span>
           </button>
         )}
       </div>
