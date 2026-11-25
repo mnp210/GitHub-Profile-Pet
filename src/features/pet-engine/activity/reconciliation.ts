@@ -40,6 +40,8 @@ export interface ReconcileOptions {
   stopAtSha?: string;
   stopAtIssueNumber?: number;
   stopAtPrNumber?: number;
+  historicalRecoveryCursor?: string;
+  activeHistoricalCursor?: string;
   nowUtc?: string;
   fetchFn?: typeof fetch;
 }
@@ -53,6 +55,7 @@ export interface ReconcileResult {
     lastIssueNumber?: number;
     lastPrNumber?: number;
     reconciledAt: string;
+    historicalRecoveryCursor?: string;
   };
   warnings: string[];
   completedFully: boolean;
@@ -270,8 +273,10 @@ export async function reconcileGitHubApiEvents(
         const labelNames = issue.labels?.map((l) => l.name) || [];
         if (isCareActionIssue(labelNames, issue.title)) continue;
 
-        // Check staleness (> 14 days)
-        if (isEventStale(issue.created_at, nowUtc)) {
+        const isUncheckpointed = options.stopAtIssueNumber !== undefined && issue.number > options.stopAtIssueNumber;
+        const isStale = isEventStale(issue.created_at, nowUtc, lookbackDays);
+
+        if (isStale && !isUncheckpointed) {
           break issueLoop; // Since sorted descending by created_at, older issues are all stale
         }
 
@@ -339,10 +344,6 @@ export async function reconcileGitHubApiEvents(
         }
         if (!lowestPrOnPage || pr.number < lowestPrOnPage) {
           lowestPrOnPage = pr.number;
-        }
-
-        if (options.stopAtPrNumber && pr.number <= options.stopAtPrNumber) {
-          break prOpenLoop;
         }
 
         // PR Opened
@@ -574,6 +575,7 @@ export async function performCompleteReconciliation(options: ReconcileOptions): 
       lastIssueNumber: completedFully ? latestIssue : options.stopAtIssueNumber,
       lastPrNumber: completedFully ? latestPr : options.stopAtPrNumber,
       reconciledAt: completedFully ? nowUtc : (options.sinceIso ?? nowUtc),
+      historicalRecoveryCursor: completedFully ? options.historicalRecoveryCursor : options.activeHistoricalCursor,
     },
     warnings,
     completedFully,

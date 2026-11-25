@@ -12,7 +12,7 @@ import {
 } from '../../src/features/pet-engine/activity/index.ts';
 import { runProcessingCycle } from '../../scripts/process-activity.ts';
 import type { PetStateDocument } from '../../src/features/pet-engine/domain/types.ts';
-import type { ActivityLedgerDocument } from '../../src/features/pet-engine/activity/types.ts';
+import type { ActivityLedgerDocument, ProcessActivityEventInput } from '../../src/features/pet-engine/activity/types.ts';
 
 function createMockPetState(overrides: Partial<PetStateDocument> = {}): PetStateDocument {
   return {
@@ -591,7 +591,7 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
       assert.equal(repeatEval.result.xpAwarded, 0);
     });
 
-    it('demonstrates behavior of PRs above, equal to, and below stored checkpoint', async () => {
+    it('automatically discovers and recovers eligible PRs below or equal to legacy checkpoint', async () => {
       const now = new Date('2026-11-24T12:00:00.000Z').getTime();
       const nowUtc = new Date(now).toISOString();
       const twoDaysAgo = new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString();
@@ -604,13 +604,13 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
           created_at: twoDaysAgo,
         },
         {
-          number: 50, // Equal to checkpoint 50
+          number: 50, // Equal to checkpoint 50 (already processed)
           title: 'PR 50',
           user: { login: 'dev50', type: 'User' },
           created_at: twoDaysAgo,
         },
         {
-          number: 42, // Below checkpoint 50
+          number: 42, // Below checkpoint 50 (skipped by legacy checkpoint, never processed)
           title: 'PR 42',
           user: { login: 'dev42', type: 'User' },
           created_at: twoDaysAgo,
@@ -625,30 +625,48 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
         return new Response(JSON.stringify([]), { status: 200 });
       };
 
-      // Run with stopAtPrNumber = 50 (normal mode)
-      const normalResult = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+      // Run with stopAtPrNumber = 50 in normal mode
+      const result = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
         nowUtc,
         stopAtPrNumber: 50,
         fetchFn: mockFetch,
       });
 
-      // PR 55 is discovered (above checkpoint)
-      assert.ok(normalResult.events.some((e) => e.eventId === 'pr_opened:55'));
-      // PR 50 and PR 42 are skipped by stopAtPrNumber = 50
-      assert.equal(normalResult.events.some((e) => e.eventId === 'pr_opened:50'), false);
-      assert.equal(normalResult.events.some((e) => e.eventId === 'pr_opened:42'), false);
+      // All three PRs within lookback window are discovered!
+      assert.ok(result.events.some((e) => e.eventId === 'pr_opened:55'), 'PR 55 discovered');
+      assert.ok(result.events.some((e) => e.eventId === 'pr_opened:50'), 'PR 50 discovered');
+      assert.ok(result.events.some((e) => e.eventId === 'pr_opened:42'), 'PR 42 discovered automatically below checkpoint');
 
-      // Run with stopAtPrNumber = undefined (full recovery mode)
-      const recoveryResult = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
-        nowUtc,
-        stopAtPrNumber: undefined,
-        fetchFn: mockFetch,
-      });
+      // Now evaluate with a ledger where PR 50 was already processed, and PR 42 was not
+      const pet = createMockPetState();
+      const ledger = initDefaultActivityLedger(1);
+      ledger.processedRegistry.prOpenedNumbers = [50];
+      ledger.checkpoints = {
+        lastCommitSha: 'sha_prev',
+        lastIssueNumber: 1,
+        lastPrNumber: 50,
+        reconciledAt: new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      };
 
-      // In full recovery mode, PR 42 and PR 50 are discovered
-      assert.ok(recoveryResult.events.some((e) => e.eventId === 'pr_opened:55'));
-      assert.ok(recoveryResult.events.some((e) => e.eventId === 'pr_opened:50'));
-      assert.ok(recoveryResult.events.some((e) => e.eventId === 'pr_opened:42'));
+      // Process PR 50: duplicate check awards 0 XP
+      const ev50 = result.events.find((e) => e.eventId === 'pr_opened:50')!;
+      const res50 = evaluateActivityEvent(pet, ledger, ev50, nowUtc);
+      assert.equal(res50.result.status, 'skipped_duplicate');
+      assert.equal(res50.result.xpAwarded, 0);
+
+      // Process PR 42: missing opening reward is awarded +25 XP
+      const ev42 = result.events.find((e) => e.eventId === 'pr_opened:42')!;
+      const res42 = evaluateActivityEvent(res50.updatedPet, res50.updatedLedger, ev42, nowUtc);
+      assert.equal(res42.result.status, 'rewarded');
+      assert.equal(res42.result.xpAwarded, 25);
+      assert.ok(res42.updatedLedger.processedRegistry.prOpenedNumbers.includes(42));
+
+      // Process PR 55: new PR is awarded +25 XP
+      const ev55 = result.events.find((e) => e.eventId === 'pr_opened:55')!;
+      const res55 = evaluateActivityEvent(res42.updatedPet, res42.updatedLedger, ev55, nowUtc);
+      assert.equal(res55.result.status, 'rewarded');
+      assert.equal(res55.result.xpAwarded, 25);
+      assert.ok(res55.updatedLedger.processedRegistry.prOpenedNumbers.includes(55));
     });
 
     it('sets completedFully to false and does not advance checkpoint when pagination is truncated', async () => {
@@ -694,6 +712,251 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
 
       assert.equal(truncatedResult.completedFully, false, 'Must be marked completedFully: false');
       assert.ok(truncatedResult.warnings.some((w) => w.includes('maximum pagination limit')));
+    });
+  });
+
+  describe('11. Sprint 5.2D-L Historical Recovery Continuity Suite', () => {
+    it('manages 91-, 120-, and 180-day outages across sequential bounded batches', async () => {
+      const now = Date.now();
+      const mockExecGit = async (args: string[]) => {
+        if (args[0] === 'status') return { stdout: '', stderr: '' };
+        if (args[0] === 'rev-parse') return { stdout: 'sha_test_cursor\n', stderr: '' };
+        return { stdout: '', stderr: '' };
+      };
+
+      // 1. Outage of 91 days
+      const ledger91 = initDefaultActivityLedger(1);
+      ledger91.checkpoints = {
+        lastCommitSha: 'sha_91',
+        lastIssueNumber: 1,
+        lastPrNumber: 10,
+        reconciledAt: new Date(now - 91 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      await fs.writeFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), JSON.stringify(ledger91, null, 2) + '\n');
+
+      // Run 1: sets historical cursor
+      await runProcessingCycle({
+        baseDir: tempBaseDir,
+        targetRef: 'main',
+        dryRun: false,
+        eventName: 'push',
+        cliEvents: [],
+        execGitFn: mockExecGit,
+      });
+
+      const ledger91Run1Raw = await fs.readFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), 'utf-8');
+      const ledger91Run1 = JSON.parse(ledger91Run1Raw);
+      assert.ok(ledger91Run1.checkpoints?.historicalRecoveryCursor, 'Run 1 must store historicalRecoveryCursor');
+
+      // Run 2: completes recovery and clears cursor
+      await runProcessingCycle({
+        baseDir: tempBaseDir,
+        targetRef: 'main',
+        dryRun: false,
+        eventName: 'push',
+        cliEvents: [],
+        execGitFn: mockExecGit,
+      });
+
+      const ledger91Run2Raw = await fs.readFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), 'utf-8');
+      const ledger91Run2 = JSON.parse(ledger91Run2Raw);
+      assert.equal(ledger91Run2.checkpoints?.historicalRecoveryCursor, undefined, 'Run 2 must clear cursor upon completion');
+
+      // 2. Outage of 120 days
+      const ledger120 = initDefaultActivityLedger(1);
+      ledger120.checkpoints = {
+        lastCommitSha: 'sha_120',
+        lastIssueNumber: 1,
+        lastPrNumber: 10,
+        reconciledAt: new Date(now - 120 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      await fs.writeFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), JSON.stringify(ledger120, null, 2) + '\n');
+
+      // Run 1: sets cursor
+      await runProcessingCycle({
+        baseDir: tempBaseDir,
+        targetRef: 'main',
+        dryRun: false,
+        eventName: 'push',
+        cliEvents: [],
+        execGitFn: mockExecGit,
+      });
+      const ledger120Run1 = JSON.parse(await fs.readFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), 'utf-8'));
+      assert.ok(ledger120Run1.checkpoints?.historicalRecoveryCursor);
+
+      // Run 2: completes recovery
+      await runProcessingCycle({
+        baseDir: tempBaseDir,
+        targetRef: 'main',
+        dryRun: false,
+        eventName: 'push',
+        cliEvents: [],
+        execGitFn: mockExecGit,
+      });
+      const ledger120Run2 = JSON.parse(await fs.readFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), 'utf-8'));
+      assert.equal(ledger120Run2.checkpoints?.historicalRecoveryCursor, undefined);
+
+      // 3. Outage of 180 days (spans 3 runs)
+      const ledger180 = initDefaultActivityLedger(1);
+      ledger180.checkpoints = {
+        lastCommitSha: 'sha_180',
+        lastIssueNumber: 1,
+        lastPrNumber: 10,
+        reconciledAt: new Date(now - 180 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      await fs.writeFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), JSON.stringify(ledger180, null, 2) + '\n');
+
+      // Run 1: sets cursor
+      await runProcessingCycle({
+        baseDir: tempBaseDir,
+        targetRef: 'main',
+        dryRun: false,
+        eventName: 'push',
+        cliEvents: [],
+        execGitFn: mockExecGit,
+      });
+      const ledger180Run1 = JSON.parse(await fs.readFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), 'utf-8'));
+      assert.ok(ledger180Run1.checkpoints?.historicalRecoveryCursor);
+
+      // Run 2: processes batch 2 and advances cursor
+      await runProcessingCycle({
+        baseDir: tempBaseDir,
+        targetRef: 'main',
+        dryRun: false,
+        eventName: 'push',
+        cliEvents: [],
+        execGitFn: mockExecGit,
+      });
+      const ledger180Run2 = JSON.parse(await fs.readFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), 'utf-8'));
+      assert.ok(ledger180Run2.checkpoints?.historicalRecoveryCursor, 'Run 2 advances cursor towards completion');
+
+      // Run 3: completes batch 3 and clears cursor
+      await runProcessingCycle({
+        baseDir: tempBaseDir,
+        targetRef: 'main',
+        dryRun: false,
+        eventName: 'push',
+        cliEvents: [],
+        execGitFn: mockExecGit,
+      });
+      const ledger180Run3 = JSON.parse(await fs.readFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), 'utf-8'));
+      assert.equal(ledger180Run3.checkpoints?.historicalRecoveryCursor, undefined, 'Run 3 completes multi-run recovery');
+    });
+
+    it('preserves historicalRecoveryCursor when a historical batch fails or is interrupted', async () => {
+      const now = Date.now();
+      const initialCursor = new Date(now - 180 * 24 * 60 * 60 * 1000).toISOString();
+
+      const ledger = initDefaultActivityLedger(1);
+      ledger.checkpoints = {
+        lastCommitSha: 'sha_fail_test',
+        lastIssueNumber: 1,
+        lastPrNumber: 10,
+        reconciledAt: new Date(now - 10 * 1000).toISOString(),
+        historicalRecoveryCursor: initialCursor,
+      };
+      await fs.writeFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), JSON.stringify(ledger, null, 2) + '\n');
+
+      // Simulate a failure during processing (mock git status throws)
+      const failingExecGit = async (args: string[]) => {
+        if (args[0] === 'status') {
+          throw new Error('Simulated runner failure on git status');
+        }
+        return { stdout: '', stderr: '' };
+      };
+
+      await assert.rejects(async () => {
+        await runProcessingCycle({
+          baseDir: tempBaseDir,
+          targetRef: 'main',
+          dryRun: false,
+          eventName: 'push',
+          cliEvents: [
+            {
+              eventType: 'commit',
+              eventId: 'commit:test_failure',
+              actor: 'user',
+              details: 'test',
+            },
+          ],
+          execGitFn: failingExecGit,
+        });
+      });
+
+      // Verify the cursor was NOT advanced or wiped
+      const preservedRaw = await fs.readFile(path.join(tempBaseDir, 'pet/ledger/activity.json'), 'utf-8');
+      const preservedLedger = JSON.parse(preservedRaw);
+      assert.equal(preservedLedger.checkpoints?.historicalRecoveryCursor, initialCursor, 'Cursor must remain preserved on failure');
+    });
+
+    it('correctly handles separate opening and merge recovery across all permutations', () => {
+      const nowUtc = '2026-11-25T12:00:00.000Z';
+      const openTime = '2026-05-29T10:00:00.000Z'; // 180 days ago
+      const mergeTime = '2026-10-31T15:00:00.000Z'; // 25 days ago
+
+      const openEvent: ProcessActivityEventInput = {
+        eventType: 'pr_opened',
+        eventId: 'pr_opened:10',
+        actor: 'pr_author',
+        timestamp: openTime,
+        details: 'PR 10',
+        allowHistoricalRecovery: true,
+      };
+
+      const mergeEvent: ProcessActivityEventInput = {
+        eventType: 'pr_merged',
+        eventId: 'pr_merged:10',
+        actor: 'repo_merger',
+        timestamp: mergeTime,
+        details: 'Merged PR: PR 10',
+        prMerged: true,
+        allowHistoricalRecovery: true,
+      };
+
+      // Case A: Missing opening reward with existing merge reward
+      const petA = createMockPetState();
+      const ledgerA = initDefaultActivityLedger(1);
+      ledgerA.processedRegistry.prMergedNumbers = [10]; // Already has merge reward
+
+      const resOpenA = evaluateActivityEvent(petA, ledgerA, openEvent, nowUtc);
+      assert.equal(resOpenA.result.status, 'rewarded', 'Missing opening reward must be awarded');
+      assert.equal(resOpenA.result.xpAwarded, 25);
+      assert.equal(openEvent.timestamp, openTime, 'Must use creation timestamp');
+      assert.equal(openEvent.actor, 'pr_author', 'Must attribute to author');
+      assert.ok(resOpenA.updatedLedger.processedRegistry.prOpenedNumbers.includes(10));
+
+      const resMergeA = evaluateActivityEvent(resOpenA.updatedPet, resOpenA.updatedLedger, mergeEvent, nowUtc);
+      assert.equal(resMergeA.result.status, 'skipped_duplicate', 'Existing merge reward must award 0 XP');
+      assert.equal(resMergeA.result.xpAwarded, 0);
+
+      // Case B: Missing merge reward with existing opening reward
+      const petB = createMockPetState();
+      const ledgerB = initDefaultActivityLedger(1);
+      ledgerB.processedRegistry.prOpenedNumbers = [10]; // Already has opening reward
+
+      const resOpenB = evaluateActivityEvent(petB, ledgerB, openEvent, nowUtc);
+      assert.equal(resOpenB.result.status, 'skipped_duplicate', 'Existing opening reward must award 0 XP');
+      assert.equal(resOpenB.result.xpAwarded, 0);
+
+      const resMergeB = evaluateActivityEvent(petB, ledgerB, mergeEvent, nowUtc);
+      assert.equal(resMergeB.result.status, 'rewarded', 'Missing merge reward must be awarded');
+      assert.equal(resMergeB.result.xpAwarded, 50);
+      assert.equal(mergeEvent.timestamp, mergeTime, 'Must use merge timestamp');
+      assert.equal(mergeEvent.actor, 'repo_merger', 'Must attribute to merger');
+      assert.ok(resMergeB.updatedLedger.processedRegistry.prMergedNumbers.includes(10));
+
+      // Case C: Both missing rewards recovered together (25 + 50 = 75 XP total)
+      const petC = createMockPetState();
+      const ledgerC = initDefaultActivityLedger(1);
+
+      const res1C = evaluateActivityEvent(petC, ledgerC, openEvent, nowUtc);
+      assert.equal(res1C.result.status, 'rewarded');
+      assert.equal(res1C.result.xpAwarded, 25);
+
+      const res2C = evaluateActivityEvent(res1C.updatedPet, res1C.updatedLedger, mergeEvent, nowUtc);
+      assert.equal(res2C.result.status, 'rewarded');
+      assert.equal(res2C.result.xpAwarded, 50);
+      assert.equal(res2C.updatedPet.xp, 75, 'Must award 75 XP total for opening and merging');
     });
   });
 });

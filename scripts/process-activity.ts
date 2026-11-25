@@ -146,7 +146,12 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
   const execGitCmd = options.execGitFn || execGit;
   const prContext = isPrContext(eventName, targetRef);
 
-  // 1. Recover any unapplied transactions from interrupted executions (only on non-PR runs)
+  // Take snapshot backups of ledger and pet state in case cycle crashes or throws
+  const rawLedgerBackup = await fs.readFile(path.join(baseDir, 'pet/ledger/activity.json'), 'utf-8').catch(() => null);
+  const rawPetBackup = await fs.readFile(path.join(baseDir, 'pet/state/pet.json'), 'utf-8').catch(() => null);
+
+  try {
+    // 1. Recover any unapplied transactions from interrupted executions (only on non-PR runs)
   if (!dryRun && !prContext) {
     await recoverActivityTransaction(baseDir);
   }
@@ -167,21 +172,41 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
   const stopAtIssueNumber = initialLedger?.checkpoints?.lastIssueNumber;
   const stopAtPrNumber = initialLedger?.checkpoints?.lastPrNumber;
   const lastReconciledIso = initialLedger?.checkpoints?.reconciledAt;
+  const activeHistoricalCursor = initialLedger?.checkpoints?.historicalRecoveryCursor;
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+  const ninetyDaysAgo = new Date(Date.now() - ninetyDaysMs).toISOString();
 
   let effectiveSinceIso = fourteenDaysAgo;
   let isCappedAtLookbackCeiling = false;
-  if (lastReconciledIso) {
+  let nextHistoricalRecoveryCursor: string | undefined = undefined;
+
+  if (activeHistoricalCursor) {
+    const cursorTime = new Date(activeHistoricalCursor).getTime();
+    if (!Number.isNaN(cursorTime)) {
+      // Historical recovery mode: process a bounded batch starting from cursorTime
+      effectiveSinceIso = new Date(cursorTime).toISOString();
+      const batchEndTarget = cursorTime + ninetyDaysMs;
+      if (batchEndTarget >= Date.now() - ninetyDaysMs) {
+        // This batch covers the remaining historical gap up to the recent window
+        nextHistoricalRecoveryCursor = undefined;
+      } else {
+        // Advance cursor by 90 days for next run
+        nextHistoricalRecoveryCursor = new Date(batchEndTarget).toISOString();
+      }
+    }
+  } else if (lastReconciledIso) {
     const lastTime = new Date(lastReconciledIso).getTime();
     if (!Number.isNaN(lastTime)) {
       // Lookback includes 2-day overlap before last successful reconciliation
-      const candidateSince = new Date(lastTime - 2 * 24 * 60 * 60 * 1000).toISOString();
-      if (new Date(candidateSince).getTime() < new Date(fourteenDaysAgo).getTime()) {
-        // Outage lasted > 14 days: dynamically expand lookback window (capped at 90 days to prevent unbounded scanning)
-        const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-        if (new Date(candidateSince).getTime() < new Date(ninetyDaysAgo).getTime()) {
+      const candidateSinceTime = lastTime - 2 * 24 * 60 * 60 * 1000;
+      const candidateSince = new Date(candidateSinceTime).toISOString();
+      if (candidateSinceTime < Date.now() - 14 * 24 * 60 * 60 * 1000) {
+        if (candidateSinceTime < Date.now() - ninetyDaysMs) {
+          // Outage lasted > 90 days: scan recent 90-day window now, and store cursor for older work
           effectiveSinceIso = ninetyDaysAgo;
           isCappedAtLookbackCeiling = true;
+          nextHistoricalRecoveryCursor = candidateSince;
         } else {
           effectiveSinceIso = candidateSince;
         }
@@ -193,7 +218,7 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
 
   // 3. Complete Activity Reconciliation (Git Commits + GitHub API Issues/PRs/Reviews)
   // Skip full reconciliation sweep in PR context to prevent sweeping repository history or advancing checkpoints
-  let reconciliationCheckpoints: { lastCommitSha?: string; lastIssueNumber?: number; lastPrNumber?: number; reconciledAt: string } | undefined;
+  let reconciliationCheckpoints: { lastCommitSha?: string; lastIssueNumber?: number; lastPrNumber?: number; reconciledAt: string; historicalRecoveryCursor?: string } | undefined;
   let reconCompletedFully = true;
   let reconTelemetry: ActivityReconciliationTelemetry | undefined;
 
@@ -212,6 +237,8 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
         stopAtSha,
         stopAtIssueNumber,
         stopAtPrNumber,
+        historicalRecoveryCursor: nextHistoricalRecoveryCursor,
+        activeHistoricalCursor,
       });
 
       reconciliationCheckpoints = recon.checkpoints;
@@ -228,9 +255,17 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
         warnings: recon.warnings,
       };
 
-      if (isCappedAtLookbackCeiling) {
-        const ceilingMsg = `Reconciliation lookback window reached 90-day ceiling. Outage spanned from ${lastReconciledIso}. Events prior to ${effectiveSinceIso} were bounded to avoid unbounded scanning.`;
+      if (isCappedAtLookbackCeiling && nextHistoricalRecoveryCursor) {
+        const ceilingMsg = `Reconciliation lookback window reached 90-day ceiling. Outage began at ${lastReconciledIso}. Processed recent 90-day batch; historical recovery cursor saved to ${nextHistoricalRecoveryCursor} for resumption on subsequent cycles.`;
         recon.warnings.push(ceilingMsg);
+      }
+
+      if (activeHistoricalCursor) {
+        if (!nextHistoricalRecoveryCursor) {
+          console.log(`[RECONCILIATION NOTICE] Historical recovery batch complete. All historical periods reconciled.`);
+        } else {
+          console.log(`[RECONCILIATION NOTICE] Historical recovery batch complete. Advanced cursor to ${nextHistoricalRecoveryCursor}.`);
+        }
       }
 
       if (recon.warnings.length > 0) {
@@ -255,6 +290,22 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
   }
 
   if (eventsToProcess.length === 0) {
+    if (!prContext && initialLedger && reconciliationCheckpoints && reconCompletedFully) {
+      if (
+        reconciliationCheckpoints.historicalRecoveryCursor !== undefined ||
+        activeHistoricalCursor !== undefined ||
+        isCappedAtLookbackCeiling
+      ) {
+        initialLedger.checkpoints = reconciliationCheckpoints;
+        if (!dryRun) {
+          await fs.writeFile(
+            path.join(baseDir, 'pet/ledger/activity.json'),
+            JSON.stringify(initialLedger, null, 2) + '\n',
+            'utf-8'
+          );
+        }
+      }
+    }
     console.log('[NO-OP] No qualifying activity events found in execution context.');
     writeStepSummary(
       formatActivitySummary({
@@ -284,7 +335,7 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
   const processedResults: ProcessActivityResult[] = [];
   const processedTelemetry: ProcessedEventTelemetry[] = [];
   let currentPet: PetStateDocument | undefined;
-  let currentLedger: ActivityLedgerDocument | undefined;
+  let currentLedger: ActivityLedgerDocument | undefined = initialLedger ?? undefined;
   let currentArchive: ActivityArchiveDocument | undefined;
 
   // In PR context, force dryRun for individual event processing so working tree is never dirtied on the runner
@@ -465,6 +516,17 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
           : undefined,
     })
   );
+  } catch (err) {
+    if (!dryRun && !prContext) {
+      if (rawLedgerBackup !== null) {
+        await fs.writeFile(path.join(baseDir, 'pet/ledger/activity.json'), rawLedgerBackup, 'utf-8').catch(() => {});
+      }
+      if (rawPetBackup !== null) {
+        await fs.writeFile(path.join(baseDir, 'pet/state/pet.json'), rawPetBackup, 'utf-8').catch(() => {});
+      }
+    }
+    throw err;
+  }
 }
 
 async function main() {

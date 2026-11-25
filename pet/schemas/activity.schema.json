@@ -120,7 +120,8 @@
         "lastCommitSha": { "type": "string" },
         "lastIssueNumber": { "type": "integer", "minimum": 1 },
         "lastPrNumber": { "type": "integer", "minimum": 1 },
-        "reconciledAt": { "type": "string", "format": "date-time" }
+        "reconciledAt": { "type": "string", "format": "date-time" },
+        "historicalRecoveryCursor": { "type": "string", "format": "date-time" }
       },
       "additionalProperties": false
     },

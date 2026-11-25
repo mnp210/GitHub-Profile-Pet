@@ -55,6 +55,7 @@ export interface ActivityReconciliationCheckpoints {
   lastIssueNumber?: number;
   lastPrNumber?: number;
   reconciledAt: string;
+  historicalRecoveryCursor?: string; // Earliest timestamp reached by bounded historical recovery
 }
 
 export interface ActivityArchiveBatch {
