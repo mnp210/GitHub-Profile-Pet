@@ -57,6 +57,7 @@ export interface ActivityReconciliationCheckpoints {
   reconciledAt: string;
   historicalRecoveryCursor?: string; // Earliest timestamp reached by bounded historical recovery
   historicalPrCompleted?: boolean; // True when historical PR discovery below legacy checkpoints has established complete coverage
+  historicalPrContinuationPage?: number; // Next page number to resume historical PR discovery when bounded ceiling is reached
 }
 
 export interface ActivityArchiveBatch {

@@ -2069,4 +2069,589 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
       assert.equal(petAfterRepeat.xp, 15, 'Repeated run must award zero duplicate XP (remains 15)');
     });
   });
+
+  describe('15. Sprint 5.2D-P Final Historical Recovery Semantics & Pagination Resumption', () => {
+    const now = new Date('2026-11-25T12:00:00.000Z').getTime();
+    const nowUtc = new Date(now).toISOString();
+
+    describe('Section A: Early Termination and Registry Semantics (6 Cases)', () => {
+      const page1StaleRecorded = [
+        { number: 50, title: 'PR 50', user: { login: 'u50' }, created_at: new Date(now - 20 * 86400000).toISOString() },
+        { number: 49, title: 'PR 49', user: { login: 'u49' }, created_at: new Date(now - 21 * 86400000).toISOString() },
+      ];
+      const page2StaleMissing = [
+        { number: 42, title: 'PR 42', user: { login: 'u42' }, created_at: new Date(now - 180 * 86400000).toISOString() },
+      ];
+
+      it('Case 1: historicalPrCompleted: false, registry undefined -> discovery REQUIRED, early termination FORBIDDEN', async () => {
+        let page2Fetched = false;
+        const mockFetch = async (url: string | URL | Request) => {
+          const urlStr = url.toString();
+          if (urlStr.includes('/pulls?state=all')) {
+            const page = new URL(urlStr).searchParams.get('page');
+            if (page === '1') return new Response(JSON.stringify(page1StaleRecorded), { status: 200 });
+            if (page === '2') {
+              page2Fetched = true;
+              return new Response(JSON.stringify(page2StaleMissing), { status: 200 });
+            }
+            return new Response(JSON.stringify([]), { status: 200 });
+          }
+          return new Response(JSON.stringify([]), { status: 200 });
+        };
+
+        const res = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 50,
+          pageSize: 2,
+          maxPages: 3,
+          historicalPrCompleted: false,
+          processedPrOpenedNumbers: undefined,
+          fetchFn: mockFetch,
+        });
+
+        assert.equal(page2Fetched, true, 'Page 2 must be fetched; absent registry cannot terminate early');
+        assert.ok(res.events.some((e) => e.eventId === 'pr_opened:42'), 'PR #42 must be discovered');
+      });
+
+      it('Case 2: historicalPrCompleted: false, empty registry -> discovery REQUIRED, early termination FORBIDDEN', async () => {
+        let page2Fetched = false;
+        const mockFetch = async (url: string | URL | Request) => {
+          const urlStr = url.toString();
+          if (urlStr.includes('/pulls?state=all')) {
+            const page = new URL(urlStr).searchParams.get('page');
+            if (page === '1') return new Response(JSON.stringify(page1StaleRecorded), { status: 200 });
+            if (page === '2') {
+              page2Fetched = true;
+              return new Response(JSON.stringify(page2StaleMissing), { status: 200 });
+            }
+            return new Response(JSON.stringify([]), { status: 200 });
+          }
+          return new Response(JSON.stringify([]), { status: 200 });
+        };
+
+        const res = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 50,
+          pageSize: 2,
+          maxPages: 3,
+          historicalPrCompleted: false,
+          processedPrOpenedNumbers: [],
+          fetchFn: mockFetch,
+        });
+
+        assert.equal(page2Fetched, true, 'Page 2 must be reached when registry is empty');
+        assert.ok(res.events.some((e) => e.eventId === 'pr_opened:42'), 'PR #42 must be discovered');
+      });
+
+      it('Case 3: historicalPrCompleted: false, populated registry -> discovery REQUIRED, early termination FORBIDDEN on full page', async () => {
+        let page2Fetched = false;
+        const mockFetch = async (url: string | URL | Request) => {
+          const urlStr = url.toString();
+          if (urlStr.includes('/pulls?state=all')) {
+            const page = new URL(urlStr).searchParams.get('page');
+            if (page === '1') return new Response(JSON.stringify(page1StaleRecorded), { status: 200 });
+            if (page === '2') {
+              page2Fetched = true;
+              return new Response(JSON.stringify(page2StaleMissing), { status: 200 });
+            }
+            return new Response(JSON.stringify([]), { status: 200 });
+          }
+          return new Response(JSON.stringify([]), { status: 200 });
+        };
+
+        const res = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 50,
+          pageSize: 2,
+          maxPages: 3,
+          historicalPrCompleted: false,
+          processedPrOpenedNumbers: [50, 49],
+          fetchFn: mockFetch,
+        });
+
+        assert.equal(page2Fetched, true, 'Page 2 must be reached even if Page 1 is 100% in registry');
+        assert.ok(res.events.some((e) => e.eventId === 'pr_opened:42'), 'PR #42 must be discovered');
+      });
+
+      it('Case 4: historicalPrCompleted: true, populated registry -> discovery NOT REQUIRED, early termination PERMITTED (fast path)', async () => {
+        let page2Fetched = false;
+        const mockFetch = async (url: string | URL | Request) => {
+          const urlStr = url.toString();
+          if (urlStr.includes('/pulls?state=all')) {
+            const page = new URL(urlStr).searchParams.get('page');
+            if (page === '1') return new Response(JSON.stringify(page1StaleRecorded), { status: 200 });
+            if (page === '2') {
+              page2Fetched = true;
+              return new Response(JSON.stringify(page2StaleMissing), { status: 200 });
+            }
+            return new Response(JSON.stringify([]), { status: 200 });
+          }
+          return new Response(JSON.stringify([]), { status: 200 });
+        };
+
+        const res = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 50,
+          pageSize: 2,
+          maxPages: 3,
+          historicalPrCompleted: true,
+          processedPrOpenedNumbers: [50, 49, 42],
+          fetchFn: mockFetch,
+        });
+
+        assert.equal(page2Fetched, false, 'Page 2 must NEVER be fetched when historicalPrCompleted: true (fast path)');
+        assert.equal(res.events.length, 0, 'Zero events discovered on routine fast-path run');
+      });
+
+      it('Case 5: Legacy checkpoint migration (marker absent) -> discovery REQUIRED, fail-closed against early termination', async () => {
+        let page2Fetched = false;
+        const mockFetch = async (url: string | URL | Request) => {
+          const urlStr = url.toString();
+          if (urlStr.includes('/pulls?state=all')) {
+            const page = new URL(urlStr).searchParams.get('page');
+            if (page === '1') return new Response(JSON.stringify(page1StaleRecorded), { status: 200 });
+            if (page === '2') {
+              page2Fetched = true;
+              return new Response(JSON.stringify(page2StaleMissing), { status: 200 });
+            }
+            return new Response(JSON.stringify([]), { status: 200 });
+          }
+          return new Response(JSON.stringify([]), { status: 200 });
+        };
+
+        const res = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 50,
+          pageSize: 2,
+          maxPages: 3,
+          historicalPrCompleted: undefined, // legacy absent marker
+          processedPrOpenedNumbers: [50, 49],
+          fetchFn: mockFetch,
+        });
+
+        assert.equal(page2Fetched, true, 'Legacy absent marker must be treated fail-closed as false');
+        assert.ok(res.events.some((e) => e.eventId === 'pr_opened:42'), 'PR #42 must be discovered');
+      });
+
+      it('Case 6: Corrupted registry data -> safely normalized without throwing, early termination FORBIDDEN', async () => {
+        let page2Fetched = false;
+        const mockFetch = async (url: string | URL | Request) => {
+          const urlStr = url.toString();
+          if (urlStr.includes('/pulls?state=all')) {
+            const page = new URL(urlStr).searchParams.get('page');
+            if (page === '1') return new Response(JSON.stringify(page1StaleRecorded), { status: 200 });
+            if (page === '2') {
+              page2Fetched = true;
+              return new Response(JSON.stringify(page2StaleMissing), { status: 200 });
+            }
+            return new Response(JSON.stringify([]), { status: 200 });
+          }
+          return new Response(JSON.stringify([]), { status: 200 });
+        };
+
+        const res = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 50,
+          pageSize: 2,
+          maxPages: 3,
+          historicalPrCompleted: false,
+          processedPrOpenedNumbers: 'corrupted' as unknown as number[],
+          fetchFn: mockFetch,
+        });
+
+        assert.equal(page2Fetched, true, 'Page 2 must be fetched despite corrupted registry');
+        assert.ok(res.warnings.some((w) => w.includes('corrupted')), 'Warning must be logged for corrupted registry');
+        assert.ok(res.events.some((e) => e.eventId === 'pr_opened:42'), 'PR #42 must be discovered');
+      });
+    });
+
+    describe('Section B: Pagination Resumption Under Changing API Results (Shifting Pages)', () => {
+      it('proves resumable recovery when a new PR is created and page boundaries shift between batches', async () => {
+        const p1 = [
+          { number: 50, title: 'PR 50', user: { login: 'u50' }, created_at: new Date(now - 20 * 86400000).toISOString() },
+          { number: 49, title: 'PR 49', user: { login: 'u49' }, created_at: new Date(now - 21 * 86400000).toISOString() },
+        ];
+        const p2 = [
+          { number: 42, title: 'PR 42', user: { login: 'u42' }, created_at: new Date(now - 180 * 86400000).toISOString() },
+          { number: 30, title: 'PR 30', user: { login: 'u30' }, created_at: new Date(now - 190 * 86400000).toISOString() },
+        ];
+        const p3 = [
+          { number: 20, title: 'PR 20', user: { login: 'u20' }, created_at: new Date(now - 200 * 86400000).toISOString() },
+          { number: 10, title: 'PR 10', user: { login: 'u10' }, created_at: new Date(now - 210 * 86400000).toISOString() },
+        ];
+
+        const mockFetchBatch1 = async (url: string | URL | Request) => {
+          const urlStr = url.toString();
+          if (urlStr.includes('/pulls?state=all')) {
+            const page = new URL(urlStr).searchParams.get('page');
+            if (page === '1') return new Response(JSON.stringify(p1), { status: 200 });
+            if (page === '2') return new Response(JSON.stringify(p2), { status: 200 });
+            if (page === '3') return new Response(JSON.stringify(p3), { status: 200 });
+            return new Response(JSON.stringify([]), { status: 200 });
+          }
+          return new Response(JSON.stringify([]), { status: 200 });
+        };
+
+        // Batch 1: maxPages = 2, pageSize = 2
+        const batch1 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 50,
+          pageSize: 2,
+          maxPages: 2,
+          historicalPrCompleted: false,
+          processedPrOpenedNumbers: [50, 49, 20],
+          fetchFn: mockFetchBatch1,
+        });
+
+        assert.equal(batch1.completedFully, false, 'Batch 1 capped at maxPages = 2');
+        assert.equal(batch1.historicalPrContinuationPage, 3, 'Batch 1 continuation page must be 3');
+        assert.ok(batch1.events.some((e) => e.eventId === 'pr_opened:42'));
+        assert.ok(batch1.events.some((e) => e.eventId === 'pr_opened:30'));
+
+        // Commit Batch 1 into state
+        const pet = createMockPetState();
+        const ledger = initDefaultActivityLedger(1);
+        ledger.processedRegistry.prOpenedNumbers = [50, 49, 20];
+        let state = { updatedPet: pet, updatedLedger: ledger };
+        for (const evt of batch1.events) {
+          state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
+        }
+        assert.equal(state.updatedPet.xp, 50, 'Batch 1 must award +50 XP for PR #42 and #30');
+        assert.ok(state.updatedLedger.processedRegistry.prOpenedNumbers.includes(42));
+        assert.ok(state.updatedLedger.processedRegistry.prOpenedNumbers.includes(30));
+
+        // NOW: New PR #51 created before Batch 2!
+        const p1Shifted = [
+          { number: 51, title: 'PR 51', user: { login: 'u51' }, created_at: new Date(now - 1 * 3600000).toISOString() },
+          { number: 50, title: 'PR 50', user: { login: 'u50' }, created_at: new Date(now - 20 * 86400000).toISOString() },
+        ];
+        const p2Shifted = [
+          { number: 49, title: 'PR 49', user: { login: 'u49' }, created_at: new Date(now - 21 * 86400000).toISOString() },
+          { number: 42, title: 'PR 42', user: { login: 'u42' }, created_at: new Date(now - 180 * 86400000).toISOString() },
+        ];
+        const p3Shifted = [
+          { number: 30, title: 'PR 30', user: { login: 'u30' }, created_at: new Date(now - 190 * 86400000).toISOString() },
+          { number: 20, title: 'PR 20', user: { login: 'u20' }, created_at: new Date(now - 200 * 86400000).toISOString() },
+        ];
+        const p4Shifted = [
+          { number: 10, title: 'PR 10', user: { login: 'u10' }, created_at: new Date(now - 210 * 86400000).toISOString() },
+        ];
+
+        const mockFetchBatch2 = async (url: string | URL | Request) => {
+          const urlStr = url.toString();
+          if (urlStr.includes('/pulls?state=all')) {
+            const page = new URL(urlStr).searchParams.get('page');
+            if (page === '1') return new Response(JSON.stringify(p1Shifted), { status: 200 });
+            if (page === '2') return new Response(JSON.stringify(p2Shifted), { status: 200 });
+            if (page === '3') return new Response(JSON.stringify(p3Shifted), { status: 200 });
+            if (page === '4') return new Response(JSON.stringify(p4Shifted), { status: 200 });
+            return new Response(JSON.stringify([]), { status: 200 });
+          }
+          return new Response(JSON.stringify([]), { status: 200 });
+        };
+
+        // Batch 2 resumes using historicalPrContinuationPage: 3
+        const batch2 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 50,
+          pageSize: 2,
+          maxPages: 3, // Fetches Page 1 (for new PR #51) + Page 3 & Page 4
+          historicalPrCompleted: false,
+          historicalPrContinuationPage: batch1.historicalPrContinuationPage,
+          processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
+          fetchFn: mockFetchBatch2,
+        });
+
+        assert.equal(batch2.completedFully, true, 'Batch 2 must complete to stream end');
+        assert.equal(batch2.historicalPrCompleted, true, 'historicalPrCompleted must become true');
+        assert.equal(batch2.historicalPrContinuationPage, undefined, 'Continuation page must be cleared');
+
+        assert.ok(batch2.events.some((e) => e.eventId === 'pr_opened:51'), 'New PR #51 must be discovered on Page 1');
+        assert.ok(batch2.events.some((e) => e.eventId === 'pr_opened:10'), 'Older PR #10 must be discovered on Page 4');
+
+        for (const evt of batch2.events) {
+          state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
+        }
+        // Initial 50 XP (from PR 42 & 30) + 25 XP (PR 51) + 25 XP (PR 10) = 100 XP -> Level up to Level 2
+        // PR #30 on Page 3 was evaluated as duplicate and awarded 0 XP!
+        assert.equal(state.updatedPet.level, 2, 'Pet must level up to Level 2 at 100 XP');
+        assert.equal(state.updatedPet.xp, 0, 'XP resets to 0 upon reaching 100 XP');
+        assert.ok(state.updatedLedger.processedRegistry.prOpenedNumbers.includes(51));
+        assert.ok(state.updatedLedger.processedRegistry.prOpenedNumbers.includes(10));
+      });
+
+      it('proves repeated insertion of new PRs across multiple bounded batches without starving historical discovery', async () => {
+        const repoPrs = [
+          { number: 40, title: 'PR 40', user: { login: 'u40' }, created_at: new Date(now - 100 * 86400000).toISOString() },
+          { number: 30, title: 'PR 30', user: { login: 'u30' }, created_at: new Date(now - 120 * 86400000).toISOString() },
+          { number: 20, title: 'PR 20', user: { login: 'u20' }, created_at: new Date(now - 140 * 86400000).toISOString() },
+          { number: 10, title: 'PR 10', user: { login: 'u10' }, created_at: new Date(now - 160 * 86400000).toISOString() },
+        ];
+
+        const createMockFetch = () => async (url: string | URL | Request) => {
+          const urlStr = url.toString();
+          if (urlStr.includes('/pulls?state=all')) {
+            const page = parseInt(new URL(urlStr).searchParams.get('page') || '1', 10);
+            const pageSize = 2;
+            const start = (page - 1) * pageSize;
+            const slice = repoPrs.slice(start, start + pageSize);
+            return new Response(JSON.stringify(slice), { status: 200 });
+          }
+          return new Response(JSON.stringify([]), { status: 200 });
+        };
+
+        const pet = createMockPetState();
+        const ledger = initDefaultActivityLedger(1);
+        let state = { updatedPet: pet, updatedLedger: ledger };
+
+        // Batch 1: maxPages = 1, pageSize = 2. Scans Page 1 -> discovers #40, #30
+        const b1 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 40,
+          pageSize: 2,
+          maxPages: 1,
+          historicalPrCompleted: false,
+          processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
+          fetchFn: createMockFetch(),
+        });
+        assert.equal(b1.completedFully, false);
+        assert.equal(b1.historicalPrContinuationPage, 2);
+        for (const evt of b1.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
+        assert.equal(state.updatedPet.xp, 50, 'Batch 1 awards +50 XP for #40 & #30');
+
+        // New PR #50 inserted before Batch 2
+        repoPrs.unshift({ number: 50, title: 'PR 50', user: { login: 'u50' }, created_at: new Date(now - 1 * 86400000).toISOString() });
+
+        // Batch 2: maxPages = 2. Scans Page 1 (finds #50) and Page 2 (finds #20)
+        const b2 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 40,
+          pageSize: 2,
+          maxPages: 2,
+          historicalPrCompleted: false,
+          historicalPrContinuationPage: b1.historicalPrContinuationPage,
+          processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
+          fetchFn: createMockFetch(),
+        });
+        assert.equal(b2.completedFully, false);
+        assert.equal(b2.historicalPrContinuationPage, 3);
+        for (const evt of b2.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
+        assert.equal(state.updatedPet.level, 2, 'Pet leveled up to Level 2 at 100 XP');
+        assert.equal(state.updatedPet.xp, 0, 'XP resets to 0 at Level 2');
+
+        // New PR #60 inserted before Batch 3
+        repoPrs.unshift({ number: 60, title: 'PR 60', user: { login: 'u60' }, created_at: new Date(now - 1000).toISOString() });
+
+        // Batch 3: maxPages = 3. Scans Page 1 (finds #60), Page 3 (reads #20, #10), and Page 4 ([]), reaching stream end!
+        const b3 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 40,
+          pageSize: 2,
+          maxPages: 3,
+          historicalPrCompleted: false,
+          historicalPrContinuationPage: b2.historicalPrContinuationPage,
+          processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
+          fetchFn: createMockFetch(),
+        });
+        assert.equal(b3.completedFully, true, 'Batch 3 completes to stream end');
+        assert.equal(b3.historicalPrCompleted, true, 'historicalPrCompleted must be true');
+        assert.equal(b3.historicalPrContinuationPage, undefined, 'Continuation page must be cleared');
+        for (const evt of b3.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
+        assert.equal(state.updatedPet.level, 2, 'Pet remains at Level 2');
+        assert.equal(state.updatedPet.xp, 50, 'Level 2 has 50 XP (25 for #60 + 25 for #10)');
+      });
+    });
+
+    describe('Section C: Historical Completion Semantics (8 Conditions)', () => {
+      it('Condition 1: Full page with zero eligible PRs does NOT mark historicalPrCompleted: true', async () => {
+        const fullPageStale = [
+          { number: 50, title: 'PR 50', user: { login: 'u50' }, created_at: new Date(now - 20 * 86400000).toISOString() },
+          { number: 49, title: 'PR 49', user: { login: 'u49' }, created_at: new Date(now - 21 * 86400000).toISOString() },
+        ];
+        const mockFetch = async () => new Response(JSON.stringify(fullPageStale), { status: 200 });
+
+        const res = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 50,
+          pageSize: 2,
+          maxPages: 1,
+          historicalPrCompleted: false,
+          processedPrOpenedNumbers: [50, 49],
+          fetchFn: mockFetch,
+        });
+
+        assert.equal(res.completedFully, false);
+        assert.equal(res.historicalPrCompleted, false, 'Full page at ceiling must NOT mark historicalPrCompleted: true');
+      });
+
+      it('Condition 2 & 3: Partial and empty final page mark historicalPrCompleted: true', async () => {
+        const partialPage = [
+          { number: 50, title: 'PR 50', user: { login: 'u50' }, created_at: new Date(now - 20 * 86400000).toISOString() },
+        ];
+        const mockFetchPartial = async () => new Response(JSON.stringify(partialPage), { status: 200 });
+
+        const resPartial = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 50,
+          pageSize: 2,
+          maxPages: 2,
+          historicalPrCompleted: false,
+          processedPrOpenedNumbers: [50],
+          fetchFn: mockFetchPartial,
+        });
+
+        assert.equal(resPartial.completedFully, true);
+        assert.equal(resPartial.historicalPrCompleted, true, 'Partial page must mark historicalPrCompleted: true');
+
+        const mockFetchEmpty = async () => new Response(JSON.stringify([]), { status: 200 });
+        const resEmpty = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 50,
+          pageSize: 2,
+          maxPages: 2,
+          historicalPrCompleted: false,
+          processedPrOpenedNumbers: [],
+          fetchFn: mockFetchEmpty,
+        });
+
+        assert.equal(resEmpty.completedFully, true);
+        assert.equal(resEmpty.historicalPrCompleted, true, 'Empty page must mark historicalPrCompleted: true');
+      });
+
+      it('Condition 4: Full page at pagination ceiling marks completedFully: false and preserves checkpoints', async () => {
+        const full100 = Array.from({ length: 100 }, (_, i) => ({
+          number: 1000 - i,
+          title: `PR ${1000 - i}`,
+          user: { login: 'u' },
+          created_at: nowUtc,
+        }));
+        const mockFetch = async () => new Response(JSON.stringify(full100), { status: 200 });
+
+        const res = await performCompleteReconciliation({
+          baseDir: process.cwd(),
+          token: 'dummy-token',
+          repository: 'mnp210/GitHub-Profile-Pet',
+          stopAtPrNumber: 50,
+          historicalPrCompleted: false,
+          activeHistoricalCursor: new Date(now - 120 * 86400000).toISOString(),
+          processedPrOpenedNumbers: [50, 49],
+          fetchFn: mockFetch,
+        });
+
+        assert.equal(res.completedFully, false);
+        assert.equal(res.checkpoints.historicalPrCompleted, false);
+        assert.equal(res.checkpoints.lastPrNumber, 50, 'Checkpoint lastPrNumber must not advance');
+        assert.equal(res.checkpoints.historicalRecoveryCursor, new Date(now - 120 * 86400000).toISOString(), 'Cursor must remain active');
+      });
+
+      it('Condition 5 & 6: API failure on later page marks completedFully: false, retry succeeds and advances', async () => {
+        let shouldFail = true;
+        const mockFetch = async (url: string | URL | Request) => {
+          const urlStr = url.toString();
+          if (urlStr.includes('/pulls?state=all')) {
+            const page = new URL(urlStr).searchParams.get('page');
+            if (page === '1') {
+              return new Response(JSON.stringify([
+                { number: 50, title: 'PR 50', user: { login: 'u50' }, created_at: new Date(now - 20 * 86400000).toISOString() },
+                { number: 49, title: 'PR 49', user: { login: 'u49' }, created_at: new Date(now - 21 * 86400000).toISOString() },
+              ]), { status: 200 });
+            }
+            if (page === '2') {
+              if (shouldFail) return new Response('Server Error', { status: 500, statusText: 'Internal Error' });
+              return new Response(JSON.stringify([
+                { number: 42, title: 'PR 42', user: { login: 'u42' }, created_at: new Date(now - 180 * 86400000).toISOString() },
+              ]), { status: 200 });
+            }
+            return new Response(JSON.stringify([]), { status: 200 });
+          }
+          return new Response(JSON.stringify([]), { status: 200 });
+        };
+
+        const failRun = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 50,
+          pageSize: 2,
+          maxPages: 3,
+          historicalPrCompleted: false,
+          processedPrOpenedNumbers: [50, 49],
+          fetchFn: mockFetch,
+        });
+        assert.equal(failRun.completedFully, false);
+        assert.equal(failRun.historicalPrCompleted, false);
+
+        shouldFail = false;
+        const retryRun = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 50,
+          pageSize: 2,
+          maxPages: 3,
+          historicalPrCompleted: false,
+          processedPrOpenedNumbers: [50, 49],
+          fetchFn: mockFetch,
+        });
+        assert.equal(retryRun.completedFully, true);
+        assert.equal(retryRun.historicalPrCompleted, true);
+        assert.ok(retryRun.events.some((e) => e.eventId === 'pr_opened:42'), 'PR #42 discovered on retry');
+      });
+
+      it('Condition 7 & 8: Historical cursor preserved while PR discovery incomplete, cleared when complete', async () => {
+        const activeCursor = new Date(now - 120 * 86400000).toISOString();
+
+        // Incomplete run (hits ceiling)
+        const incompleteRun = await performCompleteReconciliation({
+          baseDir: process.cwd(),
+          token: 'dummy-token',
+          repository: 'mnp210/GitHub-Profile-Pet',
+          stopAtPrNumber: 50,
+          historicalRecoveryCursor: undefined,
+          activeHistoricalCursor: activeCursor,
+          historicalPrCompleted: false,
+          processedPrOpenedNumbers: [50, 49],
+          fetchFn: async (url: string | URL | Request) => {
+            const urlStr = url.toString();
+            if (urlStr.includes('/pulls?state=all')) {
+              // Return full page on every request to trigger pagination ceiling
+              const full100 = Array.from({ length: 100 }, (_, i) => ({
+                number: 1000 - i,
+                title: `PR ${1000 - i}`,
+                user: { login: 'u' },
+                created_at: nowUtc,
+              }));
+              return new Response(JSON.stringify(full100), { status: 200 });
+            }
+            return new Response(JSON.stringify([]), { status: 200 });
+          },
+        });
+
+        assert.equal(incompleteRun.completedFully, false);
+        assert.equal(incompleteRun.checkpoints.historicalRecoveryCursor, activeCursor, 'Cursor preserved while incomplete');
+        assert.equal(incompleteRun.checkpoints.historicalPrCompleted, false);
+
+        // Complete run (partial page on stream end)
+        const completeRun = await performCompleteReconciliation({
+          baseDir: process.cwd(),
+          token: 'dummy-token',
+          repository: 'mnp210/GitHub-Profile-Pet',
+          stopAtPrNumber: 50,
+          historicalRecoveryCursor: undefined,
+          activeHistoricalCursor: activeCursor,
+          historicalPrCompleted: false,
+          processedPrOpenedNumbers: [50, 49],
+          fetchFn: async (url: string | URL | Request) => {
+            const urlStr = url.toString();
+            if (urlStr.includes('/pulls?state=all')) {
+              return new Response(JSON.stringify([
+                { number: 42, title: 'PR 42', user: { login: 'u42' }, created_at: new Date(now - 180 * 86400000).toISOString() },
+              ]), { status: 200 }); // partial page (1 < pageSize)
+            }
+            return new Response(JSON.stringify([]), { status: 200 });
+          },
+        });
+
+        assert.equal(completeRun.completedFully, true);
+        assert.equal(completeRun.checkpoints.historicalPrCompleted, true);
+        assert.equal(completeRun.checkpoints.historicalRecoveryCursor, undefined, 'Cursor cleared when fully completed');
+      });
+    });
+  });
 });

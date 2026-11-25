@@ -180,6 +180,7 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
   const lastReconciledIso = initialLedger?.checkpoints?.reconciledAt;
   const activeHistoricalCursor = initialLedger?.checkpoints?.historicalRecoveryCursor;
   const historicalPrCompleted = initialLedger?.checkpoints?.historicalPrCompleted;
+  const historicalPrContinuationPage = initialLedger?.checkpoints?.historicalPrContinuationPage;
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
   const ninetyDaysAgo = new Date(Date.now() - ninetyDaysMs).toISOString();
@@ -225,7 +226,15 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
 
   // 3. Complete Activity Reconciliation (Git Commits + GitHub API Issues/PRs/Reviews)
   // Skip full reconciliation sweep in PR context to prevent sweeping repository history or advancing checkpoints
-  let reconciliationCheckpoints: { lastCommitSha?: string; lastIssueNumber?: number; lastPrNumber?: number; reconciledAt: string; historicalRecoveryCursor?: string; historicalPrCompleted?: boolean } | undefined;
+  let reconciliationCheckpoints: {
+    lastCommitSha?: string;
+    lastIssueNumber?: number;
+    lastPrNumber?: number;
+    reconciledAt: string;
+    historicalRecoveryCursor?: string;
+    historicalPrCompleted?: boolean;
+    historicalPrContinuationPage?: number;
+  } | undefined;
   let reconCompletedFully = true;
   let reconTelemetry: ActivityReconciliationTelemetry | undefined;
 
@@ -247,6 +256,7 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
         historicalRecoveryCursor: nextHistoricalRecoveryCursor,
         activeHistoricalCursor,
         historicalPrCompleted,
+        historicalPrContinuationPage,
         processedPrOpenedNumbers: initialLedger?.processedRegistry?.prOpenedNumbers,
       });
 
@@ -394,9 +404,20 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
     }
   }
 
-  // Update checkpoints in ledger only if NOT in PR context AND reconciliation completed fully
-  if (!prContext && currentLedger && reconciliationCheckpoints && reconCompletedFully) {
-    currentLedger.checkpoints = reconciliationCheckpoints;
+  // Update checkpoints in ledger only if NOT in PR context
+  if (!prContext && currentLedger && reconciliationCheckpoints) {
+    if (reconCompletedFully) {
+      currentLedger.checkpoints = reconciliationCheckpoints;
+    } else {
+      console.log('[RECONCILIATION NOTICE] Primary checkpoints preserved without advancement due to incomplete reconciliation sweep.');
+      if (reconciliationCheckpoints.historicalPrContinuationPage !== undefined) {
+        currentLedger.checkpoints = {
+          ...currentLedger.checkpoints,
+          reconciledAt: currentLedger.checkpoints?.reconciledAt ?? reconciliationCheckpoints.reconciledAt,
+          historicalPrContinuationPage: reconciliationCheckpoints.historicalPrContinuationPage,
+        };
+      }
+    }
     if (!dryRun) {
       await fs.writeFile(
         path.join(baseDir, 'pet/ledger/activity.json'),
@@ -404,8 +425,6 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
         'utf-8'
       );
     }
-  } else if (!prContext && !reconCompletedFully) {
-    console.log('[RECONCILIATION NOTICE] Checkpoints preserved without advancement due to incomplete reconciliation sweep.');
   }
 
   console.log(`[COMPLETE] Total Activity XP calculated: ${totalXpAwarded}`);
