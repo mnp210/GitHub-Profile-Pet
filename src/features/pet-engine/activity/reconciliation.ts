@@ -204,6 +204,11 @@ export async function reconcileGitHubApiEvents(
     return { events: [], warnings, completedFully: false, historicalPrCompleted: false };
   }
 
+  if (options.maxPages !== undefined && options.maxPages < 1) {
+    warnings.push(`Invalid maxPages option: ${options.maxPages}. Must be an integer >= 1.`);
+    return { events: [], warnings, completedFully: false, historicalPrCompleted: false };
+  }
+
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github.v3+json',
     Authorization: `Bearer ${token}`,
@@ -338,9 +343,17 @@ export async function reconcileGitHubApiEvents(
 
   const pagesToFetch: number[] = [];
   if (startContinuation > 1) {
-    pagesToFetch.push(1); // Always examine Page 1 to ensure newly opened PRs are never missed
-    for (let p = startContinuation; pagesToFetch.length < maxPages; p++) {
-      pagesToFetch.push(p);
+    if (maxPages === 1) {
+      // With a strict single-page budget (maxPages = 1), dedicate the single page to the active continuation cursor to ensure forward progress
+      warnings.push(
+        `maxPages is set to 1 with active historical continuation page ${startContinuation}; dedicating single-page budget to continuation cursor to maintain forward progress.`
+      );
+      pagesToFetch.push(startContinuation);
+    } else {
+      pagesToFetch.push(1); // Always examine Page 1 to ensure newly opened PRs are never missed
+      for (let p = startContinuation; pagesToFetch.length < maxPages; p++) {
+        pagesToFetch.push(p);
+      }
     }
   } else {
     for (let p = 1; p <= maxPages; p++) {
@@ -432,15 +445,6 @@ export async function reconcileGitHubApiEvents(
         break;
       }
 
-      if (isLastPageInBatch && pulls.length >= pageSize) {
-        warnings.push(
-          `GitHub Pull Requests API reached maximum pagination limit (${maxPages} pages). Additional uncheckpointed PRs remain unprocessed.`
-        );
-        completedFully = false;
-        nextHistoricalPrContinuationPage = page + 1;
-        break;
-      }
-
       // Early termination is only permissible when historical coverage has already been established.
       // An absent, empty, or unconfirmed registry must not be treated as evidence of historical completeness.
       const canTerminateEarly = options.historicalPrCompleted === true;
@@ -454,6 +458,15 @@ export async function reconcileGitHubApiEvents(
         if (!hasMoreEligiblePages) {
           break;
         }
+      }
+
+      if (isLastPageInBatch && pulls.length >= pageSize) {
+        warnings.push(
+          `GitHub Pull Requests API reached maximum pagination limit (${maxPages} pages). Additional uncheckpointed PRs remain unprocessed.`
+        );
+        completedFully = false;
+        nextHistoricalPrContinuationPage = page + 1;
+        break;
       }
     } catch (err) {
       warnings.push(`Failed to fetch pulls on page ${page}: ${(err as Error).message}`);
