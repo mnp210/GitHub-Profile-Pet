@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 200" width="450" height="200" shape-rendering="crispEdges">
   <title>Shadow Claw — GitHub Profile Pet</title>
-  <desc>Shadow Claw is a Level 4 cat companion in Hatchling stage. Current Mood: Focused. Energy: 100%, Satiety: 81%, Happiness: 40%.</desc>
+  <desc>Shadow Claw is a Level 4 cat companion in Hatchling stage. Current Mood: Focused. Energy: 100%, Satiety: 78%, Happiness: 40%.</desc>
   <style>
     .pet-name {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -213,9 +213,9 @@
 
     <!-- Satiety / Hunger Gauge -->
     <text x="150" y="119" class="vital-label">🍖 Satiety</text>
-    <text x="420" y="119" class="vital-value" text-anchor="end">81%</text>
+    <text x="420" y="119" class="vital-value" text-anchor="end">78%</text>
     <rect x="150" y="124" width="270" height="5" rx="2.5" fill="#161b22" />
-    <rect x="150" y="124" width="218.7" height="5" rx="2.5" fill="#10b981" />
+    <rect x="150" y="124" width="210.6" height="5" rx="2.5" fill="#10b981" />
 
     <!-- Joy / Happiness Gauge -->
     <text x="150" y="145" class="vital-label">💖 Joy</text>
