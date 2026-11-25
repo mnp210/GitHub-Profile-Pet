@@ -179,6 +179,7 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
   const stopAtPrNumber = initialLedger?.checkpoints?.lastPrNumber;
   const lastReconciledIso = initialLedger?.checkpoints?.reconciledAt;
   const activeHistoricalCursor = initialLedger?.checkpoints?.historicalRecoveryCursor;
+  const historicalPrCompleted = initialLedger?.checkpoints?.historicalPrCompleted;
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
   const ninetyDaysAgo = new Date(Date.now() - ninetyDaysMs).toISOString();
@@ -224,7 +225,7 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
 
   // 3. Complete Activity Reconciliation (Git Commits + GitHub API Issues/PRs/Reviews)
   // Skip full reconciliation sweep in PR context to prevent sweeping repository history or advancing checkpoints
-  let reconciliationCheckpoints: { lastCommitSha?: string; lastIssueNumber?: number; lastPrNumber?: number; reconciledAt: string; historicalRecoveryCursor?: string } | undefined;
+  let reconciliationCheckpoints: { lastCommitSha?: string; lastIssueNumber?: number; lastPrNumber?: number; reconciledAt: string; historicalRecoveryCursor?: string; historicalPrCompleted?: boolean } | undefined;
   let reconCompletedFully = true;
   let reconTelemetry: ActivityReconciliationTelemetry | undefined;
 
@@ -245,6 +246,7 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
         stopAtPrNumber,
         historicalRecoveryCursor: nextHistoricalRecoveryCursor,
         activeHistoricalCursor,
+        historicalPrCompleted,
         processedPrOpenedNumbers: initialLedger?.processedRegistry?.prOpenedNumbers,
       });
 

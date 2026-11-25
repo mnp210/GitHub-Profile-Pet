@@ -42,6 +42,7 @@ export interface ReconcileOptions {
   stopAtPrNumber?: number;
   historicalRecoveryCursor?: string;
   activeHistoricalCursor?: string;
+  historicalPrCompleted?: boolean;
   processedPrOpenedNumbers?: number[];
   nowUtc?: string;
   fetchFn?: typeof fetch;
@@ -57,6 +58,7 @@ export interface ReconcileResult {
     lastPrNumber?: number;
     reconciledAt: string;
     historicalRecoveryCursor?: string;
+    historicalPrCompleted?: boolean;
   };
   warnings: string[];
   completedFully: boolean;
@@ -165,6 +167,7 @@ export async function reconcileGitHubApiEvents(
     stopAtIssueNumber?: number;
     stopAtPrNumber?: number;
     processedPrOpenedNumbers?: number[];
+    historicalPrCompleted?: boolean;
     maxPages?: number;
     pageSize?: number;
     fetchFn?: typeof fetch;
@@ -173,10 +176,12 @@ export async function reconcileGitHubApiEvents(
   events: ProcessActivityEventInput[];
   latestIssueNumber?: number;
   latestPrNumber?: number;
+  lowestPrNumber?: number;
   rateLimitRemaining?: number;
   rateLimitLimit?: number;
   warnings: string[];
   completedFully: boolean;
+  historicalPrCompleted: boolean;
 }> {
   const customFetch = options.fetchFn ?? fetch;
   const nowUtc = options.nowUtc ?? new Date().toISOString();
@@ -192,7 +197,7 @@ export async function reconcileGitHubApiEvents(
 
   if (!owner || !repo) {
     warnings.push(`Invalid repository format: "${repository}". Expected "owner/repo".`);
-    return { events: [], warnings, completedFully: false };
+    return { events: [], warnings, completedFully: false, historicalPrCompleted: false };
   }
 
   const headers: Record<string, string> = {
@@ -312,6 +317,8 @@ export async function reconcileGitHubApiEvents(
 
   // 2. Paginated Pull Request Reconciliation (Opened & Merged)
   const candidatePullsForReview: number[] = [];
+  let reachedPullsEnd = false;
+  let lowestPrExamined: number | undefined;
 
   // 2a. PRs Opened (sorted by created desc)
   prOpenLoop: for (let page = 1; page <= maxPages; page++) {
@@ -336,6 +343,7 @@ export async function reconcileGitHubApiEvents(
       }>;
 
       if (!Array.isArray(pulls) || pulls.length === 0) {
+        reachedPullsEnd = true;
         break;
       }
 
@@ -346,6 +354,9 @@ export async function reconcileGitHubApiEvents(
         }
         if (!lowestPrOnPage || pr.number < lowestPrOnPage) {
           lowestPrOnPage = pr.number;
+        }
+        if (!lowestPrExamined || pr.number < lowestPrExamined) {
+          lowestPrExamined = pr.number;
         }
 
         // PR Opened
@@ -374,7 +385,12 @@ export async function reconcileGitHubApiEvents(
         }
       }
 
-      if (!canContinue || pulls.length < pageSize) {
+      if (!canContinue) {
+        break;
+      }
+
+      if (pulls.length < pageSize) {
+        reachedPullsEnd = true;
         break;
       }
 
@@ -386,16 +402,22 @@ export async function reconcileGitHubApiEvents(
         break;
       }
 
-      const pageHasEligiblePrs = pulls.some((pr) => {
-        const isStale = isEventStale(pr.created_at, nowUtc, lookbackDays);
-        const isAbove = options.stopAtPrNumber !== undefined && pr.number > options.stopAtPrNumber;
-        const isMissing =
-          options.processedPrOpenedNumbers !== undefined && !options.processedPrOpenedNumbers.includes(pr.number);
-        return !isStale || isAbove || isMissing;
-      });
+      // Early termination is only permissible when historical coverage has already been established
+      // (or when historical scanning below checkpoints is not requested). When historical PR discovery
+      // is active and incomplete, a full page containing 0 eligible items cannot be treated as proof
+      // of historical completeness, as older unrewarded PRs may exist on subsequent pages.
+      const canTerminateEarly = options.historicalPrCompleted === true || options.processedPrOpenedNumbers === undefined;
 
-      if (!pageHasEligiblePrs) {
-        break;
+      if (canTerminateEarly) {
+        const pageHasEligiblePrs = pulls.some((pr) => {
+          const isStale = isEventStale(pr.created_at, nowUtc, lookbackDays);
+          const isAbove = options.stopAtPrNumber !== undefined && pr.number > options.stopAtPrNumber;
+          return !isStale || isAbove;
+        });
+
+        if (!pageHasEligiblePrs) {
+          break;
+        }
       }
     } catch (err) {
       warnings.push(`Failed to fetch pulls on page ${page}: ${(err as Error).message}`);
@@ -516,10 +538,12 @@ export async function reconcileGitHubApiEvents(
     events: discovered,
     latestIssueNumber,
     latestPrNumber,
+    lowestPrNumber: lowestPrExamined,
     rateLimitRemaining,
     rateLimitLimit,
     warnings,
     completedFully,
+    historicalPrCompleted: reachedPullsEnd || options.historicalPrCompleted === true,
   };
 }
 
@@ -553,6 +577,7 @@ export async function performCompleteReconciliation(options: ReconcileOptions): 
   let latestPr: number | undefined;
   let rateLimitRemaining: number | undefined;
   let rateLimitLimit: number | undefined;
+  let apiHistoricalPrCompleted: boolean | undefined;
 
   // 2. Reconcile via GitHub API if credentials and repository are supplied
   if (options.token && options.repository) {
@@ -562,6 +587,7 @@ export async function performCompleteReconciliation(options: ReconcileOptions): 
       stopAtIssueNumber: options.stopAtIssueNumber,
       stopAtPrNumber: options.stopAtPrNumber,
       processedPrOpenedNumbers: options.processedPrOpenedNumbers,
+      historicalPrCompleted: options.historicalPrCompleted,
       fetchFn: options.fetchFn,
     });
 
@@ -570,6 +596,7 @@ export async function performCompleteReconciliation(options: ReconcileOptions): 
     latestPr = apiResult.latestPrNumber;
     rateLimitRemaining = apiResult.rateLimitRemaining;
     rateLimitLimit = apiResult.rateLimitLimit;
+    apiHistoricalPrCompleted = apiResult.historicalPrCompleted;
     warnings.push(...apiResult.warnings);
     if (!apiResult.completedFully) {
       completedFully = false;
@@ -600,6 +627,7 @@ export async function performCompleteReconciliation(options: ReconcileOptions): 
       lastPrNumber: completedFully ? latestPr : options.stopAtPrNumber,
       reconciledAt: completedFully ? nowUtc : (options.sinceIso ?? nowUtc),
       historicalRecoveryCursor: completedFully ? options.historicalRecoveryCursor : options.activeHistoricalCursor,
+      historicalPrCompleted: completedFully ? (apiHistoricalPrCompleted ?? options.historicalPrCompleted) : options.historicalPrCompleted,
     },
     warnings,
     completedFully,
