@@ -354,24 +354,22 @@ export async function reconcileGitHubApiEvents(
           const isMissingFromRegistry =
             options.processedPrOpenedNumbers !== undefined && !options.processedPrOpenedNumbers.includes(pr.number);
           const isUncheckpointed = isAboveCheckpoint || isMissingFromRegistry;
-          const isStale = isEventStale(pr.created_at, nowUtc, lookbackDays);
+          const isStaleAgainstLookback = isEventStale(pr.created_at, nowUtc, lookbackDays);
           const isOlderThanNormalWindow = isEventStale(pr.created_at, nowUtc, MAX_ACTIVITY_AGE_DAYS);
 
-          if (!isUncheckpointed && isStale) {
-            break prOpenLoop;
-          }
+          if (!isStaleAgainstLookback || isUncheckpointed) {
+            discovered.push({
+              eventType: 'pr_opened',
+              eventId: `pr_opened:${pr.number}`,
+              actor: pr.user.login,
+              timestamp: pr.created_at,
+              details: pr.title,
+              allowHistoricalRecovery: isUncheckpointed || isOlderThanNormalWindow,
+            });
 
-          discovered.push({
-            eventType: 'pr_opened',
-            eventId: `pr_opened:${pr.number}`,
-            actor: pr.user.login,
-            timestamp: pr.created_at,
-            details: pr.title,
-            allowHistoricalRecovery: isUncheckpointed || isOlderThanNormalWindow,
-          });
-
-          if (candidatePullsForReview.length < 20) {
-            candidatePullsForReview.push(pr.number);
+            if (candidatePullsForReview.length < 20) {
+              candidatePullsForReview.push(pr.number);
+            }
           }
         }
       }
@@ -381,10 +379,22 @@ export async function reconcileGitHubApiEvents(
       }
 
       if (page === maxPages && pulls.length >= pageSize) {
-        if (!options.stopAtPrNumber || (lowestPrOnPage !== undefined && lowestPrOnPage > options.stopAtPrNumber)) {
-          warnings.push(`GitHub Pull Requests API reached maximum pagination limit (${maxPages} pages). Additional uncheckpointed PRs remain unprocessed.`);
-          completedFully = false;
-        }
+        warnings.push(
+          `GitHub Pull Requests API reached maximum pagination limit (${maxPages} pages). Additional uncheckpointed PRs remain unprocessed.`
+        );
+        completedFully = false;
+        break;
+      }
+
+      const pageHasEligiblePrs = pulls.some((pr) => {
+        const isStale = isEventStale(pr.created_at, nowUtc, lookbackDays);
+        const isAbove = options.stopAtPrNumber !== undefined && pr.number > options.stopAtPrNumber;
+        const isMissing =
+          options.processedPrOpenedNumbers !== undefined && !options.processedPrOpenedNumbers.includes(pr.number);
+        return !isStale || isAbove || isMissing;
+      });
+
+      if (!pageHasEligiblePrs) {
         break;
       }
     } catch (err) {
@@ -446,14 +456,10 @@ export async function reconcileGitHubApiEvents(
       }
 
       if (page === maxPages && closedPulls.length >= pageSize) {
-        const lastPr = closedPulls[closedPulls.length - 1];
-        const lastPrStale = lastPr?.merged_at ? isEventStale(lastPr.merged_at, nowUtc, lookbackDays) : false;
-        if (!lastPrStale) {
-          warnings.push(
-            `GitHub Closed Pull Requests API reached maximum pagination limit (${maxPages} pages). Additional recent merged PRs remain unprocessed.`
-          );
-          completedFully = false;
-        }
+        warnings.push(
+          `GitHub Closed Pull Requests API reached maximum pagination limit (${maxPages} pages). Additional merged PRs may remain unprocessed.`
+        );
+        completedFully = false;
         break;
       }
     } catch (err) {
