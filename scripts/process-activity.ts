@@ -146,9 +146,15 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
   const execGitCmd = options.execGitFn || execGit;
   const prContext = isPrContext(eventName, targetRef);
 
-  // Take snapshot backups of ledger and pet state in case cycle crashes or throws
-  const rawLedgerBackup = await fs.readFile(path.join(baseDir, 'pet/ledger/activity.json'), 'utf-8').catch(() => null);
-  const rawPetBackup = await fs.readFile(path.join(baseDir, 'pet/state/pet.json'), 'utf-8').catch(() => null);
+  // Take snapshot backups of all publication manifest files in case cycle crashes or throws
+  const manifestBackups = new Map<string, string>();
+  for (const relPath of ACTIVITY_PUBLICATION_MANIFEST_PATHS) {
+    const fullPath = path.join(baseDir, relPath);
+    try {
+      const content = await fs.readFile(fullPath, 'utf-8');
+      manifestBackups.set(fullPath, content);
+    } catch {}
+  }
 
   try {
     // 1. Recover any unapplied transactions from interrupted executions (only on non-PR runs)
@@ -239,6 +245,7 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
         stopAtPrNumber,
         historicalRecoveryCursor: nextHistoricalRecoveryCursor,
         activeHistoricalCursor,
+        processedPrOpenedNumbers: initialLedger?.processedRegistry?.prOpenedNumbers,
       });
 
       reconciliationCheckpoints = recon.checkpoints;
@@ -518,11 +525,8 @@ export async function runProcessingCycle(options: RunProcessingCycleOptions): Pr
   );
   } catch (err) {
     if (!dryRun && !prContext) {
-      if (rawLedgerBackup !== null) {
-        await fs.writeFile(path.join(baseDir, 'pet/ledger/activity.json'), rawLedgerBackup, 'utf-8').catch(() => {});
-      }
-      if (rawPetBackup !== null) {
-        await fs.writeFile(path.join(baseDir, 'pet/state/pet.json'), rawPetBackup, 'utf-8').catch(() => {});
+      for (const [fullPath, content] of manifestBackups) {
+        await fs.writeFile(fullPath, content, 'utf-8').catch(() => {});
       }
     }
     throw err;

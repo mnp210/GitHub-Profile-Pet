@@ -42,6 +42,7 @@ export interface ReconcileOptions {
   stopAtPrNumber?: number;
   historicalRecoveryCursor?: string;
   activeHistoricalCursor?: string;
+  processedPrOpenedNumbers?: number[];
   nowUtc?: string;
   fetchFn?: typeof fetch;
 }
@@ -163,6 +164,7 @@ export async function reconcileGitHubApiEvents(
     sinceIso?: string;
     stopAtIssueNumber?: number;
     stopAtPrNumber?: number;
+    processedPrOpenedNumbers?: number[];
     maxPages?: number;
     pageSize?: number;
     fetchFn?: typeof fetch;
@@ -348,7 +350,10 @@ export async function reconcileGitHubApiEvents(
 
         // PR Opened
         if (!isBotActor(pr.user?.login) && pr.user?.type !== 'Bot') {
-          const isUncheckpointed = options.stopAtPrNumber !== undefined && pr.number > options.stopAtPrNumber;
+          const isAboveCheckpoint = options.stopAtPrNumber !== undefined && pr.number > options.stopAtPrNumber;
+          const isMissingFromRegistry =
+            options.processedPrOpenedNumbers !== undefined && !options.processedPrOpenedNumbers.includes(pr.number);
+          const isUncheckpointed = isAboveCheckpoint || isMissingFromRegistry;
           const isStale = isEventStale(pr.created_at, nowUtc, lookbackDays);
           const isOlderThanNormalWindow = isEventStale(pr.created_at, nowUtc, MAX_ACTIVITY_AGE_DAYS);
 
@@ -437,6 +442,18 @@ export async function reconcileGitHubApiEvents(
       }
 
       if (!canContinue || closedPulls.length < pageSize) {
+        break;
+      }
+
+      if (page === maxPages && closedPulls.length >= pageSize) {
+        const lastPr = closedPulls[closedPulls.length - 1];
+        const lastPrStale = lastPr?.merged_at ? isEventStale(lastPr.merged_at, nowUtc, lookbackDays) : false;
+        if (!lastPrStale) {
+          warnings.push(
+            `GitHub Closed Pull Requests API reached maximum pagination limit (${maxPages} pages). Additional recent merged PRs remain unprocessed.`
+          );
+          completedFully = false;
+        }
         break;
       }
     } catch (err) {
@@ -538,6 +555,7 @@ export async function performCompleteReconciliation(options: ReconcileOptions): 
       sinceIso: options.sinceIso,
       stopAtIssueNumber: options.stopAtIssueNumber,
       stopAtPrNumber: options.stopAtPrNumber,
+      processedPrOpenedNumbers: options.processedPrOpenedNumbers,
       fetchFn: options.fetchFn,
     });
 
