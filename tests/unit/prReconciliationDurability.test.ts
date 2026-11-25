@@ -2266,7 +2266,12 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
     });
 
     describe('Section B: Pagination Resumption Under Changing API Results (Shifting Pages)', () => {
-      it('proves resumable recovery when a new PR is created and page boundaries shift between batches', async () => {
+      it('proves strict maxPages budget, exact page instrumentation [1, 3] -> [1, 4], and multi-batch completion', async () => {
+        // Initial dataset before Batch 1:
+        // Page 1: #50 (20d, recorded), #49 (21d, recorded)
+        // Page 2: #42 (180d, missing), #30 (190d, missing)
+        // Page 3: #20 (200d, recorded), #10 (210d, missing)
+        // Page 4: []
         const p1 = [
           { number: 50, title: 'PR 50', user: { login: 'u50' }, created_at: new Date(now - 20 * 86400000).toISOString() },
           { number: 49, title: 'PR 49', user: { login: 'u49' }, created_at: new Date(now - 21 * 86400000).toISOString() },
@@ -2280,13 +2285,15 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
           { number: 10, title: 'PR 10', user: { login: 'u10' }, created_at: new Date(now - 210 * 86400000).toISOString() },
         ];
 
+        const batch1PagesRequested: number[] = [];
         const mockFetchBatch1 = async (url: string | URL | Request) => {
           const urlStr = url.toString();
           if (urlStr.includes('/pulls?state=all')) {
-            const page = new URL(urlStr).searchParams.get('page');
-            if (page === '1') return new Response(JSON.stringify(p1), { status: 200 });
-            if (page === '2') return new Response(JSON.stringify(p2), { status: 200 });
-            if (page === '3') return new Response(JSON.stringify(p3), { status: 200 });
+            const page = parseInt(new URL(urlStr).searchParams.get('page') || '1', 10);
+            batch1PagesRequested.push(page);
+            if (page === 1) return new Response(JSON.stringify(p1), { status: 200 });
+            if (page === 2) return new Response(JSON.stringify(p2), { status: 200 });
+            if (page === 3) return new Response(JSON.stringify(p3), { status: 200 });
             return new Response(JSON.stringify([]), { status: 200 });
           }
           return new Response(JSON.stringify([]), { status: 200 });
@@ -2303,6 +2310,7 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
           fetchFn: mockFetchBatch1,
         });
 
+        assert.deepEqual(batch1PagesRequested, [1, 2], 'Batch 1 must request exactly Pages 1 and 2');
         assert.equal(batch1.completedFully, false, 'Batch 1 capped at maxPages = 2');
         assert.equal(batch1.historicalPrContinuationPage, 3, 'Batch 1 continuation page must be 3');
         assert.ok(batch1.events.some((e) => e.eventId === 'pr_opened:42'));
@@ -2321,6 +2329,11 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
         assert.ok(state.updatedLedger.processedRegistry.prOpenedNumbers.includes(30));
 
         // NOW: New PR #51 created before Batch 2!
+        // Shifted pages:
+        // Page 1: #51 (new, 1h ago), #50 (20d)
+        // Page 2: #49 (21d), #42 (180d)
+        // Page 3: #30 (190d), #20 (200d)
+        // Page 4: #10 (210d)
         const p1Shifted = [
           { number: 51, title: 'PR 51', user: { login: 'u51' }, created_at: new Date(now - 1 * 3600000).toISOString() },
           { number: 50, title: 'PR 50', user: { login: 'u50' }, created_at: new Date(now - 20 * 86400000).toISOString() },
@@ -2337,64 +2350,154 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
           { number: 10, title: 'PR 10', user: { login: 'u10' }, created_at: new Date(now - 210 * 86400000).toISOString() },
         ];
 
+        const batch2PagesRequested: number[] = [];
         const mockFetchBatch2 = async (url: string | URL | Request) => {
           const urlStr = url.toString();
           if (urlStr.includes('/pulls?state=all')) {
-            const page = new URL(urlStr).searchParams.get('page');
-            if (page === '1') return new Response(JSON.stringify(p1Shifted), { status: 200 });
-            if (page === '2') return new Response(JSON.stringify(p2Shifted), { status: 200 });
-            if (page === '3') return new Response(JSON.stringify(p3Shifted), { status: 200 });
-            if (page === '4') return new Response(JSON.stringify(p4Shifted), { status: 200 });
+            const page = parseInt(new URL(urlStr).searchParams.get('page') || '1', 10);
+            batch2PagesRequested.push(page);
+            if (page === 1) return new Response(JSON.stringify(p1Shifted), { status: 200 });
+            if (page === 2) return new Response(JSON.stringify(p2Shifted), { status: 200 });
+            if (page === 3) return new Response(JSON.stringify(p3Shifted), { status: 200 });
+            if (page === 4) return new Response(JSON.stringify(p4Shifted), { status: 200 });
             return new Response(JSON.stringify([]), { status: 200 });
           }
           return new Response(JSON.stringify([]), { status: 200 });
         };
 
-        // Batch 2 resumes using historicalPrContinuationPage: 3
+        // Batch 2: Strictly maxPages = 2 with continuationPage = 3!
+        // Budget = 2: Page 1 for newly opened PRs, Page 3 for continuation. Page 4 CANNOT be fetched!
         const batch2 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
           nowUtc,
           stopAtPrNumber: 50,
           pageSize: 2,
-          maxPages: 3, // Fetches Page 1 (for new PR #51) + Page 3 & Page 4
+          maxPages: 2,
           historicalPrCompleted: false,
           historicalPrContinuationPage: batch1.historicalPrContinuationPage,
           processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
           fetchFn: mockFetchBatch2,
         });
 
-        assert.equal(batch2.completedFully, true, 'Batch 2 must complete to stream end');
-        assert.equal(batch2.historicalPrCompleted, true, 'historicalPrCompleted must become true');
-        assert.equal(batch2.historicalPrContinuationPage, undefined, 'Continuation page must be cleared');
+        // 1. Verify exact page requests in Batch 2
+        assert.deepEqual(batch2PagesRequested, [1, 3], 'Batch 2 must request strictly [1, 3], respecting maxPages = 2');
+        assert.equal(batch2PagesRequested.length, 2, 'Batch 2 actual page count must equal maxPages = 2');
 
-        assert.ok(batch2.events.some((e) => e.eventId === 'pr_opened:51'), 'New PR #51 must be discovered on Page 1');
-        assert.ok(batch2.events.some((e) => e.eventId === 'pr_opened:10'), 'Older PR #10 must be discovered on Page 4');
+        // 2. PR #51 discovered on Page 1
+        assert.ok(batch2.events.some((e) => e.eventId === 'pr_opened:51'), 'PR #51 must be discovered in Batch 2');
 
+        // 3. PR #10 is on Page 4, so it MUST remain undiscovered in Batch 2
+        assert.equal(batch2.events.some((e) => e.eventId === 'pr_opened:10'), false, 'PR #10 must NOT be discovered in Batch 2');
+
+        // 4. Batch 2 is incomplete (Page 3 was full and reached page budget)
+        assert.equal(batch2.completedFully, false, 'Batch 2 must be incomplete');
+        assert.equal(batch2.historicalPrCompleted, false, 'historicalPrCompleted must remain false');
+        assert.equal(batch2.historicalPrContinuationPage, 4, 'Continuation page must advance from 3 to 4');
+
+        // 5. Evaluate Batch 2 events: PR #51 gives +25 XP; PR #30 gives 0 XP (skipped duplicate)
         for (const evt of batch2.events) {
           state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
         }
-        // Initial 50 XP (from PR 42 & 30) + 25 XP (PR 51) + 25 XP (PR 10) = 100 XP -> Level up to Level 2
-        // PR #30 on Page 3 was evaluated as duplicate and awarded 0 XP!
-        assert.equal(state.updatedPet.level, 2, 'Pet must level up to Level 2 at 100 XP');
-        assert.equal(state.updatedPet.xp, 0, 'XP resets to 0 upon reaching 100 XP');
+        assert.equal(state.updatedPet.xp, 75, 'XP after Batch 2 must be 75 XP (50 from Batch 1 + 25 for #51)');
         assert.ok(state.updatedLedger.processedRegistry.prOpenedNumbers.includes(51));
+
+        // NOW: Batch 3 runs with maxPages = 2 and continuationPage = 4!
+        const batch3PagesRequested: number[] = [];
+        const mockFetchBatch3 = async (url: string | URL | Request) => {
+          const urlStr = url.toString();
+          if (urlStr.includes('/pulls?state=all')) {
+            const page = parseInt(new URL(urlStr).searchParams.get('page') || '1', 10);
+            batch3PagesRequested.push(page);
+            if (page === 1) return new Response(JSON.stringify(p1Shifted), { status: 200 });
+            if (page === 2) return new Response(JSON.stringify(p2Shifted), { status: 200 });
+            if (page === 3) return new Response(JSON.stringify(p3Shifted), { status: 200 });
+            if (page === 4) return new Response(JSON.stringify(p4Shifted), { status: 200 });
+            return new Response(JSON.stringify([]), { status: 200 });
+          }
+          return new Response(JSON.stringify([]), { status: 200 });
+        };
+
+        const batch3 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 50,
+          pageSize: 2,
+          maxPages: 2,
+          historicalPrCompleted: false,
+          historicalPrContinuationPage: batch2.historicalPrContinuationPage,
+          processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
+          fetchFn: mockFetchBatch3,
+        });
+
+        // 6. Verify exact page requests in Batch 3
+        assert.deepEqual(batch3PagesRequested, [1, 4], 'Batch 3 must request strictly [1, 4], respecting maxPages = 2');
+        assert.equal(batch3PagesRequested.length, 2, 'Batch 3 actual page count must equal maxPages = 2');
+
+        // 7. PR #10 discovered on Page 4!
+        assert.ok(batch3.events.some((e) => e.eventId === 'pr_opened:10'), 'PR #10 must be discovered in Batch 3');
+
+        // 8. Stream end reached on Page 4 (1 item < pageSize)
+        assert.equal(batch3.completedFully, true, 'Batch 3 must complete fully');
+        assert.equal(batch3.historicalPrCompleted, true, 'historicalPrCompleted must become true');
+        assert.equal(batch3.historicalPrContinuationPage, undefined, 'Continuation page must be cleared');
+
+        // 9. Evaluate Batch 3 events: PR #10 gives +25 XP -> total 100 XP -> Level up to Level 2
+        for (const evt of batch3.events) {
+          state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
+        }
+        assert.equal(state.updatedPet.level, 2, 'Pet levels up to Level 2 at 100 XP');
+        assert.equal(state.updatedPet.xp, 0, 'XP resets to 0 after level up');
         assert.ok(state.updatedLedger.processedRegistry.prOpenedNumbers.includes(10));
+
+        // 10. Repeat Scan (Batch 4): Awards 0 XP on repeat
+        const batch4PagesRequested: number[] = [];
+        const mockFetchBatch4 = async (url: string | URL | Request) => {
+          const urlStr = url.toString();
+          if (urlStr.includes('/pulls?state=all')) {
+            const page = parseInt(new URL(urlStr).searchParams.get('page') || '1', 10);
+            batch4PagesRequested.push(page);
+            if (page === 1) return new Response(JSON.stringify(p1Shifted), { status: 200 });
+            return new Response(JSON.stringify([]), { status: 200 });
+          }
+          return new Response(JSON.stringify([]), { status: 200 });
+        };
+
+        const batch4 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 51, // All recent PRs through #51 are now checkpointed
+          pageSize: 2,
+          maxPages: 2,
+          historicalPrCompleted: true,
+          processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
+          fetchFn: mockFetchBatch4,
+        });
+
+        assert.deepEqual(batch4PagesRequested, [1], 'Fast path must request strictly Page 1');
+        assert.equal(batch4.events.length, 0, 'Zero events discovered on repeat scan');
+        assert.equal(state.updatedPet.xp, 0, 'Zero additional XP awarded');
       });
 
-      it('proves repeated insertion of new PRs across multiple bounded batches without starving historical discovery', async () => {
-        const repoPrs = [
+      it('Section 2 Stress Test: Multiple insertions, full recorded pages, API failures, and recovery without skipping PRs', async () => {
+        // Dynamic repository state
+        const dynamicPrs = [
           { number: 40, title: 'PR 40', user: { login: 'u40' }, created_at: new Date(now - 100 * 86400000).toISOString() },
           { number: 30, title: 'PR 30', user: { login: 'u30' }, created_at: new Date(now - 120 * 86400000).toISOString() },
           { number: 20, title: 'PR 20', user: { login: 'u20' }, created_at: new Date(now - 140 * 86400000).toISOString() },
           { number: 10, title: 'PR 10', user: { login: 'u10' }, created_at: new Date(now - 160 * 86400000).toISOString() },
         ];
 
-        const createMockFetch = () => async (url: string | URL | Request) => {
+        let shouldFailContinuation = false;
+        const fetchTracker: number[] = [];
+
+        const stressFetch = async (url: string | URL | Request) => {
           const urlStr = url.toString();
           if (urlStr.includes('/pulls?state=all')) {
             const page = parseInt(new URL(urlStr).searchParams.get('page') || '1', 10);
+            fetchTracker.push(page);
+            if (shouldFailContinuation && page > 1) {
+              return new Response('Transient GitHub Failure', { status: 502, statusText: 'Bad Gateway' });
+            }
             const pageSize = 2;
             const start = (page - 1) * pageSize;
-            const slice = repoPrs.slice(start, start + pageSize);
+            const slice = dynamicPrs.slice(start, start + pageSize);
             return new Response(JSON.stringify(slice), { status: 200 });
           }
           return new Response(JSON.stringify([]), { status: 200 });
@@ -2412,18 +2515,20 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
           maxPages: 1,
           historicalPrCompleted: false,
           processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
-          fetchFn: createMockFetch(),
+          fetchFn: stressFetch,
         });
         assert.equal(b1.completedFully, false);
         assert.equal(b1.historicalPrContinuationPage, 2);
         for (const evt of b1.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
         assert.equal(state.updatedPet.xp, 50, 'Batch 1 awards +50 XP for #40 & #30');
 
-        // New PR #50 inserted before Batch 2
-        repoPrs.unshift({ number: 50, title: 'PR 50', user: { login: 'u50' }, created_at: new Date(now - 1 * 86400000).toISOString() });
+        // Stress step: Insert multiple PRs (#52, #51) before Batch 2
+        dynamicPrs.unshift({ number: 51, title: 'PR 51', user: { login: 'u51' }, created_at: new Date(now - 2 * 3600000).toISOString() });
+        dynamicPrs.unshift({ number: 52, title: 'PR 52', user: { login: 'u52' }, created_at: new Date(now - 1 * 3600000).toISOString() });
 
-        // Batch 2: maxPages = 2. Scans Page 1 (finds #50) and Page 2 (finds #20)
-        const b2 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+        // Batch 2 with injected transient 502 error during continuation
+        shouldFailContinuation = true;
+        const b2Fail = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
           nowUtc,
           stopAtPrNumber: 40,
           pageSize: 2,
@@ -2431,34 +2536,72 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
           historicalPrCompleted: false,
           historicalPrContinuationPage: b1.historicalPrContinuationPage,
           processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
-          fetchFn: createMockFetch(),
+          fetchFn: stressFetch,
         });
-        assert.equal(b2.completedFully, false);
-        assert.equal(b2.historicalPrContinuationPage, 3);
-        for (const evt of b2.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
-        assert.equal(state.updatedPet.level, 2, 'Pet leveled up to Level 2 at 100 XP');
-        assert.equal(state.updatedPet.xp, 0, 'XP resets to 0 at Level 2');
+        assert.equal(b2Fail.completedFully, false, 'Failed batch must be marked completedFully: false');
+        assert.equal(b2Fail.historicalPrCompleted, false);
+        // Continuation cursor must NOT advance on failure
+        assert.equal(b2Fail.historicalPrContinuationPage, b1.historicalPrContinuationPage, 'Failed batch must preserve continuation cursor');
 
-        // New PR #60 inserted before Batch 3
-        repoPrs.unshift({ number: 60, title: 'PR 60', user: { login: 'u60' }, created_at: new Date(now - 1000).toISOString() });
+        // Retry Batch 2 with error cleared
+        shouldFailContinuation = false;
+        const b2Retry = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 40,
+          pageSize: 2,
+          maxPages: 2,
+          historicalPrCompleted: false,
+          historicalPrContinuationPage: b1.historicalPrContinuationPage,
+          processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
+          fetchFn: stressFetch,
+        });
+        assert.equal(b2Retry.completedFully, false);
+        assert.equal(b2Retry.historicalPrContinuationPage, 3);
+        // Page 1 discovered PR #52 and #51
+        for (const evt of b2Retry.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
+        assert.equal(state.updatedPet.level, 2, 'Pet levels up to Level 2 at 100 XP');
+        assert.equal(state.updatedPet.xp, 0);
 
-        // Batch 3: maxPages = 3. Scans Page 1 (finds #60), Page 3 (reads #20, #10), and Page 4 ([]), reaching stream end!
+        // Stress step: Insert new PR #60 before Batch 3
+        dynamicPrs.unshift({ number: 60, title: 'PR 60', user: { login: 'u60' }, created_at: new Date(now - 1000).toISOString() });
+
+        // Batch 3: maxPages = 2, continuationPage = 3
         const b3 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
           nowUtc,
           stopAtPrNumber: 40,
           pageSize: 2,
-          maxPages: 3,
+          maxPages: 2,
           historicalPrCompleted: false,
-          historicalPrContinuationPage: b2.historicalPrContinuationPage,
+          historicalPrContinuationPage: b2Retry.historicalPrContinuationPage,
           processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
-          fetchFn: createMockFetch(),
+          fetchFn: stressFetch,
         });
-        assert.equal(b3.completedFully, true, 'Batch 3 completes to stream end');
-        assert.equal(b3.historicalPrCompleted, true, 'historicalPrCompleted must be true');
-        assert.equal(b3.historicalPrContinuationPage, undefined, 'Continuation page must be cleared');
+        assert.equal(b3.completedFully, false);
+        assert.equal(b3.historicalPrContinuationPage, 4);
         for (const evt of b3.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
-        assert.equal(state.updatedPet.level, 2, 'Pet remains at Level 2');
-        assert.equal(state.updatedPet.xp, 50, 'Level 2 has 50 XP (25 for #60 + 25 for #10)');
+        assert.equal(state.updatedPet.xp, 50, 'Batch 3 discovers #60 (+25) and #20 (+25)');
+
+        // Batch 4: maxPages = 2, continuationPage = 4 -> discovers #10 and reaches stream end!
+        const b4 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+          nowUtc,
+          stopAtPrNumber: 40,
+          pageSize: 2,
+          maxPages: 2,
+          historicalPrCompleted: false,
+          historicalPrContinuationPage: b3.historicalPrContinuationPage,
+          processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
+          fetchFn: stressFetch,
+        });
+        assert.equal(b4.completedFully, true, 'Batch 4 completes to stream end');
+        assert.equal(b4.historicalPrCompleted, true, 'historicalPrCompleted must be true');
+        assert.equal(b4.historicalPrContinuationPage, undefined, 'Continuation page cleared');
+        for (const evt of b4.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
+        assert.equal(state.updatedPet.xp, 75, 'Batch 4 discovers #10 (+25 XP -> total 75 XP)');
+
+        // Prove all 6 PRs (#60, #52, #51, #40, #30, #20, #10) exist in registry
+        for (const num of [60, 52, 51, 40, 30, 20, 10]) {
+          assert.ok(state.updatedLedger.processedRegistry.prOpenedNumbers.includes(num), `PR #${num} must be in registry`);
+        }
       });
     });
 

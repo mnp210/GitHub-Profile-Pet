@@ -400,7 +400,12 @@ export async function reconcileGitHubApiEvents(
           const isStaleAgainstLookback = isEventStale(pr.created_at, nowUtc, lookbackDays);
           const isOlderThanNormalWindow = isEventStale(pr.created_at, nowUtc, MAX_ACTIVITY_AGE_DAYS);
 
-          if (!isStaleAgainstLookback || isUncheckpointed) {
+          const isEligible =
+            options.historicalPrCompleted === true && options.stopAtPrNumber !== undefined
+              ? isAboveCheckpoint
+              : !isStaleAgainstLookback || isUncheckpointed;
+
+          if (isEligible) {
             discovered.push({
               eventType: 'pr_opened',
               eventId: `pr_opened:${pr.number}`,
@@ -441,13 +446,12 @@ export async function reconcileGitHubApiEvents(
       const canTerminateEarly = options.historicalPrCompleted === true;
 
       if (canTerminateEarly) {
-        const pageHasEligiblePrs = pulls.some((pr) => {
-          const isStale = isEventStale(pr.created_at, nowUtc, lookbackDays);
-          const isAbove = options.stopAtPrNumber !== undefined && pr.number > options.stopAtPrNumber;
-          return !isStale || isAbove;
-        });
+        const hasMoreEligiblePages =
+          options.stopAtPrNumber !== undefined
+            ? lowestPrOnPage !== undefined && lowestPrOnPage > options.stopAtPrNumber
+            : pulls.some((pr) => !isEventStale(pr.created_at, nowUtc, lookbackDays));
 
-        if (!pageHasEligiblePrs) {
+        if (!hasMoreEligiblePages) {
           break;
         }
       }
