@@ -2541,9 +2541,31 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
           assert.equal(b1.completedFully, false);
           assert.equal(b1.historicalPrCompleted, false);
           assert.equal(b1.historicalPrContinuationPage, 3);
-          for (const evt of b1.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
+          assert.deepEqual(
+            b1.events.map((e) => e.eventId),
+            ['pr_opened:80', 'pr_opened:70', 'pr_opened:60', 'pr_opened:50'],
+            'Batch 1 discovers 4 PR-open events across Pages 1 & 2'
+          );
+          let b1TotalXp = 0;
+          for (const evt of b1.events) {
+            const evalRes = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
+            assert.equal(evalRes.result.status, 'rewarded');
+            assert.equal(evalRes.result.xpAwarded, 25);
+            b1TotalXp += evalRes.result.xpAwarded;
+            state = evalRes;
+          }
+          assert.equal(b1TotalXp, 100, '4 PR-open events * 25 XP = 100 XP');
           assert.equal(state.updatedPet.level, 2, 'Pet levels up to L2 at 100 XP (4 PRs * 25 XP)');
           assert.equal(state.updatedPet.xp, 0);
+          assert.equal(state.updatedLedger.processedRegistry.prMergedNumbers.length, 0, 'Opening recovery must never award merge rewards');
+
+          // Duplicate retry check on Batch 1 events awards 0 XP
+          for (const evt of b1.events) {
+            const dupRes = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
+            assert.equal(dupRes.result.status, 'skipped_duplicate');
+            assert.equal(dupRes.result.xpAwarded, 0);
+            state = dupRes;
+          }
 
           // Insertion: Insert two new PRs (#92, #91) at the front
           repoPrs.unshift({ number: 91, title: 'PR 91', user: { login: 'u91' }, created_at: new Date(now - 2 * 3600000).toISOString() });
@@ -2716,12 +2738,21 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
             fetchFn: traceFetch,
           });
           for (const evt of b1.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
+          assert.equal(b1.completedFully, false);
+          assert.equal(b1.historicalPrCompleted, false);
           assert.equal(b1.historicalPrContinuationPage, 3);
+          assert.deepEqual(
+            apiTraces.filter((t) => t.batch === 1).map((t) => ({ page: t.requestedPage, prs: t.returnedPrNumbers })),
+            [
+              { page: 1, prs: [50, 40] },
+              { page: 2, prs: [30, 20] },
+            ]
+          );
 
-          // Insertion 1 before Batch 2: PR #60
+          // Insertion 1 before Batch 2: PR #60 -> dataset [60, 50, 40, 30, 20, 10, 5]
           repoPrs.unshift({ number: 60, title: 'PR 60', user: { login: 'u60' }, created_at: new Date(now - 3 * 3600000).toISOString() });
 
-          // Batch 2: requests [1, 3]
+          // Batch 2: requests [1, 3] -> Page 1: [60, 50], Page 3: [20, 10]
           currentBatch = 2;
           const b2 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
             nowUtc,
@@ -2734,12 +2765,21 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
             fetchFn: traceFetch,
           });
           for (const evt of b2.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
+          assert.equal(b2.completedFully, false);
+          assert.equal(b2.historicalPrCompleted, false);
           assert.equal(b2.historicalPrContinuationPage, 4);
+          assert.deepEqual(
+            apiTraces.filter((t) => t.batch === 2).map((t) => ({ page: t.requestedPage, prs: t.returnedPrNumbers })),
+            [
+              { page: 1, prs: [60, 50] },
+              { page: 3, prs: [20, 10] },
+            ]
+          );
 
-          // Insertion 2 before Batch 3: PR #70
+          // Insertion 2 before Batch 3: PR #70 -> dataset [70, 60, 50, 40, 30, 20, 10, 5]
           repoPrs.unshift({ number: 70, title: 'PR 70', user: { login: 'u70' }, created_at: new Date(now - 2 * 3600000).toISOString() });
 
-          // Batch 3: requests [1, 4]
+          // Batch 3: requests [1, 4] -> Page 1: [70, 60], Page 4: [10, 5]
           currentBatch = 3;
           const b3 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
             nowUtc,
@@ -2752,12 +2792,21 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
             fetchFn: traceFetch,
           });
           for (const evt of b3.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
+          assert.equal(b3.completedFully, false);
+          assert.equal(b3.historicalPrCompleted, false);
           assert.equal(b3.historicalPrContinuationPage, 5);
+          assert.deepEqual(
+            apiTraces.filter((t) => t.batch === 3).map((t) => ({ page: t.requestedPage, prs: t.returnedPrNumbers })),
+            [
+              { page: 1, prs: [70, 60] },
+              { page: 4, prs: [10, 5] },
+            ]
+          );
 
-          // Insertion 3 before Batch 4: PR #80
+          // Insertion 3 before Batch 4: PR #80 -> dataset [80, 70, 60, 50, 40, 30, 20, 10, 5]
           repoPrs.unshift({ number: 80, title: 'PR 80', user: { login: 'u80' }, created_at: new Date(now - 1 * 3600000).toISOString() });
 
-          // Batch 4: requests [1, 5] -> Page 5 has [#5] (length 1 < pageSize 2 -> terminal page!)
+          // Batch 4: requests [1, 5] -> Page 1: [80, 70], Page 5: [5] (length 1 < pageSize 2 -> terminal page!)
           currentBatch = 4;
           const b4 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
             nowUtc,
@@ -2774,8 +2823,20 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
           assert.equal(b4.completedFully, true, 'Terminal page marks completedFully: true');
           assert.equal(b4.historicalPrCompleted, true, 'historicalPrCompleted marked true');
           assert.equal(b4.historicalPrContinuationPage, undefined, 'Continuation page cleared');
+          assert.deepEqual(
+            apiTraces.filter((t) => t.batch === 4).map((t) => ({ page: t.requestedPage, prs: t.returnedPrNumbers })),
+            [
+              { page: 1, prs: [80, 70] },
+              { page: 5, prs: [5] },
+            ]
+          );
 
-          // All 9 PRs exist in registry
+          // Verify page budget never exceeded maxPages = 2
+          for (let b = 1; b <= 4; b++) {
+            assert.ok(apiTraces.filter((t) => t.batch === b).length <= 2);
+          }
+
+          // All 9 PRs exist in registry (225 XP total: 9 * 25 XP)
           for (const num of [80, 70, 60, 50, 40, 30, 20, 10, 5]) {
             assert.ok(state.updatedLedger.processedRegistry.prOpenedNumbers.includes(num), `PR #${num} must be in registry`);
           }
@@ -2954,7 +3015,11 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
           assert.equal(b1.historicalPrContinuationPage, 2);
           for (const evt of b1.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
 
-          // Batch 2 (maxPages = 1, continuation = 2): requests strictly Page 2 -> discovers #30, #20. Sets continuation = 3
+          // New PR #60 opened while historical continuation is active!
+          // Dataset shifts to [60, 50, 40, 30, 20, 10]: P1=[60,50], P2=[40,30], P3=[20,10], P4=[]
+          repoPrs.unshift({ number: 60, title: 'PR 60', user: { login: 'u60' }, created_at: new Date(now - 1 * 3600000).toISOString() });
+
+          // Batch 2 (maxPages = 1, continuation = 2): requests strictly Page 2 -> [40, 30]. #40 dedup, #30 discovered. Continuation = 3
           currentBatch = 2;
           const b2 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
             nowUtc,
@@ -2970,7 +3035,7 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
           assert.equal(b2.historicalPrContinuationPage, 3);
           for (const evt of b2.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
 
-          // Batch 3 (maxPages = 1, continuation = 3): requests strictly Page 3 -> discovers #10. Hit terminal page (1 < 2).
+          // Batch 3 (maxPages = 1, continuation = 3): requests strictly Page 3 -> [20, 10]. #20, #10 discovered. Continuation = 4
           currentBatch = 3;
           const b3 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
             nowUtc,
@@ -2982,14 +3047,29 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
             processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
             fetchFn: traceFetch,
           });
-          assert.equal(b3.completedFully, true, 'Terminal page reached');
-          assert.equal(b3.historicalPrCompleted, true, 'historicalPrCompleted marked true');
-          assert.equal(b3.historicalPrContinuationPage, undefined, 'Continuation page cleared');
+          assert.equal(b3.completedFully, false);
+          assert.equal(b3.historicalPrContinuationPage, 4);
           for (const evt of b3.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
 
-          // Batch 4 (maxPages = 1, historicalPrCompleted: true): routine fast path
+          // Batch 4 (maxPages = 1, continuation = 4): requests strictly Page 4 -> [] (empty terminal page)
           currentBatch = 4;
           const b4 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+            nowUtc,
+            stopAtPrNumber: 50,
+            pageSize: 2,
+            maxPages: 1,
+            historicalPrCompleted: false,
+            historicalPrContinuationPage: b3.historicalPrContinuationPage,
+            processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
+            fetchFn: traceFetch,
+          });
+          assert.equal(b4.completedFully, true, 'Terminal page reached');
+          assert.equal(b4.historicalPrCompleted, true, 'historicalPrCompleted marked true');
+          assert.equal(b4.historicalPrContinuationPage, undefined, 'Continuation page cleared');
+
+          // Batch 5 (maxPages = 1, historicalPrCompleted: true, stopAtPrNumber = 50): discovers PR #60 opened during continuation!
+          currentBatch = 5;
+          const b5 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
             nowUtc,
             stopAtPrNumber: 50,
             pageSize: 2,
@@ -2998,20 +3078,35 @@ describe('PR Reconciliation Durability & Recovery Suite (Sprint 5.2D-J)', () => 
             processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
             fetchFn: traceFetch,
           });
-          assert.equal(b4.completedFully, true);
-          assert.equal(b4.events.length, 0);
+          assert.equal(b5.completedFully, true);
+          assert.deepEqual(b5.events.map((e) => e.eventId), ['pr_opened:60'], 'PR #60 discovered on next Page 1 scan');
+          for (const evt of b5.events) state = evaluateActivityEvent(state.updatedPet, state.updatedLedger, evt, nowUtc);
+
+          // Batch 6 (maxPages = 1, historicalPrCompleted: true, stopAtPrNumber = 60): routine fast path
+          currentBatch = 6;
+          const b6 = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+            nowUtc,
+            stopAtPrNumber: 60,
+            pageSize: 2,
+            maxPages: 1,
+            historicalPrCompleted: true,
+            processedPrOpenedNumbers: state.updatedLedger.processedRegistry.prOpenedNumbers,
+            fetchFn: traceFetch,
+          });
+          assert.equal(b6.completedFully, true);
+          assert.equal(b6.events.length, 0);
 
           // Verify exact 1-page request per batch
-          for (let b = 1; b <= 4; b++) {
+          for (let b = 1; b <= 6; b++) {
             const count = apiTraces.filter((t) => t.batch === b).length;
             assert.equal(count, 1, `Batch ${b} must make strictly 1 request (maxPages = 1)`);
           }
 
           const requestedPages = apiTraces.map((t) => t.requestedPage);
-          assert.deepEqual(requestedPages, [1, 2, 3, 1], 'Exact request trace: [Page 1, Page 2, Page 3, Page 1]');
+          assert.deepEqual(requestedPages, [1, 2, 3, 4, 1, 1], 'Exact request trace: [Page 1, Page 2, Page 3, Page 4, Page 1, Page 1]');
 
-          // All 5 PRs in registry
-          for (const num of [50, 40, 30, 20, 10]) {
+          // All 6 PRs in registry
+          for (const num of [60, 50, 40, 30, 20, 10]) {
             assert.ok(state.updatedLedger.processedRegistry.prOpenedNumbers.includes(num), `PR #${num} must be in registry`);
           }
         });
