@@ -1,9 +1,10 @@
 {
   "schemaVersion": 1,
-  "generation": 36,
+  "generation": 56,
   "dailyAccruedXp": {
     "2026-11-22": 300,
-    "2026-11-23": 30
+    "2026-11-23": 30,
+    "2026-11-26": 300
   },
   "processedRegistry": {
     "commitShas": [
@@ -48,14 +49,47 @@
       "4806632b0f2b9d0e1b32677202c120cde12fd9aa",
       "ab2f88eaadd144cefbc2f9cfd359cf4c4707d870",
       "a664fd928429f44869f44e074230ddf35699f02c",
-      "2dc95c6b331fbb579b1c84476cc23d34411738ee"
+      "2dc95c6b331fbb579b1c84476cc23d34411738ee",
+      "4d02a3a928cfe6eaa2ea7b643be7a20dd3e6c1ff",
+      "e2e92cd46d621a40fcb84432a0ebdbb456ba9d9a",
+      "034d116dbbdbf01a4adff34b88dbfbadcbd139e2",
+      "9b58530f8e48146727496df392d032fbe5a82623",
+      "c9a8e3cade316f59e7168e8f10f78ddfc072523e",
+      "e746efaa1599dd45fa27f112bea6efe69a8cc2f3",
+      "6a2aead5514cb3ec07f9037718cc753321f884cd",
+      "13a37c762dda1fdef16fa28430ce820c05766894",
+      "a85b086f77a88fa9b4918723b3cf22a5d2c584d4",
+      "804532ba19516716d7b85842ba27d4aa78cd8bd8",
+      "82f42b9088b63bfb45a9268424ac1083fb7fdf24",
+      "ca07c1752cb6c8ffacfca9aeddf48fcca1303fdb",
+      "25183739cfadfed12727c525ae0a5eb130932f1e",
+      "c5568045cfaae583cd44f39de4d2f69f04bb900d",
+      "116c8e7bb3835e30432da7a0f883515bd110e616",
+      "1ec362f577f88e37a2652a4c1cab8be34c44947f",
+      "4ab1e76523ddf860b0487f46f134e039be3c7717",
+      "c8413a22ba744a758318c3e06a8219e08f3661cf",
+      "d68160c23bd3702d883df5d6ad52578e3000707d",
+      "fad33432aca64bf4f64a6f4ba6e2490bc069d649",
+      "e053c91e5914e736fc7f355e4004a21783a554b5",
+      "136d0849fdbc34c4ef7bd3256de046cabcf1d0b9",
+      "dd4dcfbc9531326762e36248030593a3ad89805d",
+      "37b22f19b4fa9e1f49f241942d6cbdde91476ae5",
+      "1911e4e67913743fd763f420b8a8c33aec9e7efa",
+      "9c35489f8bf1fe1d04f5a4e54ada646e9e2d88e6",
+      "40e1a51878a635eaa1a579882028fa9fec2e5b4d",
+      "16602ba72817d6730a96ecb0df16b8c121733fa8",
+      "7d9ea7db6e4252726555340ccb71717f2359a4e9",
+      "acd969fc276b36147b435e2c23f63a3f9541b496",
+      "69415b734625c9ebb85ec3526c32665f3618346f"
     ],
     "issueNumbers": [],
     "prOpenedNumbers": [
-      1
+      1,
+      3
     ],
     "prMergedNumbers": [
-      1
+      1,
+      3
     ],
     "reviewIds": []
   },
@@ -102,24 +136,419 @@
       "4806632b0f2b9d0e1b32677202c120cde12fd9aa",
       "ab2f88eaadd144cefbc2f9cfd359cf4c4707d870",
       "a664fd928429f44869f44e074230ddf35699f02c",
-      "2dc95c6b331fbb579b1c84476cc23d34411738ee"
+      "2dc95c6b331fbb579b1c84476cc23d34411738ee",
+      "4d02a3a928cfe6eaa2ea7b643be7a20dd3e6c1ff",
+      "e2e92cd46d621a40fcb84432a0ebdbb456ba9d9a",
+      "034d116dbbdbf01a4adff34b88dbfbadcbd139e2",
+      "9b58530f8e48146727496df392d032fbe5a82623",
+      "c9a8e3cade316f59e7168e8f10f78ddfc072523e",
+      "e746efaa1599dd45fa27f112bea6efe69a8cc2f3",
+      "6a2aead5514cb3ec07f9037718cc753321f884cd",
+      "13a37c762dda1fdef16fa28430ce820c05766894",
+      "a85b086f77a88fa9b4918723b3cf22a5d2c584d4",
+      "804532ba19516716d7b85842ba27d4aa78cd8bd8",
+      "82f42b9088b63bfb45a9268424ac1083fb7fdf24",
+      "ca07c1752cb6c8ffacfca9aeddf48fcca1303fdb",
+      "25183739cfadfed12727c525ae0a5eb130932f1e",
+      "c5568045cfaae583cd44f39de4d2f69f04bb900d",
+      "116c8e7bb3835e30432da7a0f883515bd110e616",
+      "1ec362f577f88e37a2652a4c1cab8be34c44947f",
+      "4ab1e76523ddf860b0487f46f134e039be3c7717",
+      "c8413a22ba744a758318c3e06a8219e08f3661cf",
+      "d68160c23bd3702d883df5d6ad52578e3000707d",
+      "fad33432aca64bf4f64a6f4ba6e2490bc069d649",
+      "e053c91e5914e736fc7f355e4004a21783a554b5",
+      "136d0849fdbc34c4ef7bd3256de046cabcf1d0b9",
+      "dd4dcfbc9531326762e36248030593a3ad89805d",
+      "37b22f19b4fa9e1f49f241942d6cbdde91476ae5",
+      "1911e4e67913743fd763f420b8a8c33aec9e7efa",
+      "9c35489f8bf1fe1d04f5a4e54ada646e9e2d88e6",
+      "40e1a51878a635eaa1a579882028fa9fec2e5b4d",
+      "16602ba72817d6730a96ecb0df16b8c121733fa8",
+      "7d9ea7db6e4252726555340ccb71717f2359a4e9",
+      "acd969fc276b36147b435e2c23f63a3f9541b496",
+      "69415b734625c9ebb85ec3526c32665f3618346f"
     ],
     "issueIntervals": [],
     "prOpenedIntervals": [
       [
         1,
         1
+      ],
+      [
+        3,
+        3
       ]
     ],
     "prMergedIntervals": [
       [
         1,
         1
+      ],
+      [
+        3,
+        3
       ]
     ],
     "reviewIntervals": []
   },
   "recentEvents": [
+    {
+      "eventId": "pr_merged:1",
+      "eventType": "pr_merged",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.653Z",
+      "xpAwarded": 0,
+      "status": "skipped_duplicate",
+      "details": "Event pr_merged:1 has already been recorded in permanent deduplication index. Replay ignored."
+    },
+    {
+      "eventId": "pr_merged:3",
+      "eventType": "pr_merged",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.651Z",
+      "xpAwarded": 0,
+      "status": "skipped_daily_cap",
+      "details": "Daily activity XP cap (300 XP) reached for 2026-11-26."
+    },
+    {
+      "eventId": "pr_opened:1",
+      "eventType": "pr_opened",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.649Z",
+      "xpAwarded": 0,
+      "status": "skipped_duplicate",
+      "details": "Event pr_opened:1 has already been recorded in permanent deduplication index. Replay ignored."
+    },
+    {
+      "eventId": "pr_opened:3",
+      "eventType": "pr_opened",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.647Z",
+      "xpAwarded": 0,
+      "status": "skipped_daily_cap",
+      "details": "Daily activity XP cap (300 XP) reached for 2026-11-26."
+    },
+    {
+      "eventId": "commit:69415b734625c9ebb85ec3526c32665f3618346f",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.645Z",
+      "xpAwarded": 0,
+      "status": "skipped_daily_cap",
+      "details": "Daily activity XP cap (300 XP) reached for 2026-11-26.",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:acd969fc276b36147b435e2c23f63a3f9541b496",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.643Z",
+      "xpAwarded": 0,
+      "status": "skipped_daily_cap",
+      "details": "Daily activity XP cap (300 XP) reached for 2026-11-26.",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:7d9ea7db6e4252726555340ccb71717f2359a4e9",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.641Z",
+      "xpAwarded": 0,
+      "status": "skipped_daily_cap",
+      "details": "Daily activity XP cap (300 XP) reached for 2026-11-26.",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:16602ba72817d6730a96ecb0df16b8c121733fa8",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.639Z",
+      "xpAwarded": 0,
+      "status": "skipped_daily_cap",
+      "details": "Daily activity XP cap (300 XP) reached for 2026-11-26.",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:40e1a51878a635eaa1a579882028fa9fec2e5b4d",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.638Z",
+      "xpAwarded": 0,
+      "status": "skipped_daily_cap",
+      "details": "Daily activity XP cap (300 XP) reached for 2026-11-26.",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:9c35489f8bf1fe1d04f5a4e54ada646e9e2d88e6",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.636Z",
+      "xpAwarded": 0,
+      "status": "skipped_daily_cap",
+      "details": "Daily activity XP cap (300 XP) reached for 2026-11-26.",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:1911e4e67913743fd763f420b8a8c33aec9e7efa",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.634Z",
+      "xpAwarded": 0,
+      "status": "skipped_daily_cap",
+      "details": "Daily activity XP cap (300 XP) reached for 2026-11-26.",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:37b22f19b4fa9e1f49f241942d6cbdde91476ae5",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.632Z",
+      "xpAwarded": 0,
+      "status": "skipped_daily_cap",
+      "details": "Daily activity XP cap (300 XP) reached for 2026-11-26.",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:dd4dcfbc9531326762e36248030593a3ad89805d",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.630Z",
+      "xpAwarded": 0,
+      "status": "skipped_daily_cap",
+      "details": "Daily activity XP cap (300 XP) reached for 2026-11-26.",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:136d0849fdbc34c4ef7bd3256de046cabcf1d0b9",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.627Z",
+      "xpAwarded": 0,
+      "status": "skipped_daily_cap",
+      "details": "Daily activity XP cap (300 XP) reached for 2026-11-26.",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:e053c91e5914e736fc7f355e4004a21783a554b5",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.626Z",
+      "xpAwarded": 0,
+      "status": "skipped_daily_cap",
+      "details": "Daily activity XP cap (300 XP) reached for 2026-11-26.",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:fad33432aca64bf4f64a6f4ba6e2490bc069d649",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.622Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "fix(activity): harden lookback ceiling, merge outage recovery, and pagination checkpoints",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:d68160c23bd3702d883df5d6ad52578e3000707d",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.617Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "docs(sprint): add Sprint 5.2D-K historical PR recovery and checkpoint integrity audit report",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:c8413a22ba744a758318c3e06a8219e08f3661cf",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.614Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "fix(activity): implement historical recovery continuity and legacy checkpoint discovery (Sprint 5.2D",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:4ab1e76523ddf860b0487f46f134e039be3c7717",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.610Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "docs(sprint): add Sprint 5.2D-L historical recovery continuity and release gate closure report",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:1ec362f577f88e37a2652a4c1cab8be34c44947f",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.606Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "fix(activity): prove legacy PR recovery and merge pagination safety with atomic rollback (Sprint 5.2",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:116c8e7bb3835e30432da7a0f883515bd110e616",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.603Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "docs(sprint): add Sprint 5.2D-M final historical recovery proof and identity reconciliation report",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:c5568045cfaae583cd44f39de4d2f69f04bb900d",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.599Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "fix(activity): historical PR opening discovery completeness and conservative merge fail-closed (Spri",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:25183739cfadfed12727c525ae0a5eb130932f1e",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.596Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "docs: add Sprint 5.2D-N historical PR discovery audit report",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:ca07c1752cb6c8ffacfca9aeddf48fcca1303fdb",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.592Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "fix(activity): historical PR page exhaustion and resumable discovery (Sprint 5.2D-O)",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:82f42b9088b63bfb45a9268424ac1083fb7fdf24",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.588Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "docs: add Sprint 5.2D-O historical page exhaustion proof report",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:804532ba19516716d7b85842ba27d4aa78cd8bd8",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.583Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "fix(activity): final historical recovery semantics and pagination resumption (Sprint 5.2D-P)",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:a85b086f77a88fa9b4918723b3cf22a5d2c584d4",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.578Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "docs: add Sprint 5.2D-P final recovery semantics and identity reconciliation report",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:13a37c762dda1fdef16fa28430ce820c05766894",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.573Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "fix(activity): pagination budget proof, shifting-page stress, and cursor durability (Sprint 5.2D-Q)",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:6a2aead5514cb3ec07f9037718cc753321f884cd",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.568Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "docs(sprint): pagination budget proof and final merge-tree identity reconciliation (Sprint 5.2D-Q)",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:e746efaa1599dd45fa27f112bea6efe69a8cc2f3",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.564Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "fix(activity): pagination stress-test reproduction, maxPages=1 handling, and cursor durability (Spri",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:c9a8e3cade316f59e7168e8f10f78ddfc072523e",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.560Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "docs(sprint): pagination stress-test reproduction and definitive git identity audit (Sprint 5.2D-R)",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:9b58530f8e48146727496df392d032fbe5a82623",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.555Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "test(activity): explicit Scenario A XP/ledger, Scenario B traces, and Scenario D new-PR discovery (S",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:034d116dbbdbf01a4adff34b88dbfbadcbd139e2",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.550Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "docs(sprint): repeated-insertion trace correction, XP ledger proof, and final identity audit (Sprint",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:e2e92cd46d621a40fcb84432a0ebdbb456ba9d9a",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.544Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "fix(ci): enforce least-privilege read-only permissions on PR activity validation (Gate B1)",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:4d02a3a928cfe6eaa2ea7b643be7a20dd3e6c1ff",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.537Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "fix(ci): trigger read-only PR activity validation on synchronize (Gate B2A)",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:b9095da455745ed1d951b09328cc8983c515f95b",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-26T14:45:27.532Z",
+      "xpAwarded": 0,
+      "status": "skipped_bot",
+      "details": "Ignored commit with automation or skip-ci message: \"Merge pull request #3 from mnp210/candidate/playab\"",
+      "ref": "refs/heads/main"
+    },
     {
       "eventId": "pr_merged:1",
       "eventType": "pr_merged",
@@ -618,11 +1047,12 @@
       "ref": "refs/heads/main"
     }
   ],
-  "updatedAt": "2026-11-23T02:03:56.173Z",
+  "updatedAt": "2026-11-26T14:45:27.653Z",
   "checkpoints": {
-    "lastCommitSha": "d6c35ac19ed7604920cb7520e28fa1c83d70fd7b",
-    "lastIssueNumber": 2,
-    "lastPrNumber": 1,
-    "reconciledAt": "2026-11-23T02:03:55.079Z"
+    "lastCommitSha": "b9095da455745ed1d951b09328cc8983c515f95b",
+    "lastIssueNumber": 3,
+    "lastPrNumber": 3,
+    "reconciledAt": "2026-11-26T14:45:25.939Z",
+    "historicalPrCompleted": true
   }
 }
