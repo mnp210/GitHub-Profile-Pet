@@ -16,7 +16,8 @@
  * 7. State snapshot accuracy: displays last-updated timestamp and state hash with clear static snapshot notice.
  */
 
-import type { PetState } from '../../../types/pet.ts';
+import type { PetState, SpeciesId } from '../../../types/pet.ts';
+import { getDefaultPersonalityForSpecies } from '../../personality/personalities.ts';
 
 export const README_MENU_MARKER_START = '<!-- START_SECTION:github-profile-pet-menu -->';
 export const README_MENU_MARKER_END = '<!-- END_SECTION:github-profile-pet-menu -->';
@@ -24,14 +25,18 @@ export const README_MENU_MARKER_END = '<!-- END_SECTION:github-profile-pet-menu 
 export interface ReadmePetData {
   name: string;
   species: string;
+  generation?: number;
   level: number;
   xp?: number;
   maxExp?: number;
   mood?: string;
+  personality?: string;
   evolutionStage?: string;
   hunger?: number;
   happiness?: number;
   energy?: number;
+  updatedAt?: string | null;
+  lastSimulatedAt?: string | null;
 }
 
 export interface ReadmeMenuOptions {
@@ -124,56 +129,216 @@ export function getSpeciesDisplayName(species: string): string {
   }
 }
 
+function getSpeciesArchetype(species: string): string {
+  switch (species) {
+    case 'shadow_claw':
+    case 'cat':
+      return 'Void Familiar';
+    case 'ignis_ember':
+    case 'dragon':
+      return 'Ruby Drake';
+    case 'kitsune_sol':
+    case 'fox':
+      return 'Nine-Tail Scout';
+    case 'bloop_matrix':
+    case 'slime':
+      return 'Cyber Jelly';
+    default:
+      return 'Void Familiar';
+  }
+}
+
+function toSpeciesId(species: string): SpeciesId {
+  switch (species) {
+    case 'ignis_ember':
+    case 'dragon':
+      return 'dragon';
+    case 'kitsune_sol':
+    case 'fox':
+      return 'fox';
+    case 'bloop_matrix':
+    case 'slime':
+      return 'slime';
+    case 'shadow_claw':
+    case 'cat':
+    default:
+      return 'cat';
+  }
+}
+
+function formatProgressBar(value: number, max: number, segments = 10): string {
+  const safeMax = max > 0 ? max : 100;
+  const ratio = Math.max(0, Math.min(1, value / safeMax));
+  const filled = Math.round(ratio * segments);
+  return `${'█'.repeat(filled)}${'░'.repeat(segments - filled)}`;
+}
+
+function resolveSpriteAssetPath(
+  species: string,
+  mood: string,
+  energy: number,
+  fallbackSvgPath: string
+): string {
+  const speciesId = toSpeciesId(species);
+  if (speciesId !== 'cat' || (fallbackSvgPath && fallbackSvgPath !== 'public/pet.svg')) {
+    return fallbackSvgPath;
+  }
+  if (energy <= 15) {
+    return 'public/sprites/pets/cat/tired_animated.svg';
+  }
+  if (mood === 'Resting') {
+    return 'public/sprites/pets/cat/sleeping_animated.svg';
+  }
+  if (mood === 'Happy') {
+    return 'public/sprites/pets/cat/happy_animated.svg';
+  }
+  return 'public/sprites/pets/cat/curious_animated.svg';
+}
+
+function capitalizeWord(value: string): string {
+  if (!value) return '';
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 /**
- * Generates the standardized, GitHub-compatible Markdown/HTML Pet Menu block.
+ * Escapes HTML-sensitive characters (&, <, >, ", ') for safe text and attribute
+ * interpolation without double-escaping existing named/numeric HTML entities.
+ */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&(?!(?:amp|lt|gt|quot|#39|#x27);)/gi, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Validates that an SVG/image path is a safe relative repository asset path.
+ * Rejects URL schemes, protocol-relative URLs, backslashes, path traversal, and control/HTML chars.
+ */
+export function validateSafeAssetPath(assetPath: string): string {
+  const trimmed = assetPath.trim();
+  if (!trimmed) {
+    throw new Error('Unsafe svgRelativePath: path cannot be empty.');
+  }
+  if (/[\u0000-\u001f\u007f<>"'`\\]/.test(trimmed)) {
+    throw new Error(`Unsafe svgRelativePath: invalid characters in '${trimmed}'.`);
+  }
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed) || trimmed.startsWith('//') || trimmed.startsWith('/')) {
+    throw new Error(`Unsafe svgRelativePath: external URL schemes and absolute paths are not allowed ('${trimmed}').`);
+  }
+  const segments = trimmed.split('/');
+  if (segments.some((seg) => seg === '' || seg === '.' || seg === '..')) {
+    throw new Error(`Unsafe svgRelativePath: path traversal or empty segments are not allowed ('${trimmed}').`);
+  }
+  if (!/\.(svg|png|jpe?g|webp|gif)$/i.test(trimmed)) {
+    throw new Error(`Unsafe svgRelativePath: unsupported asset extension ('${trimmed}').`);
+  }
+  return trimmed;
+}
+
+/**
+ * Generates the standardized, GitHub-compatible Markdown/HTML Pet Dashboard & Menu block.
  */
 export function generateReadmeMenuSnippet(options: ReadmeMenuOptions): string {
   const lineEnding = options.lineEnding ?? '\n';
   const repo = options.repo.trim();
-  const pet = options.pet;
+  const pet = options.pet as ReadmePetData;
   const baseUrl = resolveHostedGameUrl(repo, options.hostedGameUrl);
-  const svgPath = options.svgRelativePath || 'public/pet.svg';
-  const timestamp = options.lastUpdatedUtc || new Date().toISOString();
-  const hashNote = options.stateHash ? ` (Snapshot: \`${options.stateHash.slice(0, 8)}\`)` : '';
+  const svgPath = validateSafeAssetPath(options.svgRelativePath || 'public/pet.svg');
+  const rawTimestamp =
+    options.lastUpdatedUtc ||
+    pet.updatedAt ||
+    pet.lastSimulatedAt ||
+    new Date().toISOString();
+  const timestamp = escapeHtml(rawTimestamp);
+  const safeHash = options.stateHash ? escapeHtml(options.stateHash.slice(0, 8)) : '';
+  const hashNote = safeHash ? ` &middot; Snapshot \`${safeHash}\`` : '';
 
   const speciesDisplayName = getSpeciesDisplayName(pet.species);
-  const petName = pet.name || speciesDisplayName;
-  const stageDisplayName = pet.evolutionStage || 'Hatchling';
-  const moodDisplayName = pet.mood || 'Happy';
+  const archetype = escapeHtml(getSpeciesArchetype(pet.species));
+  const petName = escapeHtml(pet.name || speciesDisplayName);
+  const petNameTableCell = petName.replace(/\|/g, '&#124;').replace(/\r?\n/g, ' ');
+  const stageDisplayName = escapeHtml(pet.evolutionStage || 'Hatchling');
+  const moodDisplayName = escapeHtml(pet.mood || 'Happy');
+  const generation = pet.generation ?? 1;
+  const rawPersonality =
+    pet.personality || getDefaultPersonalityForSpecies(toSpeciesId(pet.species));
+  const personalityDisplay = escapeHtml(capitalizeWord(rawPersonality));
 
   const energy = Math.round(pet.energy ?? 100);
   const satiety = Math.round(pet.hunger ?? 100);
   const happiness = Math.round(pet.happiness ?? 100);
+  const xp = Math.max(0, Math.round(pet.xp ?? 0));
+  const maxExp = Math.max(1, Math.round(pet.maxExp ?? 100));
+  const xpPercent = Math.min(100, Math.round((xp / maxExp) * 100));
+
+  const xpBar = formatProgressBar(xp, maxExp, 10);
+  const energyBar = formatProgressBar(energy, 100, 10);
+  const satietyBar = formatProgressBar(satiety, 100, 10);
+  const happinessBar = formatProgressBar(happiness, 100, 10);
 
   const encodedRepo = encodeURIComponent(repo);
+  const playBaseUrl = `${baseUrl}/?repo=${encodedRepo}`;
+  const playBaseUrlAttr = escapeHtml(playBaseUrl);
+  const spritePath = escapeHtml(
+    validateSafeAssetPath(
+      resolveSpriteAssetPath(pet.species, pet.mood || 'Happy', energy, svgPath)
+    )
+  );
 
   const lines = [
     README_MENU_MARKER_START,
     '<div align="center">',
     '',
-    `### 🐾 ${petName} — Virtual Companion`,
+    `<h2><a href="${playBaseUrlAttr}">&#9876;&#65039; ${petName} &mdash; Shadow Companion Hub</a></h2>`,
+    `<p><strong>${archetype}</strong> &middot; <code>Lv. ${pet.level}</code> &middot; <code>${stageDisplayName}</code> &middot; <code>Gen #${generation}</code></p>`,
     '',
-    '<p align="center">',
-    `  <a href="${baseUrl}/?repo=${encodedRepo}&action=stats">`,
-    `    <img src="${svgPath}" alt="${petName}" width="420" />`,
-    '  </a>',
-    '</p>',
+    '<table>',
+    '  <thead>',
+    '    <tr>',
+    '      <th align="center">Companion</th>',
+    '      <th align="left">Status Panel</th>',
+    '    </tr>',
+    '  </thead>',
+    '  <tbody>',
+    '    <tr>',
+    '      <td align="center" width="180">',
+    `        <a href="${playBaseUrlAttr}" title="Launch ${petName} in GitHub Profile Pet">`,
+    `          <img src="${spritePath}" alt="${petName} sprite" width="112" height="112" />`,
+    '        </a>',
+    '        <br />',
+    `        <a href="${playBaseUrlAttr}"><strong>&#9654; Launch Game</strong></a>`,
+    '      </td>',
+    '      <td align="left">',
+    `        <strong>XP Progress:</strong> <code>${xpBar}</code> <strong>${xp} / ${maxExp} XP</strong> (${xpPercent}%)<br />`,
+    `        <strong>Mood:</strong> ${moodDisplayName} &nbsp;&middot;&nbsp; <strong>Personality:</strong> ${personalityDisplay}<br /><br />`,
+    `        <strong>Energy:</strong> <code>${energyBar}</code> ${energy}%<br />`,
+    `        <strong>Satiety:</strong> <code>${satietyBar}</code> ${satiety}%<br />`,
+    `        <strong>Happiness:</strong> <code>${happinessBar}</code> ${happiness}%`,
+    '      </td>',
+    '    </tr>',
+    '  </tbody>',
+    '</table>',
     '',
-    '| Species | Stage | Level | Mood | Vitals (Energy / Sat / Joy) |',
-    '| :---: | :---: | :---: | :---: | :---: |',
-    `| **${speciesDisplayName}** | **${stageDisplayName}** | **Lv. ${pet.level}** | **${moodDisplayName}** | ⚡ ${energy}% &nbsp;\\|&nbsp; 🍖 ${satiety}% &nbsp;\\|&nbsp; 💖 ${happiness}% |`,
+    '### Game Menu',
     '',
-    '#### 🎮 Interactive Companion Menu',
-    `[🎮 **Play with Pet**](${baseUrl}/?repo=${encodedRepo}) &bull; ` +
-      `[🍖 **Feed**](${baseUrl}/?repo=${encodedRepo}&action=feed) &bull; ` +
-      `[🎾 **Play**](${baseUrl}/?repo=${encodedRepo}&action=play) &bull; ` +
-      `[⚔️ **Train**](${baseUrl}/?repo=${encodedRepo}&action=train) &bull; ` +
-      `[🌙 **Rest**](${baseUrl}/?repo=${encodedRepo}&action=rest) &bull; ` +
-      `[🐾 **Pet**](${baseUrl}/?repo=${encodedRepo}&action=pet) &bull; ` +
-      `[📊 **View Pet Stats**](${baseUrl}/?repo=${encodedRepo}&action=stats)`,
+    '| Menu Section | Destination | Purpose |',
+    '| :--- | :--- | :--- |',
+    `| <a href="${playBaseUrlAttr}"><strong>CARE</strong></a> | [Open Care Hub](${playBaseUrl}) | Feed, train, rest, and pet ${petNameTableCell} in real time |`,
+    `| <a href="${playBaseUrlAttr}"><strong>PLAY ZONE</strong></a> | [Open Game](${playBaseUrl}) | Launch interactive mini-games from the main interface |`,
+    `| <a href="${playBaseUrlAttr}"><strong>WARDROBE</strong></a> | [Open Game](${playBaseUrl}) | Equip unlocked cosmetics and shadow accessories |`,
+    `| <a href="${playBaseUrlAttr}"><strong>BOND</strong></a> | [Open Game](${playBaseUrl}) | Build daily companion affinity and milestones |`,
+    `| <a href="${playBaseUrlAttr}"><strong>ACHIEVEMENTS</strong></a> | [Open Game](${playBaseUrl}) | Track unlocked milestones and progression rewards |`,
+    `| <a href="${playBaseUrlAttr}&amp;action=stats"><strong>PET PROFILE</strong></a> | [View Pet Stats](${playBaseUrl}&action=stats) | Inspect full companion telemetry and ledger status |`,
     '',
-    `<sub>*Last verified snapshot: ${timestamp}${hashNote}*<br />` +
-      `*Note: This menu is a static snapshot. Click any action to launch the interactive game and confirm changes.*</sub>`,
+    `**Quick Care Actions:** [Feed](${playBaseUrl}&action=feed) &middot; [Train](${playBaseUrl}&action=train) &middot; [Rest](${playBaseUrl}&action=rest) &middot; [Pet](${playBaseUrl}&action=pet)`,
+    '',
+    `<sub>Static snapshot synced from <code>pet/state/pet.json</code> (${timestamp}${hashNote}).<br />` +
+      'GitHub READMEs do not run JavaScript or iframes; clicking any menu item launches the live web game. ' +
+      '<code>CARE</code> and <code>PET PROFILE</code> use supported query parameters (<code>?repo=</code>, <code>?action=stats</code>); ' +
+      '<code>PLAY ZONE</code>, <code>WARDROBE</code>, <code>BOND</code>, and <code>ACHIEVEMENTS</code> open the main game view directly.</sub>',
     '',
     '</div>',
     README_MENU_MARKER_END,

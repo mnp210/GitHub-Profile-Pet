@@ -1,20 +1,57 @@
 # GitHub Profile Pet
 
-A customizable, virtual developer pet companion hosted natively in your GitHub repository and driven by autonomous GitHub Actions workflows.
+A playable virtual developer companion hosted natively in your GitHub repository, powered by autonomous GitHub Actions workflows and a live [GitHub Pages game interface](https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet).
 
-[![Deploy Playable Game to GitHub Pages](https://github.com/mnp210/GitHub-Profile-Pet/actions/workflows/deploy-pages.yml/badge.svg?branch=main)](https://github.com/mnp210/GitHub-Profile-Pet/actions/workflows/deploy-pages.yml)
-[![Pet Activity Progression](https://github.com/mnp210/GitHub-Profile-Pet/actions/workflows/pet-activity.yml/badge.svg?branch=main)](https://github.com/mnp210/GitHub-Profile-Pet/actions/workflows/pet-activity.yml)
-[![Pet SVG Publication](https://github.com/mnp210/GitHub-Profile-Pet/actions/workflows/pet-publisher.yml/badge.svg?branch=main)](https://github.com/mnp210/GitHub-Profile-Pet/actions/workflows/pet-publisher.yml)
-[![Pet Care Action Inbox](https://github.com/mnp210/GitHub-Profile-Pet/actions/workflows/pet-interaction.yml/badge.svg?branch=main)](https://github.com/mnp210/GitHub-Profile-Pet/actions/workflows/pet-interaction.yml)
-[![Diagnostics Contribution Probe](https://github.com/mnp210/GitHub-Profile-Pet/actions/workflows/diagnostics-contribution-probe.yml/badge.svg?branch=main)](https://github.com/mnp210/GitHub-Profile-Pet/actions/workflows/diagnostics-contribution-probe.yml)
+<!-- START_SECTION:github-profile-pet-menu -->
+<div align="center">
 
-The companion features **serverless care interactions** (Feed, Train, Rest, Pet via native GitHub Issue Forms), **deterministic passive vitals simulation** (hunger and happiness decay over elapsed time), **fail-closed trainer authorization**, and **automated SVG badge publishing** directly to your profile README.
+<h2><a href="https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet">&#9876;&#65039; Shadow Claw &mdash; Shadow Companion Hub</a></h2>
+<p><strong>Void Familiar</strong> &middot; <code>Lv. 4</code> &middot; <code>Hatchling</code> &middot; <code>Gen #67</code></p>
 
-<!-- START_SECTION:github-profile-pet -->
-<p align="center">
-  <img src="public/pet.svg" alt="GitHub Profile Pet" width="450" height="200" />
-</p>
-<!-- END_SECTION:github-profile-pet -->
+<table>
+  <thead>
+    <tr>
+      <th align="center">Companion</th>
+      <th align="left">Status Panel</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center" width="180">
+        <a href="https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet" title="Launch Shadow Claw in GitHub Profile Pet">
+          <img src="public/sprites/pets/cat/happy_animated.svg" alt="Shadow Claw sprite" width="112" height="112" />
+        </a>
+        <br />
+        <a href="https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet"><strong>&#9654; Launch Game</strong></a>
+      </td>
+      <td align="left">
+        <strong>XP Progress:</strong> <code>██████████</code> <strong>390 / 400 XP</strong> (98%)<br />
+        <strong>Mood:</strong> Happy &nbsp;&middot;&nbsp; <strong>Personality:</strong> Curious<br /><br />
+        <strong>Energy:</strong> <code>██████████</code> 100%<br />
+        <strong>Satiety:</strong> <code>████████░░</code> 75%<br />
+        <strong>Happiness:</strong> <code>████░░░░░░</code> 40%
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+### Game Menu
+
+| Menu Section | Destination | Purpose |
+| :--- | :--- | :--- |
+| <a href="https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet"><strong>CARE</strong></a> | [Open Care Hub](https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet) | Feed, train, rest, and pet Shadow Claw in real time |
+| <a href="https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet"><strong>PLAY ZONE</strong></a> | [Open Game](https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet) | Launch interactive mini-games from the main interface |
+| <a href="https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet"><strong>WARDROBE</strong></a> | [Open Game](https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet) | Equip unlocked cosmetics and shadow accessories |
+| <a href="https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet"><strong>BOND</strong></a> | [Open Game](https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet) | Build daily companion affinity and milestones |
+| <a href="https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet"><strong>ACHIEVEMENTS</strong></a> | [Open Game](https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet) | Track unlocked milestones and progression rewards |
+| <a href="https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet&amp;action=stats"><strong>PET PROFILE</strong></a> | [View Pet Stats](https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet&action=stats) | Inspect full companion telemetry and ledger status |
+
+**Quick Care Actions:** [Feed](https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet&action=feed) &middot; [Train](https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet&action=train) &middot; [Rest](https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet&action=rest) &middot; [Pet](https://mnp210.github.io/GitHub-Profile-Pet/?repo=mnp210%2FGitHub-Profile-Pet&action=pet)
+
+<sub>Static snapshot synced from <code>pet/state/pet.json</code> (2026-11-26T14:45:27.622Z).<br />GitHub READMEs do not run JavaScript or iframes; clicking any menu item launches the live web game. <code>CARE</code> and <code>PET PROFILE</code> use supported query parameters (<code>?repo=</code>, <code>?action=stats</code>); <code>PLAY ZONE</code>, <code>WARDROBE</code>, <code>BOND</code>, and <code>ACHIEVEMENTS</code> open the main game view directly.</sub>
+
+</div>
+<!-- END_SECTION:github-profile-pet-menu -->
 
 ---
 
