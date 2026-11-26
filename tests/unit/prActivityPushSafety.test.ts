@@ -491,6 +491,8 @@ describe('PR Activity Push Safety & Regression Suite (Sprint 5.2D-I)', () => {
       assert.ok(prJobSection && trustedJobSection, 'progress-activity job must exist');
 
       // 1. Workflow-level permissions must be read-only (no contents: write at top level)
+      // and pull_request must include synchronize so updated PR revisions are validated
+      assert.match(headerSection, /pull_request:\s*\r?\n\s+types:\s*\[.*opened.*synchronize.*\]/);
       assert.match(headerSection, /permissions:\s*\r?\n\s+contents:\s*read/);
       assert.equal(/contents:\s*write/.test(headerSection), false, 'Workflow-level permissions must not grant contents: write');
 
