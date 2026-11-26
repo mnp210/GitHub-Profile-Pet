@@ -23,7 +23,11 @@ import {
 } from '../../src/features/pet-engine/persistence/stateRepository.ts';
 import { validatePetState } from '../../src/features/pet-engine/validation/stateValidator.ts';
 import { isPristineContributionLedger } from '../../src/features/pet-engine/validation/ledgerValidator.ts';
-import { updateReadmeContent, README_MARKER_START, README_MARKER_END } from '../../src/features/pet-engine/publication/readmeEmbed.ts';
+import {
+  updateReadmeMenuContent,
+  README_MENU_MARKER_START,
+  README_MENU_MARKER_END,
+} from '../../src/features/pet-engine/publication/readmeMenu.ts';
 import { ENGINE_SCHEMA_VERSION } from '../../src/features/pet-engine/domain/constants.ts';
 import type {
   PetStateDocument,
@@ -660,22 +664,37 @@ describe('Phase 3C2.3-B2-R3.38 — Onboarding Remediation Regression Suite', () 
     const readmePath = path.join(repoRoot, 'README.md');
     const content = await fs.readFile(readmePath, 'utf-8');
 
-    const startMatches = content.split(README_MARKER_START).length - 1;
-    const endMatches = content.split(README_MARKER_END).length - 1;
+    const startMatches = content.split(README_MENU_MARKER_START).length - 1;
+    const endMatches = content.split(README_MENU_MARKER_END).length - 1;
 
-    assert.equal(startMatches, 1, `Expected exactly 1 '${README_MARKER_START}', found ${startMatches}`);
-    assert.equal(endMatches, 1, `Expected exactly 1 '${README_MARKER_END}', found ${endMatches}`);
+    assert.equal(startMatches, 1, `Expected exactly 1 '${README_MENU_MARKER_START}', found ${startMatches}`);
+    assert.equal(endMatches, 1, `Expected exactly 1 '${README_MENU_MARKER_END}', found ${endMatches}`);
   });
 
-  it('P1-02-B: updateReadmeContent successfully updates README.md without MalformedReadmeMarkersError', async () => {
+  it('P1-02-B: updateReadmeMenuContent successfully updates README.md without MalformedReadmeMenuMarkersError', async () => {
     const readmePath = path.join(repoRoot, 'README.md');
     const content = await fs.readFile(readmePath, 'utf-8');
 
     // Must not throw!
-    const result = updateReadmeContent(content, 'public/pet.svg');
+    const result = updateReadmeMenuContent(content, {
+      repo: 'mnp210/GitHub-Profile-Pet',
+      pet: {
+        name: 'Shadow Claw',
+        species: 'cat',
+        generation: 67,
+        level: 4,
+        xp: 390,
+        maxExp: 400,
+        mood: 'Happy',
+        evolutionStage: 'Hatchling',
+        energy: 100,
+        hunger: 75,
+        happiness: 40,
+      },
+    });
     assert.equal(result.markersFound, true);
     assert.ok(typeof result.content === 'string');
-    assert.ok(result.content.includes(README_MARKER_START));
+    assert.ok(result.content.includes(README_MENU_MARKER_START));
   });
 
   // --------------------------------------------------------------------------

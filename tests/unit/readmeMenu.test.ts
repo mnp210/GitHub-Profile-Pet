@@ -67,20 +67,26 @@ describe('Repository README Interactive Pet Menu', () => {
 
       // Pet details
       assert.ok(snippet.includes('Shadow Claw'));
+      assert.ok(snippet.includes('Void Familiar'));
       assert.ok(snippet.includes('Lv. 5'));
       assert.ok(snippet.includes('Juvenile'));
+      assert.ok(snippet.includes('Gen #1'));
+      assert.ok(snippet.includes('120 / 200 XP'));
+      assert.ok(snippet.includes('60%'));
       assert.ok(snippet.includes('Happy'));
-      assert.ok(snippet.includes('⚡ 85%'));
-      assert.ok(snippet.includes('🍖 92%'));
-      assert.ok(snippet.includes('💖 95%'));
+      assert.ok(snippet.includes('Curious'));
+      assert.ok(snippet.includes('85%'));
+      assert.ok(snippet.includes('92%'));
+      assert.ok(snippet.includes('95%'));
+      assert.ok(snippet.includes('public/sprites/pets/cat/happy_animated.svg'));
 
       // Static snapshot notice & hash
-      assert.ok(snippet.includes('Last verified snapshot: 2026-11-19T21:30:00.000Z'));
-      assert.ok(snippet.includes('Snapshot: `31904e74`'));
-      assert.ok(snippet.includes('Click any action to launch the interactive game'));
+      assert.ok(snippet.includes('2026-11-19T21:30:00.000Z'));
+      assert.ok(snippet.includes('Snapshot `31904e74`'));
+      assert.ok(snippet.includes('GitHub READMEs do not run JavaScript or iframes'));
     });
 
-    it('generates all 7 required navigation links with URL parameters', () => {
+    it('generates all 6 required game menu entries and quick care links with valid URL parameters', () => {
       const snippet = generateReadmeMenuSnippet({
         repo: 'mnp210/GitHub-Profile-Pet-Test',
         pet: mockPet,
@@ -88,13 +94,90 @@ describe('Repository README Interactive Pet Menu', () => {
 
       const expectedBase = 'https://mnp210.github.io/GitHub-Profile-Pet-Test/?repo=mnp210%2FGitHub-Profile-Pet-Test';
 
-      assert.ok(snippet.includes(`[🎮 **Play with Pet**](${expectedBase})`));
-      assert.ok(snippet.includes(`[🍖 **Feed**](${expectedBase}&action=feed)`));
-      assert.ok(snippet.includes(`[🎾 **Play**](${expectedBase}&action=play)`));
-      assert.ok(snippet.includes(`[⚔️ **Train**](${expectedBase}&action=train)`));
-      assert.ok(snippet.includes(`[🌙 **Rest**](${expectedBase}&action=rest)`));
-      assert.ok(snippet.includes(`[🐾 **Pet**](${expectedBase}&action=pet)`));
-      assert.ok(snippet.includes(`[📊 **View Pet Stats**](${expectedBase}&action=stats)`));
+      assert.ok(snippet.includes(`href="${expectedBase}"><strong>CARE</strong>`));
+      assert.ok(snippet.includes(`href="${expectedBase}"><strong>PLAY ZONE</strong>`));
+      assert.ok(snippet.includes(`href="${expectedBase}"><strong>WARDROBE</strong>`));
+      assert.ok(snippet.includes(`href="${expectedBase}"><strong>BOND</strong>`));
+      assert.ok(snippet.includes(`href="${expectedBase}"><strong>ACHIEVEMENTS</strong>`));
+      assert.ok(snippet.includes(`href="${expectedBase}&amp;action=stats"><strong>PET PROFILE</strong>`));
+
+      assert.ok(snippet.includes(`[Feed](${expectedBase}&action=feed)`));
+      assert.ok(snippet.includes(`[Train](${expectedBase}&action=train)`));
+      assert.ok(snippet.includes(`[Rest](${expectedBase}&action=rest)`));
+      assert.ok(snippet.includes(`[Pet](${expectedBase}&action=pet)`));
+    });
+
+    it('escapes HTML injection, quotes, ampersands, and angle brackets without double-escaping', () => {
+      const snippet = generateReadmeMenuSnippet({
+        repo: 'mnp210/GitHub-Profile-Pet-Test',
+        pet: {
+          ...mockPet,
+          name: `Shadow "Claw" & <script>alert('xss')</script> &amp;`,
+          evolutionStage: `Stage <1> "Alpha"`,
+          mood: `Happy & 'Bright'`,
+          personality: `curious<img src=x onerror=1>`,
+        },
+        lastUpdatedUtc: '2026-11-26T14:45:27.622Z',
+      });
+
+      assert.ok(!snippet.includes('<script>'));
+      assert.ok(!snippet.includes('<img src=x'));
+      assert.ok(snippet.includes('Shadow &quot;Claw&quot; &amp; &lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt; &amp;'));
+      assert.ok(snippet.includes('Stage &lt;1&gt; &quot;Alpha&quot;'));
+      assert.ok(snippet.includes('Happy &amp; &#39;Bright&#39;'));
+      assert.ok(snippet.includes('Curious&lt;img src=x onerror=1&gt;'));
+      assert.ok(!snippet.includes('&amp;amp;'));
+    });
+
+    it('preserves legitimate Unicode pet names and display labels', () => {
+      const snippet = generateReadmeMenuSnippet({
+        repo: 'mnp210/GitHub-Profile-Pet-Test',
+        pet: {
+          ...mockPet,
+          name: 'Shadow 影 Claw ★',
+          mood: 'Calm ✨',
+          evolutionStage: 'Évolution',
+        },
+        lastUpdatedUtc: '2026-11-26T14:45:27.622Z',
+      });
+
+      assert.ok(snippet.includes('Shadow 影 Claw ★'));
+      assert.ok(snippet.includes('Calm ✨'));
+      assert.ok(snippet.includes('Évolution'));
+    });
+
+    it('rejects unsafe SVG asset paths (schemes, traversal, absolute paths, quotes)', () => {
+      const unsafePaths = [
+        'javascript:alert(1).svg',
+        'data:image/svg+xml,<svg/>.svg',
+        'https://evil.example/pet.svg',
+        '../secret/pet.svg',
+        '/etc/passwd.svg',
+        'public/pet.svg" onclick="alert(1)',
+        'public/pet.txt',
+      ];
+
+      for (const badPath of unsafePaths) {
+        assert.throws(() =>
+          generateReadmeMenuSnippet({
+            repo: 'mnp210/GitHub-Profile-Pet-Test',
+            pet: mockPet,
+            svgRelativePath: badPath,
+          })
+        );
+      }
+    });
+
+    it('produces deterministic output for identical inputs', () => {
+      const opts = {
+        repo: 'mnp210/GitHub-Profile-Pet-Test',
+        pet: mockPet,
+        lastUpdatedUtc: '2026-11-26T14:45:27.622Z',
+        stateHash: 'abcdef123456',
+      };
+      const first = generateReadmeMenuSnippet(opts);
+      const second = generateReadmeMenuSnippet(opts);
+      assert.equal(first, second);
     });
   });
 

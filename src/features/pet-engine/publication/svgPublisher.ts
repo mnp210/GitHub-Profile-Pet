@@ -142,7 +142,10 @@ export async function publishPetSvg(options: PublishPetOptions = {}): Promise<Pu
           pet: petState,
           hostedGameUrl: options.hostedGameUrl,
           svgRelativePath: relativeSvg,
-          lastUpdatedUtc: new Date().toISOString(),
+          lastUpdatedUtc:
+            petState.updatedAt ||
+            petState.lastSimulatedAt ||
+            new Date().toISOString(),
         });
         currentReadmeContent = menuUpdateResult.content;
       }
