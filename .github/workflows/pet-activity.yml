@@ -14,26 +14,63 @@ on:
     - cron: '*/30 * * * *'
   workflow_dispatch:
 
+# Strict read-only baseline at workflow level; write permissions are granted only to the trusted default-branch job.
 permissions:
-  contents: write
-  issues: read
-  pull-requests: read
+  contents: read
 
 concurrency:
   group: pet-runtime-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
+  validate-pr-activity:
+    name: Validate PR Activity (Read-Only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    if: >
+      (github.event_name == 'pull_request' || github.event_name == 'pull_request_review') &&
+      github.actor != 'github-actions[bot]' &&
+      github.actor != 'dependabot[bot]'
+
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+
+    steps:
+      - name: Checkout Repository (No Persisted Credentials)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate PR Activity (Deferred to Default Branch)
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          node --experimental-strip-types scripts/process-activity.ts --ref "${{ github.ref_name }}" --dry-run
+
   progress-activity:
     name: Award Activity XP & Update State
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
-    # Guard: skip processing if triggered by bot actions or automation commits, but always run schedule/dispatch
+    # Guard: never run on pull_request or pull_request_review; skip bot actions and automation commits
     if: >
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
       (
+        github.event_name != 'pull_request' &&
+        github.event_name != 'pull_request_review' &&
         github.actor != 'github-actions[bot]' &&
         github.actor != 'dependabot[bot]' &&
         !contains(github.event.head_commit.message, '[skip ci]') &&
@@ -41,6 +78,11 @@ jobs:
         !contains(github.event.head_commit.message, 'pet: update state') &&
         !contains(github.event.head_commit.message, 'pet: record activity')
       )
+
+    permissions:
+      contents: write
+      issues: read
+      pull-requests: read
 
     steps:
       - name: Checkout Repository

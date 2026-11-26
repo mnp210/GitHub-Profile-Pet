@@ -475,4 +475,82 @@ describe('PR Activity Push Safety & Regression Suite (Sprint 5.2D-I)', () => {
       assert.equal(cappedResult.updatedLedger.dailyAccruedXp[dateKey], 300);
     });
   });
+
+  describe('5. Workflow Least-Privilege Separation & Unmerged PR Discovery (Gate B1)', () => {
+    it('enforces read-only workflow baseline and isolates contents:write away from PR events', async () => {
+      const workflowPath = path.resolve(process.cwd(), '.github/workflows/pet-activity.yml');
+      const yaml = await fs.readFile(workflowPath, 'utf-8');
+
+      // Must never use pull_request_target
+      assert.equal(yaml.includes('pull_request_target'), false, 'pull_request_target must never be used');
+
+      // Split into workflow header, validate-pr-activity job, and progress-activity job
+      const [headerSection, restAfterPrJob] = yaml.split('  validate-pr-activity:');
+      assert.ok(headerSection && restAfterPrJob, 'validate-pr-activity job must exist');
+      const [prJobSection, trustedJobSection] = restAfterPrJob.split('  progress-activity:');
+      assert.ok(prJobSection && trustedJobSection, 'progress-activity job must exist');
+
+      // 1. Workflow-level permissions must be read-only (no contents: write at top level)
+      assert.match(headerSection, /permissions:\s*\r?\n\s+contents:\s*read/);
+      assert.equal(/contents:\s*write/.test(headerSection), false, 'Workflow-level permissions must not grant contents: write');
+
+      // 2. PR validation job must be strictly read-only, with no persisted credentials or GITHUB_TOKEN exposure
+      assert.match(prJobSection, /github\.event_name == 'pull_request' \|\| github\.event_name == 'pull_request_review'/);
+      assert.match(prJobSection, /permissions:\s*\r?\n\s+contents:\s*read/);
+      assert.equal(/contents:\s*write/.test(prJobSection), false, 'PR validation job must not have contents: write');
+      assert.match(prJobSection, /persist-credentials:\s*false/);
+      assert.equal(prJobSection.includes('secrets.GITHUB_TOKEN'), false, 'PR validation job must not reference secrets.GITHUB_TOKEN');
+      assert.match(prJobSection, /--dry-run/);
+
+      // 3. Trusted reconciliation job must explicitly exclude pull_request and pull_request_review
+      assert.match(trustedJobSection, /github\.event_name != 'pull_request'/);
+      assert.match(trustedJobSection, /github\.event_name != 'pull_request_review'/);
+      assert.match(trustedJobSection, /permissions:\s*\r?\n\s+contents:\s*write/);
+    });
+
+    it('discovers an opened-but-unmerged PR during default-branch reconciliation without requiring a merge event', async () => {
+      const now = new Date('2026-11-26T12:00:00.000Z').getTime();
+      const nowUtc = new Date(now).toISOString();
+
+      const mockFetch = async (url: string | URL | Request) => {
+        const urlStr = url.toString();
+        if (urlStr.includes('/pulls?state=all')) {
+          return new Response(
+            JSON.stringify([
+              {
+                number: 77,
+                title: 'Open feature PR without merge',
+                state: 'open',
+                user: { login: 'contributor_dev' },
+                created_at: new Date(now - 3600_000).toISOString(),
+                merged_at: null,
+              },
+            ]),
+            { status: 200 }
+          );
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      };
+
+      const recon = await reconcileGitHubApiEvents('dummy-token', 'mnp210/GitHub-Profile-Pet', {
+        nowUtc,
+        stopAtPrNumber: 76,
+        historicalPrCompleted: true,
+        processedPrOpenedNumbers: [76],
+        fetchFn: mockFetch,
+      });
+
+      assert.equal(recon.events.length, 1);
+      assert.equal(recon.events[0].eventType, 'pr_opened');
+      assert.equal(recon.events[0].eventId, 'pr_opened:77');
+
+      const pet = createMockPetState();
+      const ledger = initDefaultActivityLedger(1);
+      const evalRes = evaluateActivityEvent(pet, ledger, recon.events[0], nowUtc);
+      assert.equal(evalRes.result.status, 'rewarded');
+      assert.equal(evalRes.result.xpAwarded, 25);
+      assert.ok(evalRes.updatedLedger.processedRegistry.prOpenedNumbers.includes(77));
+      assert.equal(evalRes.updatedLedger.processedRegistry.prMergedNumbers.length, 0);
+    });
+  });
 });
