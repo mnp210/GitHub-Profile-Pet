@@ -4,7 +4,7 @@
  */
 
 import { ENGINE_SCHEMA_VERSION, MAX_VITAL_LIMIT, MIN_VITAL_LIMIT } from '../domain/constants.ts';
-import type { EvolutionStage, PetMood, PetSpecies, PetStateDocument } from '../domain/types.ts';
+import type { EvolutionStage, PetMood, PetSpecies, PetStateDocument, PersonalityType } from '../domain/types.ts';
 
 const VALID_SPECIES: Set<PetSpecies> = new Set([
   'cat',
@@ -30,6 +30,13 @@ const VALID_STAGES: Set<EvolutionStage> = new Set([
   'Juvenile',
   'Ascended',
   'Celestial',
+]);
+
+export const VALID_PERSONALITIES: Set<PersonalityType> = new Set([
+  'curious',
+  'playful',
+  'calm',
+  'determined',
 ]);
 
 export interface ValidationResult {
@@ -134,6 +141,12 @@ export function validatePetState(data: unknown): ValidationResult {
 
   if (typeof obj.mood !== 'string' || !VALID_MOODS.has(obj.mood as PetMood)) {
     errors.push(`Invalid mood: received ${String(obj.mood)}.`);
+  }
+
+  if (obj.personality !== undefined) {
+    if (typeof obj.personality !== 'string' || !VALID_PERSONALITIES.has(obj.personality as PersonalityType)) {
+      errors.push(`Invalid personality: received ${String(obj.personality)}.`);
+    }
   }
 
   if (typeof obj.evolutionStage !== 'string' || !VALID_STAGES.has(obj.evolutionStage as EvolutionStage)) {

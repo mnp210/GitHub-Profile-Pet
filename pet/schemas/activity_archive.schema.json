@@ -2,30 +2,158 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/github-profile-pet/schemas/activity_archive.schema.json",
   "title": "ActivityArchiveDocument",
-  "type": "object",
-  "required": [
-    "schemaVersion",
-    "archivedCommitShas",
-    "archivedEventCount",
-    "updatedAt"
-  ],
-  "properties": {
-    "schemaVersion": {
-      "type": "integer",
-      "const": 1
+  "oneOf": [
+    {
+      "title": "ActivityArchiveV1",
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "archivedCommitShas",
+        "archivedEventCount",
+        "updatedAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "archivedCommitShas": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "archivedEventCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
     },
-    "archivedCommitShas": {
-      "type": "array",
-      "items": { "type": "string" }
-    },
-    "archivedEventCount": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "updatedAt": {
-      "type": "string",
-      "format": "date-time"
+    {
+      "title": "ActivityArchiveV2",
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "archivedCommitShas",
+        "archivedEvents",
+        "batches",
+        "totalArchivedEvents",
+        "totalArchivedXp",
+        "updatedAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 2
+        },
+        "archivedCommitShas": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "archivedEvents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "eventId",
+              "eventType",
+              "actor",
+              "timestamp",
+              "xpAwarded",
+              "status"
+            ],
+            "properties": {
+              "eventId": { "type": "string" },
+              "eventType": {
+                "type": "string",
+                "enum": [
+                  "commit",
+                  "issue_opened",
+                  "pr_opened",
+                  "pr_merged",
+                  "review_submitted"
+                ]
+              },
+              "actor": { "type": "string" },
+              "timestamp": { "type": "string", "format": "date-time" },
+              "xpAwarded": { "type": "integer", "minimum": 0 },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "rewarded",
+                  "skipped_bot",
+                  "skipped_duplicate",
+                  "skipped_daily_cap",
+                  "skipped_care_action",
+                  "skipped_stale",
+                  "invalid"
+                ]
+              },
+              "details": { "type": "string" },
+              "ref": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "batches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "batchId",
+              "createdAt",
+              "sourceLedger",
+              "recordCount",
+              "totalXp",
+              "firstEventTimestamp",
+              "lastEventTimestamp",
+              "recordRange",
+              "sha256",
+              "compactorVersion"
+            ],
+            "properties": {
+              "batchId": { "type": "string" },
+              "createdAt": { "type": "string", "format": "date-time" },
+              "sourceLedger": { "type": "string" },
+              "recordCount": { "type": "integer", "minimum": 1 },
+              "totalXp": { "type": "integer", "minimum": 0 },
+              "firstEventTimestamp": { "type": "string", "format": "date-time" },
+              "lastEventTimestamp": { "type": "string", "format": "date-time" },
+              "recordRange": {
+                "type": "object",
+                "required": ["startEventId", "endEventId"],
+                "properties": {
+                  "startEventId": { "type": "string" },
+                  "endEventId": { "type": "string" }
+                },
+                "additionalProperties": false
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "compactorVersion": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "totalArchivedEvents": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalArchivedXp": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
     }
-  },
-  "additionalProperties": false
+  ]
 }

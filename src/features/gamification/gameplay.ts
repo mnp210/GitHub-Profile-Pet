@@ -17,6 +17,7 @@ import {
 } from './progression.ts';
 import { applyRestAction } from './recovery.ts';
 import { getSpeciesReaction } from './speciesReactions.ts';
+import { getCompanionReaction, getDefaultPersonalityForSpecies } from '../personality/index.ts';
 
 export interface ActionResult {
   success: boolean;
@@ -142,13 +143,27 @@ export function executePetAction(params: {
     happiness: newHappiness,
   });
 
-  // 8. Reaction text
-  const reaction = expResult.didLevelUp
+  // 8. Reaction text (Enriched by Companion Personality)
+  const personality = pet.personality || getDefaultPersonalityForSpecies(pet.species);
+  const companionReaction = getCompanionReaction(
+    expResult.didLevelUp ? 'milestone' : action,
+    {
+      personality,
+      species: pet.species,
+      mood: newMood,
+      energy: newEnergy,
+      hunger: newHunger,
+      happiness: newHappiness,
+      level: expResult.newLevel,
+    }
+  );
+  const reaction = companionReaction.reactionText || (expResult.didLevelUp
     ? getSpeciesReaction(pet.species, 'level_up')
-    : getSpeciesReaction(pet.species, action);
+    : getSpeciesReaction(pet.species, action));
 
   const updatedPet: PetState = {
     ...pet,
+    personality,
     level: expResult.newLevel,
     xp: expResult.newXp,
     maxExp: expResult.maxExp,

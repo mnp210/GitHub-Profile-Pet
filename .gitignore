@@ -63,3 +63,6 @@ next-env.d.ts
 /pet/.journal/
 /pet/.lock
 *.tmp
+
+# local backups
+/backups/

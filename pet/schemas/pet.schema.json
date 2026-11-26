@@ -96,6 +96,10 @@
       "type": "string",
       "enum": ["Energetic", "Happy", "Focused", "Curious", "Resting"]
     },
+    "personality": {
+      "type": "string",
+      "enum": ["curious", "playful", "calm", "determined"]
+    },
     "evolutionStage": {
       "type": "string",
       "enum": ["Hatchling", "Juvenile", "Ascended", "Celestial"]

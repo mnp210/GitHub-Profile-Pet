@@ -63,6 +63,7 @@ export const INITIAL_PET_STATE: PetState = {
   hunger: 82,
   happiness: 95,
   energy: 88,
+  personality: 'curious',
 };
 
 export const EVOLUTION_MILESTONES: EvolutionMilestone[] = [

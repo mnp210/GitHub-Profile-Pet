@@ -20,7 +20,11 @@
     "readme:menu:uninstall": "node --experimental-strip-types scripts/manage-readme-menu.ts uninstall",
     "readme:menu:check": "node --experimental-strip-types scripts/manage-readme-menu.ts check",
     "migrate": "node --experimental-strip-types scripts/migrate.ts up",
-    "migrate:down": "node --experimental-strip-types scripts/migrate.ts down"
+    "migrate:down": "node --experimental-strip-types scripts/migrate.ts down",
+    "archive:inspect": "node --experimental-strip-types scripts/manage-activity-archive.ts inspect",
+    "archive:compact": "node --experimental-strip-types scripts/manage-activity-archive.ts compact",
+    "archive:verify": "node --experimental-strip-types scripts/manage-activity-archive.ts verify",
+    "archive:recover": "node --experimental-strip-types scripts/manage-activity-archive.ts recover"
   },
   "dependencies": {
     "next": "16.4.6",

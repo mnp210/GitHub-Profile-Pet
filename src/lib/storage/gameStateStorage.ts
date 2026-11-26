@@ -1,11 +1,17 @@
 import type { PetState } from '../../types/pet.ts';
 import { INITIAL_PET_STATE } from '../../constants/petData.ts';
 import type { ActionHistoryEntry, ActionType } from '../../features/gamification/rewards.ts';
+import { getDefaultPersonalityForSpecies } from '../../features/personality/personalities.ts';
 
 const LOCAL_STORAGE_PET_KEY = 'gh_pet_game_state_v1';
 const LOCAL_STORAGE_HISTORY_KEY = 'gh_pet_action_history_v1';
 const LOCAL_STORAGE_REPO_KEY = 'gh_pet_connected_repo_v1';
 const LOCAL_STORAGE_TOKEN_KEY = 'gh_pet_access_token_v1';
+
+import type { ProgressionState } from '../../features/progression/types.ts';
+import { migrateProgressionState } from '../../features/progression/persistence.ts';
+import type { BondingState } from '../../features/bonding/types.ts';
+import { migrateBondingState } from '../../features/bonding/persistence.ts';
 
 export interface ConnectedRepoConfig {
   repo: string; // e.g. "mnp210/GitHub-Profile-Pet-Test"
@@ -20,6 +26,8 @@ export interface GamePersistenceData {
   history: ActionHistoryEntry[];
   exportedAt: string;
   version: number;
+  progression?: ProgressionState;
+  bonding?: BondingState;
 }
 
 /**
@@ -33,7 +41,12 @@ export function loadLocalPetState(): PetState {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed.level === 'number' && typeof parsed.name === 'string') {
-        return parsed as PetState;
+        const species = normalizeSpeciesId(parsed.species || 'cat');
+        return {
+          ...parsed,
+          species,
+          personality: parsed.personality || getDefaultPersonalityForSpecies(species),
+        } as PetState;
       }
     }
   } catch (err) {
@@ -180,9 +193,10 @@ export async function fetchRemotePetState(repo: string, token?: string): Promise
 }
 
 function mapRemotePetToLocal(raw: Record<string, unknown>): PetState {
+  const species = normalizeSpeciesId((raw.species as string) || 'cat');
   return {
     name: (raw.name as string) || 'Shadow Claw',
-    species: normalizeSpeciesId((raw.species as string) || 'cat'),
+    species,
     level: typeof raw.level === 'number' ? raw.level : 1,
     xp: typeof raw.xp === 'number' ? raw.xp : 0,
     maxExp: typeof raw.maxExp === 'number' ? raw.maxExp : 100,
@@ -190,6 +204,7 @@ function mapRemotePetToLocal(raw: Record<string, unknown>): PetState {
     hunger: typeof raw.hunger === 'number' ? raw.hunger : 100,
     happiness: typeof raw.happiness === 'number' ? raw.happiness : 100,
     mood: (raw.mood as PetState['mood']) || 'Happy',
+    personality: (raw.personality as PetState['personality']) || getDefaultPersonalityForSpecies(species),
     evolutionStage: (raw.evolutionStage as PetState['evolutionStage']) || 'Hatchling',
   };
 }
@@ -392,10 +407,17 @@ export async function updateRemoteReadme(
 /**
  * Exports pet state and progress to a downloadable JSON string.
  */
-export function exportSaveData(pet: PetState, history: ActionHistoryEntry[]): string {
+export function exportSaveData(
+  pet: PetState,
+  history: ActionHistoryEntry[],
+  progression?: ProgressionState,
+  bonding?: BondingState
+): string {
   const data: GamePersistenceData = {
     pet,
     history,
+    progression,
+    bonding,
     exportedAt: new Date().toISOString(),
     version: 1,
   };
@@ -409,6 +431,8 @@ export function importSaveData(jsonString: string): {
   success: boolean;
   pet?: PetState;
   history?: ActionHistoryEntry[];
+  progression?: ProgressionState;
+  bonding?: BondingState;
   error?: string;
 } {
   try {
@@ -420,6 +444,8 @@ export function importSaveData(jsonString: string): {
       success: true,
       pet: parsed.pet,
       history: Array.isArray(parsed.history) ? parsed.history : [],
+      progression: parsed.progression ? migrateProgressionState(parsed.progression) : undefined,
+      bonding: parsed.bonding ? migrateBondingState(parsed.bonding) : undefined,
     };
   } catch (err) {
     return { success: false, error: (err as Error).message };

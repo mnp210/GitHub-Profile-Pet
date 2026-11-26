@@ -55,13 +55,91 @@ export interface ActivityReconciliationCheckpoints {
   lastIssueNumber?: number;
   lastPrNumber?: number;
   reconciledAt: string;
+  historicalRecoveryCursor?: string; // Earliest timestamp reached by bounded historical recovery
+  historicalPrCompleted?: boolean; // True when historical PR discovery below legacy checkpoints has established complete coverage
+  historicalPrContinuationPage?: number; // Next page number to resume historical PR discovery when bounded ceiling is reached
 }
 
-export interface ActivityArchiveDocument {
-  schemaVersion: number;
+export interface ActivityArchiveBatch {
+  batchId: string;
+  createdAt: string; // ISO-8601 UTC
+  sourceLedger: string;
+  recordCount: number;
+  totalXp: number;
+  firstEventTimestamp: string;
+  lastEventTimestamp: string;
+  recordRange: {
+    startEventId: string;
+    endEventId: string;
+  };
+  sha256: string; // Hex SHA-256 digest over canonical JSON serialized records
+  compactorVersion: string;
+}
+
+export interface ActivityArchiveV1Document {
+  schemaVersion: 1;
   archivedCommitShas: string[];
   archivedEventCount: number;
   updatedAt: string;
+}
+
+export interface ActivityArchiveV2Document {
+  schemaVersion: 2;
+  archivedCommitShas: string[];
+  archivedEvents: ActivityEventRecord[];
+  batches: ActivityArchiveBatch[];
+  totalArchivedEvents: number;
+  totalArchivedXp: number;
+  updatedAt: string;
+}
+
+export type ActivityArchiveDocument = ActivityArchiveV1Document | ActivityArchiveV2Document;
+
+export interface ArchiveCompactionOptions {
+  baseDir?: string;
+  threshold?: number; // Target active record count threshold (defaults to 5000)
+  dryRun?: boolean;
+  force?: boolean;
+  nowIso?: string;
+}
+
+export interface ArchiveCompactionResult {
+  status: 'COMPACTED' | 'NOT_NEEDED' | 'DRY_RUN' | 'ERROR';
+  message: string;
+  initialActiveRecords: number;
+  finalActiveRecords: number;
+  initialArchiveRecords: number;
+  finalArchiveRecords: number;
+  archivedRecordCount: number;
+  archivedXp: number;
+  totalActiveXpBefore: number;
+  totalActiveXpAfter: number;
+  totalCombinedXp: number;
+  batchId?: string;
+  batchSha256?: string;
+  durationMs: number;
+  error?: Error;
+}
+
+export interface ArchiveVerificationIssue {
+  severity: 'ERROR' | 'WARNING';
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export interface ArchiveVerificationResult {
+  status: 'PASS' | 'WARNING' | 'FAIL';
+  activeRecordCount: number;
+  archivedRecordCount: number;
+  totalEventCount: number;
+  uniqueEventCount: number;
+  totalActiveXp: number;
+  totalArchivedXp: number;
+  totalCombinedXp: number;
+  batchCount: number;
+  issues: ArchiveVerificationIssue[];
+  durationMs: number;
 }
 
 export interface ActivityLedgerDocument {
@@ -86,6 +164,7 @@ export interface ProcessActivityEventInput {
   isBot?: boolean;
   issueLabels?: string[];
   prMerged?: boolean;
+  allowHistoricalRecovery?: boolean;
 }
 
 export interface ProcessActivityResult {

@@ -5,9 +5,46 @@ import { PetDisplay } from '@/components/pet/PetDisplay';
 import { PetSelector } from '@/components/pet/PetSelector';
 import { PetStatus } from '@/components/pet/PetStatus';
 import { PetEvolution } from '@/components/pet/PetEvolution';
+import { PersonalityPanel } from '@/components/pet/PersonalityPanel';
+import { MiniGameHub } from '@/components/minigames/MiniGameHub';
+import type { MiniGameId } from '@/features/minigames/types';
+import { ProgressionHubModal } from '@/components/progression/ProgressionHubModal';
+import { UnlockToast, type UnlockToastData } from '@/components/progression/UnlockToast';
+import { BondingHubModal } from '@/components/bonding/BondingHubModal';
+import { BondMilestoneToast, type BondNotification } from '@/components/bonding/BondMilestoneToast';
+import {
+  loadProgressionState,
+  saveProgressionState,
+  recordInteraction,
+  recordCareAction,
+  recordPersonalityExplored,
+  recordMiniGameCompletion,
+  type ProgressionState,
+  type EvaluationResult,
+  ACHIEVEMENTS_CATALOG,
+  COSMETICS_CATALOG,
+} from '@/features/progression';
+import {
+  loadLocalBondingState,
+  saveLocalBondingState,
+  migrateBondingState,
+  recordDirectPetting,
+  recordCareActionForBonding,
+  recordMiniGameForBonding,
+  recordWardrobeActionForBonding,
+  recordPersonalityInteractionForBonding,
+  LOCAL_STORAGE_BONDING_KEY,
+  type BondingState,
+  type BondingEventResult,
+} from '@/features/bonding';
 import { INITIAL_PET_STATE, SPECIES_METADATA } from '@/constants/petData';
-import { PetState, SpeciesId } from '@/types/pet';
+import { PetState, SpeciesId, PersonalityType } from '@/types/pet';
 import { executePetAction, ActionResult } from '@/features/gamification/gameplay';
+import {
+  selectNextBehaviour,
+  getAmbientThought,
+  getDefaultPersonalityForSpecies,
+} from '@/features/personality';
 import { type ActionHistoryEntry, type ActionType, ACTION_COOLDOWN_MS } from '@/features/gamification/rewards';
 import { getUpdatedMilestones } from '@/features/gamification/progression';
 import { retroAudio } from '@/lib/audio/retroAudio';
@@ -36,6 +73,11 @@ export default function Home() {
   const [actionHistory, setActionHistory] = useState<ActionHistoryEntry[]>(() => loadLocalActionHistory());
   const [cooldownRemainingSec, setCooldownRemainingSec] = useState<number>(0);
   const [lastReaction, setLastReaction] = useState<string>('');
+  const [currentBehaviour, setCurrentBehaviour] = useState<string>('idle_curious');
+  const [thoughtBubble, setThoughtBubble] = useState<string>(() => {
+    const initial = loadLocalPetState();
+    return getAmbientThought(initial.personality || 'curious', initial.species, 0);
+  });
   const [feedback, setFeedback] = useState<{
     message: string;
     type: 'success' | 'warning' | 'level_up' | 'info';
@@ -69,6 +111,141 @@ export default function Home() {
     return loaded;
   });
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
+  const [isMiniGameModalOpen, setIsMiniGameModalOpen] = useState<boolean>(false);
+  const [defaultMiniGameId, setDefaultMiniGameId] = useState<MiniGameId | undefined>(undefined);
+
+  // Progression, Wardrobe & Achievements State
+  const [progression, setProgression] = useState<ProgressionState>(() =>
+    loadProgressionState(pet.personality || 'curious')
+  );
+  const [isProgressionModalOpen, setIsProgressionModalOpen] = useState<boolean>(false);
+  const [progressionTab, setProgressionTab] = useState<'wardrobe' | 'achievements'>('wardrobe');
+  const [unlockToast, setUnlockToast] = useState<UnlockToastData | null>(null);
+
+  const handleProgressionUpdate = (next: ProgressionState, triggerBonding = true) => {
+    setProgression(next);
+    saveProgressionState(next);
+    if (triggerBonding) {
+      const equippedCount = Object.values(next.equipped).filter(Boolean).length;
+      const bRes = recordWardrobeActionForBonding(bondingState, equippedCount);
+      handleBondingEventResult(bRes);
+    }
+  };
+
+  const handleEvaluationResult = (res: EvaluationResult) => {
+    handleProgressionUpdate(res.updatedState);
+    if (res.newlyUnlockedAchievements.length > 0) {
+      const achId = res.newlyUnlockedAchievements[0];
+      const ach = ACHIEVEMENTS_CATALOG[achId];
+      if (ach) {
+        setUnlockToast({
+          id: achId,
+          type: 'achievement',
+          title: ach.name,
+          subtitle: ach.description,
+          icon: ach.icon,
+        });
+        retroAudio.playLevelUp();
+      }
+    } else if (res.newlyUnlockedCosmetics.length > 0) {
+      const cosId = res.newlyUnlockedCosmetics[0];
+      const cos = COSMETICS_CATALOG[cosId];
+      if (cos) {
+        setUnlockToast({
+          id: cosId,
+          type: 'cosmetic',
+          title: cos.name,
+          subtitle: `Unlocked: ${cos.category}`,
+          icon: cos.icon,
+        });
+        retroAudio.playLevelUp();
+      }
+    }
+  };
+
+  // Companion Bonding & Daily Activities State
+  const [bondingState, setBondingState] = useState<BondingState>(() =>
+    loadLocalBondingState()
+  );
+  const [isBondingModalOpen, setIsBondingModalOpen] = useState<boolean>(false);
+  const [bondingNotifications, setBondingNotifications] = useState<BondNotification[]>([]);
+
+  // Multi-tab synchronization for bonding
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === LOCAL_STORAGE_BONDING_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          setBondingState(migrateBondingState(parsed));
+        } catch (err) {
+          console.warn('Multi-tab bonding sync failed:', err);
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  const handleBondingEventResult = (res: BondingEventResult) => {
+    setBondingState(res.nextState);
+    saveLocalBondingState(res.nextState);
+
+    const newNotifs: BondNotification[] = [];
+
+    // Milestone celebrations
+    for (const m of res.milestonesUnlocked) {
+      newNotifs.push({
+        id: `milestone-${m.id}-${m.level}`,
+        type: 'milestone',
+        title: m.name,
+        message: m.celebrationMessage,
+        icon: '🌟',
+        points: m.requiredPoints,
+      });
+
+      // Grant cosmetic reward if present and not already in progression inventory
+      if (m.rewardCosmeticId && !progression.inventory.includes(m.rewardCosmeticId)) {
+        const nextInv = [...progression.inventory, m.rewardCosmeticId];
+        handleProgressionUpdate({
+          ...progression,
+          inventory: nextInv,
+        });
+      }
+    }
+
+    // Daily activity completion celebrations
+    for (const act of res.activitiesCompleted) {
+      newNotifs.push({
+        id: `activity-${act.id}-${res.nextState.dailyActivities.dateKey}`,
+        type: 'activity',
+        title: act.name,
+        message: 'Daily activity completed!',
+        icon: act.icon,
+        points: act.bondPointsReward,
+      });
+    }
+
+    // Challenge completion celebration
+    if (res.challengeCompleted) {
+      newNotifs.push({
+        id: `challenge-${res.nextState.activeChallenge.challengeId}-${res.nextState.activeChallenge.rotationKey}`,
+        type: 'challenge',
+        title: 'Rotating Challenge Conquered!',
+        message: 'Shared companion challenge completed!',
+        icon: '🏆',
+        points: 25,
+      });
+    }
+
+    if (newNotifs.length > 0) {
+      setBondingNotifications((prev) => [...prev, ...newNotifs]);
+      try {
+        retroAudio.playLevelUp();
+      } catch {
+        // Audio optional
+      }
+    }
+  };
   const [isCodexModalOpen, setIsCodexModalOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return new URLSearchParams(window.location.search).get('action')?.toLowerCase().trim() === 'stats';
@@ -169,6 +346,33 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [actionHistory]);
 
+  // Living Companion idle behaviour & thought cycle (every 6 seconds, pauses when document is hidden)
+  useEffect(() => {
+    const tickCompanion = () => {
+      if (typeof document !== 'undefined' && document.hidden) return; // Pause in background tab
+
+      const nextBehaviour = selectNextBehaviour({
+        personality: pet.personality || 'curious',
+        species: pet.species,
+        mood: pet.mood,
+        energy: pet.energy,
+        hunger: pet.hunger,
+        happiness: pet.happiness,
+        level: pet.level,
+      });
+
+      setCurrentBehaviour(nextBehaviour);
+
+      // Periodic ambient thought update (35% probability per tick)
+      if (Math.random() < 0.35) {
+        setThoughtBubble(getAmbientThought(pet.personality || 'curious', pet.species));
+      }
+    };
+
+    const intervalId = setInterval(tickCompanion, 6000);
+    return () => clearInterval(intervalId);
+  }, [pet]);
+
   const currentSpeciesMeta = SPECIES_METADATA[pet.species] || SPECIES_METADATA.cat;
 
   // Toggle Sound Effects
@@ -181,13 +385,32 @@ export default function Home() {
   const handleSelectSpecies = (speciesId: SpeciesId) => {
     const meta = SPECIES_METADATA[speciesId];
     retroAudio.playClick();
-    const updated = {
+    const updated: PetState = {
       ...pet,
       species: speciesId,
       name: `${meta.name}`,
+      personality: getDefaultPersonalityForSpecies(speciesId),
     };
     setPet(updated);
     saveLocalGameState(updated, actionHistory);
+    setThoughtBubble(getAmbientThought(updated.personality || 'curious', speciesId));
+  };
+
+  // Switch Companion Personality Archetype
+  const handlePersonalityChange = (newPersonality: PersonalityType) => {
+    const updated: PetState = {
+      ...pet,
+      personality: newPersonality,
+    };
+    setPet(updated);
+    saveLocalGameState(updated, actionHistory);
+    setThoughtBubble(getAmbientThought(newPersonality, pet.species));
+    setFeedback({
+      message: `Adopted ${newPersonality.toUpperCase()} personality archetype!`,
+      type: 'info',
+    });
+    const evalRes = recordPersonalityExplored(progression, newPersonality);
+    handleEvaluationResult(evalRes);
   };
 
   // Rename Companion
@@ -239,6 +462,19 @@ export default function Home() {
     setActionHistory(result.updatedHistory);
     setLastReaction(result.reaction);
     saveLocalGameState(result.updatedPet, result.updatedHistory);
+
+    // Evaluate progression achievements and companion bonding
+    if (action === 'pet') {
+      const evalRes = recordInteraction(progression);
+      handleEvaluationResult(evalRes);
+      const bondRes = recordDirectPetting(bondingState);
+      handleBondingEventResult(bondRes);
+    } else {
+      const evalRes = recordCareAction(progression);
+      handleEvaluationResult(evalRes);
+      const bondRes = recordCareActionForBonding(bondingState);
+      handleBondingEventResult(bondRes);
+    }
 
     let rewardText = '';
     if (result.reward) {
@@ -506,7 +742,7 @@ export default function Home() {
 
   // Export Save File
   const handleExportSave = () => {
-    const dataStr = exportSaveData(pet, actionHistory);
+    const dataStr = exportSaveData(pet, actionHistory, progression, bondingState);
     const blob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -528,6 +764,11 @@ export default function Home() {
       if (res.success && res.pet) {
         setPet(res.pet);
         if (res.history) setActionHistory(res.history);
+        if (res.progression) handleProgressionUpdate(res.progression);
+        if (res.bonding) {
+          setBondingState(res.bonding);
+          saveLocalBondingState(res.bonding);
+        }
         saveLocalGameState(res.pet, res.history || []);
         setFeedback({ message: 'Save file imported successfully!', type: 'info' });
         retroAudio.playPurr();
@@ -591,6 +832,42 @@ export default function Home() {
           >
             <span>{isMuted ? '🔇' : '🔊'}</span>
             <span className="hidden md:inline">{isMuted ? 'Muted' : 'Sound ON'}</span>
+          </button>
+
+          {/* Companion Play Zone Mini-Games */}
+          <button
+            onClick={() => setIsMiniGameModalOpen(true)}
+            className="px-2.5 py-1 rounded-lg border border-indigo-700/60 bg-indigo-950/70 hover:bg-indigo-900/80 text-indigo-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
+            title="Interactive Activities & Mini-Games"
+            aria-label="Open Play Zone Mini-Games"
+          >
+            <span>🎮</span>
+            <span className="hidden sm:inline">Play Zone</span>
+          </button>
+
+          {/* Wardrobe & Achievements Vault */}
+          <button
+            onClick={() => {
+              setProgressionTab('wardrobe');
+              setIsProgressionModalOpen(true);
+            }}
+            className="px-2.5 py-1 rounded-lg border border-purple-700/60 bg-purple-950/70 hover:bg-purple-900/80 text-purple-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
+            title="Wardrobe, Cosmetics & Achievements"
+            aria-label="Open Wardrobe and Achievements"
+          >
+            <span>✨</span>
+            <span className="hidden sm:inline">Wardrobe</span>
+          </button>
+
+          {/* Companion Bonding & Daily Focus */}
+          <button
+            onClick={() => setIsBondingModalOpen(true)}
+            className="px-2.5 py-1 rounded-lg border border-pink-700/60 bg-pink-950/70 hover:bg-pink-900/80 text-pink-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
+            title="Companion Bonding, Daily Activities & Rotating Challenges"
+            aria-label="Open Companion Bonding & Daily Focus"
+          >
+            <span>🤝</span>
+            <span className="hidden sm:inline">Bond (Lvl {bondingState.bondLevel})</span>
           </button>
 
           {/* Evolution Codex */}
@@ -719,6 +996,36 @@ export default function Home() {
               cooldownRemainingSeconds={cooldownRemainingSec}
               lastReaction={lastReaction}
               isActionsSyncing={isActionsSyncing}
+              thoughtBubble={thoughtBubble}
+              currentBehaviour={currentBehaviour}
+              equippedCosmetics={progression.equipped}
+              onOpenWardrobe={() => {
+                setProgressionTab('wardrobe');
+                setIsProgressionModalOpen(true);
+              }}
+              onOpenMiniGames={(gameId) => {
+                setDefaultMiniGameId(gameId as MiniGameId | undefined);
+                setIsMiniGameModalOpen(true);
+              }}
+              onOpenBonding={() => setIsBondingModalOpen(true)}
+              onDirectStroke={() => {
+                const bRes = recordDirectPetting(bondingState);
+                handleBondingEventResult(bRes);
+                const pRes = recordInteraction(progression);
+                handleEvaluationResult(pRes);
+                const chatRes = recordPersonalityInteractionForBonding(bRes.nextState);
+                handleBondingEventResult(chatRes);
+              }}
+              bondLevel={bondingState.bondLevel}
+              bondPoints={bondingState.bondPoints}
+            />
+
+            {/* COMPANION PERSONALITY & LIVING BEHAVIOUR PANEL */}
+            <PersonalityPanel
+              pet={pet}
+              onPersonalityChange={handlePersonalityChange}
+              currentBehaviour={currentBehaviour}
+              thoughtBubble={thoughtBubble}
             />
 
             {/* RECENT ACTION LEDGER LOG */}
@@ -1077,6 +1384,55 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* 6. COMPANION PLAY ZONE MINI-GAMES MODAL */}
+      <MiniGameHub
+        pet={pet}
+        isOpen={isMiniGameModalOpen}
+        defaultGameId={defaultMiniGameId}
+        onGameCompleted={(gameId, score, round) => {
+          const evalRes = recordMiniGameCompletion(progression, gameId, score, round);
+          handleEvaluationResult(evalRes);
+          const bondRes = recordMiniGameForBonding(bondingState, gameId, score);
+          handleBondingEventResult(bondRes);
+        }}
+        onClose={() => {
+          setIsMiniGameModalOpen(false);
+          setDefaultMiniGameId(undefined);
+        }}
+      />
+
+      {/* 7. PROGRESSION & WARDROBE HUB MODAL */}
+      <ProgressionHubModal
+        isOpen={isProgressionModalOpen}
+        defaultTab={progressionTab}
+        pet={pet}
+        speciesMeta={currentSpeciesMeta}
+        progression={progression}
+        onUpdateProgression={handleProgressionUpdate}
+        onClose={() => setIsProgressionModalOpen(false)}
+      />
+
+      {/* 8. COMPANION BONDING & DAILY ACTIVITIES HUB MODAL */}
+      <BondingHubModal
+        isOpen={isBondingModalOpen}
+        pet={pet}
+        bondingState={bondingState}
+        onClose={() => setIsBondingModalOpen(false)}
+      />
+
+      {/* 9. CELEBRATION TOAST NOTIFICATION */}
+      <UnlockToast
+        toast={unlockToast}
+        onDismiss={() => setUnlockToast(null)}
+      />
+
+      {/* 10. BONDING MILESTONE & ACTIVITY TOASTS */}
+      <BondMilestoneToast
+        notifications={bondingNotifications}
+        onDismiss={(id) => setBondingNotifications((prev) => prev.filter((n) => n.id !== id))}
+        personality={pet.personality || 'curious'}
+      />
     </div>
   );
 }
