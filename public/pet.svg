@@ -205,9 +205,9 @@
   <g class="vitals-section">
     <!-- XP Progress -->
     <text x="150" y="67" class="vital-label">EXP</text>
-    <text x="420" y="67" class="vital-value" text-anchor="end">135 / 500</text>
+    <text x="420" y="67" class="vital-value" text-anchor="end">225 / 500</text>
     <rect x="150" y="72" width="270" height="5" rx="2.5" fill="#161b22" />
-    <rect x="150" y="72" width="72.9" height="5" rx="2.5" fill="#818cf8" />
+    <rect x="150" y="72" width="121.5" height="5" rx="2.5" fill="#818cf8" />
 
     <!-- Energy Gauge -->
     <text x="150" y="93" class="vital-label">⚡ Energy</text>

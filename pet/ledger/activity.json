@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "generation": 57,
+  "generation": 60,
   "dailyAccruedXp": {
     "2026-11-22": 300,
     "2026-11-23": 30,
     "2026-11-26": 300,
-    "2026-11-27": 25
+    "2026-11-27": 115
   },
   "processedRegistry": {
     "commitShas": [
@@ -81,17 +81,20 @@
       "16602ba72817d6730a96ecb0df16b8c121733fa8",
       "7d9ea7db6e4252726555340ccb71717f2359a4e9",
       "acd969fc276b36147b435e2c23f63a3f9541b496",
-      "69415b734625c9ebb85ec3526c32665f3618346f"
+      "69415b734625c9ebb85ec3526c32665f3618346f",
+      "0b277d1ed8176768205c70b22f00c16ba36281a6"
     ],
     "issueNumbers": [],
     "prOpenedNumbers": [
       1,
       3,
-      4
+      4,
+      5
     ],
     "prMergedNumbers": [
       1,
-      3
+      3,
+      5
     ],
     "reviewIds": []
   },
@@ -169,7 +172,8 @@
       "16602ba72817d6730a96ecb0df16b8c121733fa8",
       "7d9ea7db6e4252726555340ccb71717f2359a4e9",
       "acd969fc276b36147b435e2c23f63a3f9541b496",
-      "69415b734625c9ebb85ec3526c32665f3618346f"
+      "69415b734625c9ebb85ec3526c32665f3618346f",
+      "0b277d1ed8176768205c70b22f00c16ba36281a6"
     ],
     "issueIntervals": [],
     "prOpenedIntervals": [
@@ -179,7 +183,7 @@
       ],
       [
         3,
-        4
+        5
       ]
     ],
     "prMergedIntervals": [
@@ -190,11 +194,71 @@
       [
         3,
         3
+      ],
+      [
+        5,
+        5
       ]
     ],
     "reviewIntervals": []
   },
   "recentEvents": [
+    {
+      "eventId": "pr_merged:1",
+      "eventType": "pr_merged",
+      "actor": "mnp210",
+      "timestamp": "2026-11-27T08:50:57.390Z",
+      "xpAwarded": 0,
+      "status": "skipped_duplicate",
+      "details": "Event pr_merged:1 has already been recorded in permanent deduplication index. Replay ignored."
+    },
+    {
+      "eventId": "pr_merged:3",
+      "eventType": "pr_merged",
+      "actor": "mnp210",
+      "timestamp": "2026-11-27T08:50:57.387Z",
+      "xpAwarded": 0,
+      "status": "skipped_duplicate",
+      "details": "Event pr_merged:3 has already been recorded in permanent deduplication index. Replay ignored."
+    },
+    {
+      "eventId": "pr_merged:5",
+      "eventType": "pr_merged",
+      "actor": "mnp210",
+      "timestamp": "2026-11-27T08:50:57.381Z",
+      "xpAwarded": 50,
+      "status": "rewarded",
+      "details": "Merged PR: feat(routing): deep-link support for all six pet menu destinations"
+    },
+    {
+      "eventId": "pr_opened:5",
+      "eventType": "pr_opened",
+      "actor": "mnp210",
+      "timestamp": "2026-11-27T08:50:57.374Z",
+      "xpAwarded": 25,
+      "status": "rewarded",
+      "details": "feat(routing): deep-link support for all six pet menu destinations"
+    },
+    {
+      "eventId": "commit:0b277d1ed8176768205c70b22f00c16ba36281a6",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-27T08:50:57.366Z",
+      "xpAwarded": 15,
+      "status": "rewarded",
+      "details": "feat(routing): support deep links for all six pet menu screens",
+      "ref": "main"
+    },
+    {
+      "eventId": "commit:64b26d83b5b6c2372c87b556ce7371b85d588571",
+      "eventType": "commit",
+      "actor": "mnp210",
+      "timestamp": "2026-11-27T08:50:57.361Z",
+      "xpAwarded": 0,
+      "status": "skipped_bot",
+      "details": "Ignored commit with automation or skip-ci message: \"Merge pull request #5 from mnp210/candidate/deep-l\"",
+      "ref": "refs/heads/main"
+    },
     {
       "eventId": "pr_merged:1",
       "eventType": "pr_merged",
@@ -1076,12 +1140,12 @@
       "ref": "refs/heads/main"
     }
   ],
-  "updatedAt": "2026-11-27T03:22:12.801Z",
+  "updatedAt": "2026-11-27T08:50:57.390Z",
   "checkpoints": {
-    "lastCommitSha": "f82c5b2ec640118577c47cb062ff1329f7c0c454",
-    "lastIssueNumber": 4,
-    "lastPrNumber": 4,
-    "reconciledAt": "2026-11-27T03:22:11.065Z",
+    "lastCommitSha": "64b26d83b5b6c2372c87b556ce7371b85d588571",
+    "lastIssueNumber": 5,
+    "lastPrNumber": 5,
+    "reconciledAt": "2026-11-27T08:50:56.083Z",
     "historicalPrCompleted": true
   }
 }
