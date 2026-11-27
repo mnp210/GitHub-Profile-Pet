@@ -67,6 +67,11 @@ import {
   installReadmeMenu,
   uninstallReadmeMenu,
 } from '@/features/pet-engine/publication/readmeMenu';
+import {
+  resolveRouteFromSearch,
+  buildDeepLinkUrl,
+  type DeepLinkScreen,
+} from '@/features/navigation/deepLinks';
 
 export default function Home() {
   const [pet, setPet] = useState<PetState>(() => loadLocalPetState());
@@ -111,15 +116,33 @@ export default function Home() {
     return loaded;
   });
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
-  const [isMiniGameModalOpen, setIsMiniGameModalOpen] = useState<boolean>(false);
+  const [isMiniGameModalOpen, setIsMiniGameModalOpen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return resolveRouteFromSearch(window.location.search).screen === 'playzone';
+    }
+    return false;
+  });
   const [defaultMiniGameId, setDefaultMiniGameId] = useState<MiniGameId | undefined>(undefined);
 
   // Progression, Wardrobe & Achievements State
   const [progression, setProgression] = useState<ProgressionState>(() =>
     loadProgressionState(pet.personality || 'curious')
   );
-  const [isProgressionModalOpen, setIsProgressionModalOpen] = useState<boolean>(false);
-  const [progressionTab, setProgressionTab] = useState<'wardrobe' | 'achievements'>('wardrobe');
+  const [isProgressionModalOpen, setIsProgressionModalOpen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const screen = resolveRouteFromSearch(window.location.search).screen;
+      return screen === 'wardrobe' || screen === 'achievements';
+    }
+    return false;
+  });
+  const [progressionTab, setProgressionTab] = useState<'wardrobe' | 'achievements'>(() => {
+    if (typeof window !== 'undefined') {
+      return resolveRouteFromSearch(window.location.search).screen === 'achievements'
+        ? 'achievements'
+        : 'wardrobe';
+    }
+    return 'wardrobe';
+  });
   const [unlockToast, setUnlockToast] = useState<UnlockToastData | null>(null);
 
   const handleProgressionUpdate = (next: ProgressionState, triggerBonding = true) => {
@@ -167,7 +190,12 @@ export default function Home() {
   const [bondingState, setBondingState] = useState<BondingState>(() =>
     loadLocalBondingState()
   );
-  const [isBondingModalOpen, setIsBondingModalOpen] = useState<boolean>(false);
+  const [isBondingModalOpen, setIsBondingModalOpen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return resolveRouteFromSearch(window.location.search).screen === 'bond';
+    }
+    return false;
+  });
   const [bondingNotifications, setBondingNotifications] = useState<BondNotification[]>([]);
 
   // Multi-tab synchronization for bonding
@@ -248,7 +276,7 @@ export default function Home() {
   };
   const [isCodexModalOpen, setIsCodexModalOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      return new URLSearchParams(window.location.search).get('action')?.toLowerCase().trim() === 'stats';
+      return resolveRouteFromSearch(window.location.search).screen === 'stats';
     }
     return false;
   });
@@ -261,11 +289,12 @@ export default function Home() {
     repo: string;
   } | null>(() => {
     if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const actionParam = params.get('action')?.toLowerCase().trim();
-      const repoParam = params.get('repo')?.trim() || loadRepoConfig().repo || 'connected repository';
-      if (actionParam && ['feed', 'play', 'train', 'rest', 'pet'].includes(actionParam)) {
-        return { action: actionParam as ActionType, repo: repoParam };
+      const resolved = resolveRouteFromSearch(window.location.search);
+      if (resolved.pendingCareAction) {
+        return {
+          action: resolved.pendingCareAction,
+          repo: resolved.repo || loadRepoConfig().repo || 'connected repository',
+        };
       }
     }
     return null;
@@ -288,25 +317,66 @@ export default function Home() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const navigateToScreen = (screen: DeepLinkScreen | null, pushHistory = true) => {
+    setIsMiniGameModalOpen(screen === 'playzone');
+    if (screen === 'playzone') {
+      // preserve defaultMiniGameId if already set by caller
+    } else {
+      setDefaultMiniGameId(undefined);
+    }
+
+    if (screen === 'wardrobe' || screen === 'achievements') {
+      setProgressionTab(screen);
+      setIsProgressionModalOpen(true);
+    } else {
+      setIsProgressionModalOpen(false);
+    }
+
+    setIsBondingModalOpen(screen === 'bond');
+    setIsCodexModalOpen(screen === 'stats');
+
+    if (pushHistory && typeof window !== 'undefined') {
+      const targetUrl = buildDeepLinkUrl(
+        window.location.href,
+        screen,
+        repoConfig.repo
+      );
+      if (targetUrl !== window.location.href) {
+        window.history.pushState({ screen }, '', targetUrl);
+      }
+    }
+  };
+
+  // Sync deep-link screen state with Browser Back / Forward navigation
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handlePopState = () => {
+      const resolved = resolveRouteFromSearch(window.location.search);
+      navigateToScreen(resolved.screen, false);
+      if (resolved.pendingCareAction) {
+        setPendingActionConfirmation({
+          action: resolved.pendingCareAction,
+          repo: resolved.repo || loadRepoConfig().repo || 'connected repository',
+        });
+      } else {
+        setPendingActionConfirmation(null);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoConfig.repo]);
+
   // 1. Initial Load: Read from persistent storage on client mount
   useEffect(() => {
     const initialConfig = loadRepoConfig();
 
     let activeRepo = initialConfig.repo;
     if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const repoParam = params.get('repo');
-      const actionParam = params.get('action');
-
-      if (repoParam && repoParam.trim()) {
-        activeRepo = repoParam.trim();
+      const resolved = resolveRouteFromSearch(window.location.search);
+      if (resolved.repo) {
+        activeRepo = resolved.repo;
         saveRepoConfig({ ...initialConfig, repo: activeRepo });
-      }
-
-      if (actionParam && actionParam.toLowerCase().trim() === 'stats') {
-        const newUrl = new URL(window.location.href);
-        newUrl.searchParams.delete('action');
-        window.history.replaceState({}, '', newUrl.toString());
       }
     }
 
@@ -836,7 +906,7 @@ export default function Home() {
 
           {/* Companion Play Zone Mini-Games */}
           <button
-            onClick={() => setIsMiniGameModalOpen(true)}
+            onClick={() => navigateToScreen('playzone')}
             className="px-2.5 py-1 rounded-lg border border-indigo-700/60 bg-indigo-950/70 hover:bg-indigo-900/80 text-indigo-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
             title="Interactive Activities & Mini-Games"
             aria-label="Open Play Zone Mini-Games"
@@ -847,10 +917,7 @@ export default function Home() {
 
           {/* Wardrobe & Achievements Vault */}
           <button
-            onClick={() => {
-              setProgressionTab('wardrobe');
-              setIsProgressionModalOpen(true);
-            }}
+            onClick={() => navigateToScreen('wardrobe')}
             className="px-2.5 py-1 rounded-lg border border-purple-700/60 bg-purple-950/70 hover:bg-purple-900/80 text-purple-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
             title="Wardrobe, Cosmetics & Achievements"
             aria-label="Open Wardrobe and Achievements"
@@ -861,7 +928,7 @@ export default function Home() {
 
           {/* Companion Bonding & Daily Focus */}
           <button
-            onClick={() => setIsBondingModalOpen(true)}
+            onClick={() => navigateToScreen('bond')}
             className="px-2.5 py-1 rounded-lg border border-pink-700/60 bg-pink-950/70 hover:bg-pink-900/80 text-pink-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
             title="Companion Bonding, Daily Activities & Rotating Challenges"
             aria-label="Open Companion Bonding & Daily Focus"
@@ -870,11 +937,12 @@ export default function Home() {
             <span className="hidden sm:inline">Bond (Lvl {bondingState.bondLevel})</span>
           </button>
 
-          {/* Evolution Codex */}
+          {/* Evolution Codex / Pet Profile */}
           <button
-            onClick={() => setIsCodexModalOpen(true)}
+            onClick={() => navigateToScreen('stats')}
             className="px-2.5 py-1 rounded-lg border border-[#3b3464] bg-[#161328] hover:bg-[#231f3f] text-purple-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
-            title="Evolution Milestones & Stage Codex"
+            title="Pet Profile & Evolution Milestones Codex"
+            aria-label="Open Pet Profile and Evolution Codex"
           >
             <span>📜</span>
             <span className="hidden sm:inline">Codex</span>
@@ -999,15 +1067,12 @@ export default function Home() {
               thoughtBubble={thoughtBubble}
               currentBehaviour={currentBehaviour}
               equippedCosmetics={progression.equipped}
-              onOpenWardrobe={() => {
-                setProgressionTab('wardrobe');
-                setIsProgressionModalOpen(true);
-              }}
+              onOpenWardrobe={() => navigateToScreen('wardrobe')}
               onOpenMiniGames={(gameId) => {
                 setDefaultMiniGameId(gameId as MiniGameId | undefined);
-                setIsMiniGameModalOpen(true);
+                navigateToScreen('playzone');
               }}
-              onOpenBonding={() => setIsBondingModalOpen(true)}
+              onOpenBonding={() => navigateToScreen('bond')}
               onDirectStroke={() => {
                 const bRes = recordDirectPetting(bondingState);
                 handleBondingEventResult(bRes);
@@ -1274,20 +1339,50 @@ export default function Home() {
         </div>
       )}
 
-      {/* 4. EVOLUTION STAGES CODEX MODAL */}
+      {/* 4. PET PROFILE & EVOLUTION STAGES CODEX MODAL */}
       {isCodexModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pet-profile-modal-title"
+        >
           <div className="w-full max-w-lg bg-[#12141d] border-2 border-[#38335d] rounded-2xl p-5 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-[#25233c] pb-3">
-              <h3 className="text-sm font-bold text-purple-200 flex items-center gap-2">
-                <span>📜</span> Companion Evolution Codex
+              <h3 id="pet-profile-modal-title" className="text-sm font-bold text-purple-200 flex items-center gap-2">
+                <span>📜</span> Pet Profile &amp; Evolution Codex
               </h3>
               <button
-                onClick={() => setIsCodexModalOpen(false)}
+                onClick={() => navigateToScreen('care')}
+                aria-label="Close Pet Profile"
                 className="text-slate-400 hover:text-white text-lg p-1 cursor-pointer"
               >
                 ✕
               </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5 bg-[#181629] border border-[#2d284a] rounded-xl p-3.5 text-xs">
+              <div>
+                <div className="text-slate-400">Companion</div>
+                <div className="font-bold text-slate-100">{pet.name} ({currentSpeciesMeta.name})</div>
+              </div>
+              <div>
+                <div className="text-slate-400">Stage &amp; Level</div>
+                <div className="font-bold text-purple-300">Lv. {pet.level} · {pet.evolutionStage}</div>
+              </div>
+              <div>
+                <div className="text-slate-400">XP Progress</div>
+                <div className="font-mono font-semibold text-slate-100">{pet.xp} / {pet.maxExp} XP</div>
+              </div>
+              <div>
+                <div className="text-slate-400">Mood &amp; Personality</div>
+                <div className="font-semibold text-slate-100">{pet.mood} · {pet.personality || getDefaultPersonalityForSpecies(pet.species)}</div>
+              </div>
+              <div className="col-span-2 pt-1 border-t border-[#262240] flex flex-wrap gap-4 font-mono text-[11px] text-slate-200">
+                <span>Energy: {Math.round(pet.energy)}%</span>
+                <span>Satiety: {Math.round(pet.hunger)}%</span>
+                <span>Happiness: {Math.round(pet.happiness)}%</span>
+              </div>
             </div>
 
             <PetEvolution
@@ -1297,10 +1392,10 @@ export default function Home() {
 
             <div className="pt-2 border-t border-[#25233c] text-right">
               <button
-                onClick={() => setIsCodexModalOpen(false)}
+                onClick={() => navigateToScreen('care')}
                 className="px-4 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-600 text-xs font-bold text-white cursor-pointer"
               >
-                Close Codex
+                Close Profile
               </button>
             </div>
           </div>
@@ -1397,8 +1492,7 @@ export default function Home() {
           handleBondingEventResult(bondRes);
         }}
         onClose={() => {
-          setIsMiniGameModalOpen(false);
-          setDefaultMiniGameId(undefined);
+          navigateToScreen('care');
         }}
       />
 
@@ -1410,7 +1504,7 @@ export default function Home() {
         speciesMeta={currentSpeciesMeta}
         progression={progression}
         onUpdateProgression={handleProgressionUpdate}
-        onClose={() => setIsProgressionModalOpen(false)}
+        onClose={() => navigateToScreen('care')}
       />
 
       {/* 8. COMPANION BONDING & DAILY ACTIVITIES HUB MODAL */}
@@ -1418,7 +1512,7 @@ export default function Home() {
         isOpen={isBondingModalOpen}
         pet={pet}
         bondingState={bondingState}
-        onClose={() => setIsBondingModalOpen(false)}
+        onClose={() => navigateToScreen('care')}
       />
 
       {/* 9. CELEBRATION TOAST NOTIFICATION */}
