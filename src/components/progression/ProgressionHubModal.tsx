@@ -61,32 +61,46 @@ export const ProgressionHubModal: React.FC<ProgressionHubModalProps> = ({
       aria-modal="true"
       aria-labelledby="progression-hub-title"
     >
-      <div className="relative w-full max-w-4xl max-h-[92vh] bg-[#0c0e18] border-2 border-indigo-500/60 rounded-2xl flex flex-col overflow-hidden shadow-2xl shadow-indigo-950/60">
+      <div className="relative w-full max-w-4xl max-h-[92vh] pet-themed-modal rounded-2xl flex flex-col overflow-hidden">
         {/* ── MODAL HEADER ───────────────────────────────────────────────────── */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-[#121524]">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">✨</span>
-            <div>
-              <h2 id="progression-hub-title" className="text-sm font-bold text-slate-100 uppercase tracking-wider">
-                Companion Progression & Collection Vault
-              </h2>
-              <p className="text-[11px] text-slate-400">
-                Customize your pet with unlocked cosmetics & celebrate gameplay achievements
-              </p>
+        <div className="p-3.5 sm:p-4 pet-themed-modal-header flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0">
+          <div className="flex items-start justify-between gap-3 min-w-0 flex-1">
+            <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0">
+              <span className="text-xl sm:text-2xl shrink-0">✨</span>
+              <div className="min-w-0">
+                <h2 id="progression-hub-title" className="text-xs sm:text-sm font-bold text-slate-100 uppercase tracking-wider leading-snug break-words">
+                  Companion Progression & Collection Vault
+                </h2>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  Customize your pet with unlocked cosmetics & celebrate gameplay achievements
+                </p>
+              </div>
             </div>
+
+            {/* Close Button (always visible top-right on mobile) */}
+            <button
+              onClick={() => {
+                retroAudio.playClick();
+                onClose();
+              }}
+              className="sm:hidden shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              aria-label="Close progression vault"
+            >
+              ✕
+            </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0 w-full sm:w-auto shrink-0">
             {/* Top Tabs */}
-            <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-slate-800">
+            <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-slate-800 w-full sm:w-auto min-w-0">
               <button
                 onClick={() => {
                   retroAudio.playClick();
                   setActiveTab('wardrobe');
                 }}
-                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                className={`flex-1 sm:flex-initial justify-center px-2.5 sm:px-3 py-1.5 sm:py-1 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                   activeTab === 'wardrobe'
-                    ? 'bg-purple-600 text-white shadow'
+                    ? 'pet-themed-primary-btn shadow'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -99,9 +113,9 @@ export const ProgressionHubModal: React.FC<ProgressionHubModalProps> = ({
                   retroAudio.playClick();
                   setActiveTab('achievements');
                 }}
-                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                className={`flex-1 sm:flex-initial justify-center px-2.5 sm:px-3 py-1.5 sm:py-1 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                   activeTab === 'achievements'
-                    ? 'bg-indigo-600 text-white shadow'
+                    ? 'pet-themed-primary-btn shadow'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -110,13 +124,13 @@ export const ProgressionHubModal: React.FC<ProgressionHubModalProps> = ({
               </button>
             </div>
 
-            {/* Close Button */}
+            {/* Close Button (desktop inline) */}
             <button
               onClick={() => {
                 retroAudio.playClick();
                 onClose();
               }}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all ml-2"
+              className="hidden sm:inline-flex shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors ml-1 cursor-pointer"
               aria-label="Close progression vault"
             >
               ✕

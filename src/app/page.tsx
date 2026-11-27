@@ -60,6 +60,9 @@ import {
   importSaveData,
   fetchRemoteReadme,
   updateRemoteReadme,
+  saveVisitorSelectedSpecies,
+  loadVisitorSelectedSpecies,
+  applyVisitorCompanionOverride,
   ConnectedRepoConfig,
 } from '@/lib/storage/gameStateStorage';
 import {
@@ -72,6 +75,10 @@ import {
   buildDeepLinkUrl,
   type DeepLinkScreen,
 } from '@/features/navigation/deepLinks';
+import {
+  getCompanionThemeCssVars,
+  normalizeThemeSpecies,
+} from '@/features/theme/companionTheme';
 
 export default function Home() {
   const [pet, setPet] = useState<PetState>(() => loadLocalPetState());
@@ -385,8 +392,14 @@ export default function Home() {
       fetchRemotePetState(activeRepo, initialConfig.token).then((res) => {
         if (res.success && res.pet) {
           setIsRepoUninitialized(false);
-          setPet(res.pet);
-          saveLocalGameState(res.pet, loadLocalActionHistory());
+          const visitorSpecies = loadVisitorSelectedSpecies(activeRepo);
+          const resolvedPet = applyVisitorCompanionOverride(
+            res.pet,
+            visitorSpecies,
+            Boolean(initialConfig.token)
+          );
+          setPet(resolvedPet);
+          saveLocalGameState(resolvedPet, loadLocalActionHistory());
           setSyncStatusMsg(`Synchronized with ${activeRepo}`);
         } else {
           if (res.uninitialized) {
@@ -454,7 +467,11 @@ export default function Home() {
   // Switch Companion Species
   const handleSelectSpecies = (speciesId: SpeciesId) => {
     const meta = SPECIES_METADATA[speciesId];
+    if (!meta) return;
     retroAudio.playClick();
+    if (!repoConfig.token) {
+      saveVisitorSelectedSpecies(repoConfig.repo || 'local', speciesId);
+    }
     const updated: PetState = {
       ...pet,
       species: speciesId,
@@ -864,145 +881,213 @@ export default function Home() {
     ].filter(Boolean),
   }));
 
+  // Sync centralized companion theme CSS variables to documentElement
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const vars = getCompanionThemeCssVars(pet.species);
+    const root = document.documentElement;
+    for (const [key, val] of Object.entries(vars)) {
+      root.style.setProperty(key, val);
+    }
+    root.dataset.companionTheme = normalizeThemeSpecies(pet.species);
+  }, [pet.species]);
+
+  const themeVars = getCompanionThemeCssVars(pet.species);
+
   return (
-    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center antialiased w-full max-w-full overflow-x-hidden selection:bg-purple-600 selection:text-white">
-      {/* 1. TOP RETRO GAME NAVIGATION BAR */}
-      <header className="sticky top-0 z-40 w-full bg-[#0a0d14]/95 backdrop-blur-md border-b border-[#252240] px-4 py-3 flex items-center justify-between shadow-lg shadow-purple-950/20">
-        {/* Left Brand & Active Companion Title */}
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-600 to-indigo-800 flex items-center justify-center text-lg shadow-md border border-purple-400/40">
-            🐾
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-sm font-bold tracking-wide text-purple-200">
-                GitHub Profile Pet
-              </h1>
-              <span className="hidden sm:inline-block px-1.5 py-0.2 text-[9px] font-bold rounded bg-purple-950/70 text-purple-300 border border-purple-600/40 uppercase">
-                Playable Edition
-              </span>
+    <div
+      data-companion-theme={normalizeThemeSpecies(pet.species)}
+      style={themeVars as React.CSSProperties}
+      className="min-h-screen pet-themed-page text-slate-100 flex flex-col items-center antialiased w-full max-w-full overflow-x-hidden selection:bg-[var(--pet-primary)] selection:text-white"
+    >
+      {/* 1. TOP COMPANION NAVIGATION BAR */}
+      <header className="sticky top-0 z-40 w-full pet-themed-header backdrop-blur-md">
+        <div className="max-w-[1140px] mx-auto w-full px-3 sm:px-6 py-2.5 sm:py-3 flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
+          {/* Left Brand & Active Companion Title */}
+          <div className="flex items-center justify-between gap-3 min-w-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 shrink-0 rounded-lg pet-themed-badge flex items-center justify-center text-base">
+                🐾
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-sm font-bold tracking-wide text-slate-100 whitespace-nowrap">
+                    GitHub Profile Pet
+                  </h1>
+                  <span className="text-[10px] font-medium pet-themed-accent-text uppercase tracking-wider whitespace-nowrap">
+                    Playable Edition
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 font-mono truncate">
+                  {pet.name} <span className="pet-themed-accent-text font-semibold">• Lv. {pet.level} {pet.evolutionStage}</span>
+                </p>
+              </div>
             </div>
-            <p className="text-[11px] text-slate-400 font-mono">
-              {pet.name} <span className="text-purple-400 font-bold">• Lvl {pet.level} {pet.evolutionStage}</span>
-            </p>
+
+            {/* Compact Sound & Repo Links on Mobile/Tablet */}
+            <div className="flex lg:hidden items-center gap-1.5 shrink-0">
+              <button
+                onClick={handleToggleSound}
+                className={`h-8 px-2.5 rounded-lg text-xs font-medium inline-flex items-center gap-1 transition-colors cursor-pointer ${
+                  isMuted
+                    ? 'bg-[#12141f] border border-[#252240] text-slate-400 hover:text-slate-200'
+                    : 'pet-themed-nav-btn-active'
+                }`}
+                title={isMuted ? 'Sound is Muted (Click to Unmute)' : 'Sound is Active (Click to Mute)'}
+                aria-label={isMuted ? 'Unmute Sound' : 'Mute Sound'}
+              >
+                <span>{isMuted ? '🔇' : '🔊'}</span>
+              </button>
+              <a
+                href="https://github.com/mnp210/GitHub-Profile-Pet"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="h-8 px-2.5 rounded-lg pet-themed-nav-btn text-xs font-medium inline-flex items-center whitespace-nowrap transition-colors"
+                title="Open GitHub Repository"
+              >
+                GitHub
+              </a>
+            </div>
           </div>
-        </div>
 
-        {/* Right Navigation & Utility Controls */}
-        <div className="flex items-center gap-2">
-          {/* Audio Mute/Unmute */}
-          <button
-            onClick={handleToggleSound}
-            className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-              isMuted
-                ? 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300'
-                : 'bg-purple-950/60 border-purple-700/50 text-purple-200 hover:bg-purple-900/60'
-            }`}
-            title={isMuted ? 'Sound is Muted (Click to Unmute)' : 'Sound is Active (Click to Mute)'}
+          {/* Primary Navigation & Utility Controls */}
+          <nav
+            aria-label="Primary Companion Navigation"
+            className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0"
           >
-            <span>{isMuted ? '🔇' : '🔊'}</span>
-            <span className="hidden md:inline">{isMuted ? 'Muted' : 'Sound ON'}</span>
-          </button>
+            {/* Audio Mute/Unmute (Desktop) */}
+            <button
+              onClick={handleToggleSound}
+              className={`hidden lg:inline-flex h-8 px-2.5 rounded-lg text-xs font-medium items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                isMuted
+                  ? 'bg-[#12141f] border border-[#252240] text-slate-400 hover:text-slate-200'
+                  : 'pet-themed-nav-btn-active'
+              }`}
+              title={isMuted ? 'Sound is Muted (Click to Unmute)' : 'Sound is Active (Click to Mute)'}
+            >
+              <span>{isMuted ? '🔇' : '🔊'}</span>
+              <span>{isMuted ? 'Muted' : 'Sound'}</span>
+            </button>
 
-          {/* Companion Play Zone Mini-Games */}
-          <button
-            onClick={() => navigateToScreen('playzone')}
-            className="px-2.5 py-1 rounded-lg border border-indigo-700/60 bg-indigo-950/70 hover:bg-indigo-900/80 text-indigo-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
-            title="Interactive Activities & Mini-Games"
-            aria-label="Open Play Zone Mini-Games"
-          >
-            <span>🎮</span>
-            <span className="hidden sm:inline">Play Zone</span>
-          </button>
+            {/* Companion Play Zone Mini-Games */}
+            <button
+              onClick={() => navigateToScreen('playzone')}
+              className={`h-8 px-2.5 sm:px-3 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                isMiniGameModalOpen ? 'pet-themed-nav-btn-active' : 'pet-themed-nav-btn'
+              }`}
+              title="Interactive Activities & Mini-Games"
+              aria-label="Open Play Zone Mini-Games"
+            >
+              <span>🎮</span>
+              <span>Play Zone</span>
+            </button>
 
-          {/* Wardrobe & Achievements Vault */}
-          <button
-            onClick={() => navigateToScreen('wardrobe')}
-            className="px-2.5 py-1 rounded-lg border border-purple-700/60 bg-purple-950/70 hover:bg-purple-900/80 text-purple-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
-            title="Wardrobe, Cosmetics & Achievements"
-            aria-label="Open Wardrobe and Achievements"
-          >
-            <span>✨</span>
-            <span className="hidden sm:inline">Wardrobe</span>
-          </button>
+            {/* Wardrobe & Achievements Vault */}
+            <button
+              onClick={() => navigateToScreen('wardrobe')}
+              className={`h-8 px-2.5 sm:px-3 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                isProgressionModalOpen ? 'pet-themed-nav-btn-active' : 'pet-themed-nav-btn'
+              }`}
+              title="Wardrobe, Cosmetics & Achievements"
+              aria-label="Open Wardrobe and Achievements"
+            >
+              <span>✨</span>
+              <span>Wardrobe</span>
+            </button>
 
-          {/* Companion Bonding & Daily Focus */}
-          <button
-            onClick={() => navigateToScreen('bond')}
-            className="px-2.5 py-1 rounded-lg border border-pink-700/60 bg-pink-950/70 hover:bg-pink-900/80 text-pink-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
-            title="Companion Bonding, Daily Activities & Rotating Challenges"
-            aria-label="Open Companion Bonding & Daily Focus"
-          >
-            <span>🤝</span>
-            <span className="hidden sm:inline">Bond (Lvl {bondingState.bondLevel})</span>
-          </button>
+            {/* Companion Bonding & Daily Focus */}
+            <button
+              onClick={() => navigateToScreen('bond')}
+              className={`h-8 px-2.5 sm:px-3 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                isBondingModalOpen ? 'pet-themed-nav-btn-active' : 'pet-themed-nav-btn'
+              }`}
+              title="Companion Bonding, Daily Activities & Rotating Challenges"
+              aria-label="Open Companion Bonding & Daily Focus"
+            >
+              <span>🤝</span>
+              <span>Bond <span className="pet-themed-accent-text font-mono">Lv.{bondingState.bondLevel}</span></span>
+            </button>
 
-          {/* Evolution Codex / Pet Profile */}
-          <button
-            onClick={() => navigateToScreen('stats')}
-            className="px-2.5 py-1 rounded-lg border border-[#3b3464] bg-[#161328] hover:bg-[#231f3f] text-purple-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
-            title="Pet Profile & Evolution Milestones Codex"
-            aria-label="Open Pet Profile and Evolution Codex"
-          >
-            <span>📜</span>
-            <span className="hidden sm:inline">Codex</span>
-          </button>
+            {/* Evolution Codex / Pet Profile */}
+            <button
+              onClick={() => navigateToScreen('stats')}
+              className={`h-8 px-2.5 sm:px-3 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                isCodexModalOpen ? 'pet-themed-nav-btn-active' : 'pet-themed-nav-btn'
+              }`}
+              title="Pet Profile & Evolution Milestones Codex"
+              aria-label="Open Pet Profile and Evolution Codex"
+            >
+              <span>📜</span>
+              <span>Codex</span>
+            </button>
 
-          {/* GitHub Sync Button */}
-          <button
-            onClick={() => setIsSyncModalOpen(true)}
-            className={`px-2.5 py-1 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-              repoConfig.repo
-                ? 'bg-indigo-950/80 border-indigo-500/60 text-indigo-200 hover:bg-indigo-900/80'
-                : 'bg-[#181a24] border-slate-700 text-slate-300 hover:bg-[#242735]'
-            }`}
-            title="GitHub Repository Sync Settings"
-          >
-            <span>⚡</span>
-            <span className="hidden sm:inline font-mono">
-              {repoConfig.repo ? repoConfig.repo.split('/')[1] || 'Sync' : 'Connect Repo'}
-            </span>
-          </button>
+            {/* GitHub Sync Button */}
+            <button
+              onClick={() => setIsSyncModalOpen(true)}
+              className={`h-8 px-2.5 sm:px-3 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                repoConfig.repo
+                  ? 'pet-themed-nav-btn-active'
+                  : 'pet-themed-nav-btn'
+              }`}
+              title="GitHub Repository Sync Settings"
+            >
+              <span>⚡</span>
+              <span className="font-mono">
+                {repoConfig.repo ? repoConfig.repo.split('/')[1] || 'Sync' : 'Connect'}
+              </span>
+            </button>
+
+            {/* GitHub Repo Link (Desktop) */}
+            <a
+              href="https://github.com/mnp210/GitHub-Profile-Pet"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden lg:inline-flex h-8 px-2.5 rounded-lg pet-themed-nav-btn text-xs font-medium items-center whitespace-nowrap transition-colors"
+              title="Open GitHub Repository"
+            >
+              GitHub
+            </a>
+          </nav>
         </div>
       </header>
 
       {/* 2. MAIN GAME CONTAINER */}
       <main className="flex-1 w-full max-w-[1140px] px-3 sm:px-6 py-4 sm:py-6 space-y-5">
-        {/* REPOSITORY STATUS & TRAINER / VISITOR MODE BADGE */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5 px-4 py-2.5 rounded-xl border border-[#252240] bg-[#0e111a]/90 backdrop-blur text-xs">
-          <div className="flex items-center gap-2">
+        {/* REPOSITORY STATUS & TRAINER / VISITOR MODE STRIP */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl pet-themed-surface text-xs">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
             {repoConfig.repo ? (
               repoConfig.token ? (
                 <>
-                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400/50" />
+                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
                   <span className="text-slate-300 font-medium">
-                    Authorized Trainer:{' '}
-                    <span className="font-mono text-purple-300 font-semibold">{repoConfig.repo}</span>
+                    Trainer:{' '}
+                    <span className="font-mono text-purple-300 font-semibold break-all">{repoConfig.repo}</span>
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-600/40 font-semibold">
-                    Live Sync Active
+                  <span className="text-[11px] text-emerald-400/90 font-medium">
+                    · Live Sync Active
                   </span>
                 </>
               ) : (
                 <>
-                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-sky-400" />
+                  <span className="inline-block w-2 h-2 rounded-full bg-sky-400 shrink-0" />
                   <span className="text-slate-300 font-medium">
-                    Visitor Mode:{' '}
-                    <span className="font-mono text-sky-300 font-semibold">{repoConfig.repo}</span>
+                    Visitor:{' '}
+                    <span className="font-mono text-sky-300 font-semibold break-all">{repoConfig.repo}</span>
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-600/40 font-semibold">
-                    Interactive Playground (Read-Only)
+                  <span className="text-[11px] text-slate-400">
+                    · Interactive Playground (Read-Only)
                   </span>
                 </>
               )
             ) : (
               <>
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-purple-400" />
+                <span className="inline-block w-2 h-2 rounded-full bg-purple-400 shrink-0" />
                 <span className="text-slate-300 font-medium">
                   Local Adventure Mode
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-600/40 font-semibold">
-                  Offline Save
+                <span className="text-[11px] text-slate-400">
+                  · Offline Save
                 </span>
               </>
             )}
@@ -1347,9 +1432,9 @@ export default function Home() {
           aria-modal="true"
           aria-labelledby="pet-profile-modal-title"
         >
-          <div className="w-full max-w-lg bg-[#12141d] border-2 border-[#38335d] rounded-2xl p-5 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-[#25233c] pb-3">
-              <h3 id="pet-profile-modal-title" className="text-sm font-bold text-purple-200 flex items-center gap-2">
+          <div className="w-full max-w-lg pet-themed-modal rounded-2xl p-5 space-y-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-[var(--pet-border)] pb-3">
+              <h3 id="pet-profile-modal-title" className="text-sm font-bold pet-themed-accent-text flex items-center gap-2">
                 <span>📜</span> Pet Profile &amp; Evolution Codex
               </h3>
               <button
@@ -1361,14 +1446,14 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 bg-[#181629] border border-[#2d284a] rounded-xl p-3.5 text-xs">
+            <div className="grid grid-cols-2 gap-2.5 pet-themed-surface rounded-xl p-3.5 text-xs">
               <div>
                 <div className="text-slate-400">Companion</div>
                 <div className="font-bold text-slate-100">{pet.name} ({currentSpeciesMeta.name})</div>
               </div>
               <div>
                 <div className="text-slate-400">Stage &amp; Level</div>
-                <div className="font-bold text-purple-300">Lv. {pet.level} · {pet.evolutionStage}</div>
+                <div className="font-bold pet-themed-accent-text">Lv. {pet.level} · {pet.evolutionStage}</div>
               </div>
               <div>
                 <div className="text-slate-400">XP Progress</div>
@@ -1378,7 +1463,7 @@ export default function Home() {
                 <div className="text-slate-400">Mood &amp; Personality</div>
                 <div className="font-semibold text-slate-100">{pet.mood} · {pet.personality || getDefaultPersonalityForSpecies(pet.species)}</div>
               </div>
-              <div className="col-span-2 pt-1 border-t border-[#262240] flex flex-wrap gap-4 font-mono text-[11px] text-slate-200">
+              <div className="col-span-2 pt-1 border-t border-[var(--pet-border)] flex flex-wrap gap-4 font-mono text-[11px] text-slate-200">
                 <span>Energy: {Math.round(pet.energy)}%</span>
                 <span>Satiety: {Math.round(pet.hunger)}%</span>
                 <span>Happiness: {Math.round(pet.happiness)}%</span>
@@ -1390,10 +1475,10 @@ export default function Home() {
               currentLevel={pet.level}
             />
 
-            <div className="pt-2 border-t border-[#25233c] text-right">
+            <div className="pt-2 border-t border-[var(--pet-border)] text-right">
               <button
                 onClick={() => navigateToScreen('care')}
-                className="px-4 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-600 text-xs font-bold text-white cursor-pointer"
+                className="px-4 py-1.5 rounded-lg pet-themed-primary-btn text-xs font-bold cursor-pointer"
               >
                 Close Profile
               </button>

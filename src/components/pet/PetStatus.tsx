@@ -37,7 +37,7 @@ export const PetStatus: React.FC<PetStatusProps> = ({
   return (
     <div className="space-y-4">
       {/* Pet Header & Editable Name */}
-      <div className="p-3.5 bg-[#12151b] border border-[#222733] rounded-lg">
+      <div className="p-3.5 pet-themed-surface rounded-lg">
         {isEditingName ? (
           <form onSubmit={handleSaveName} className="flex items-center gap-2 mt-1">
             <label htmlFor="pet-name-input" className="sr-only">
@@ -90,7 +90,7 @@ export const PetStatus: React.FC<PetStatusProps> = ({
                 <EditIcon size={12} aria-hidden={true} />
               </button>
             </div>
-            <span className="px-2 py-0.5 bg-[#181c24] text-indigo-400 border border-[#2d3342] rounded text-xs font-medium font-mono">
+            <span className="px-2 py-0.5 pet-themed-badge rounded text-xs font-medium font-mono">
               Level {pet.level}
             </span>
           </div>

@@ -22,6 +22,22 @@
     --color-accent-brand: #4f46e5;
     --color-accent-brand-hover: #4338ca;
     --color-accent-brand-subtle: rgba(79, 70, 229, 0.12);
+
+    /* Dynamic Companion Theme Tokens (overridden dynamically by active species) */
+    --pet-primary: #7c3aed;
+    --pet-primary-strong: #6d28d9;
+    --pet-primary-soft: rgba(124, 58, 237, 0.14);
+    --pet-secondary: #10b981;
+    --pet-secondary-soft: rgba(16, 185, 129, 0.12);
+    --pet-bg-base: #07090e;
+    --pet-bg-ambient: rgba(124, 58, 237, 0.14);
+    --pet-surface: #111022;
+    --pet-surface-elevated: #181530;
+    --pet-border: #282347;
+    --pet-border-accent: rgba(139, 92, 246, 0.55);
+    --pet-glow: rgba(124, 58, 237, 0.22);
+    --pet-text-accent: #c4b5fd;
+    --pet-text-secondary-accent: #6ee7b7;
   }
 
   body {
@@ -51,7 +67,7 @@
 
 /* Accessible Keyboard Focus Indicators */
 :focus-visible {
-  outline: 2px solid #6366f1 !important;
+  outline: 2px solid var(--pet-primary, #6366f1) !important;
   outline-offset: 2px !important;
 }
 
@@ -179,4 +195,80 @@
 
 .animate-fade-in {
   animation: fade-in 0.3s ease-out forwards;
+}
+
+/* Dynamic Companion Theme Semantic Surfaces */
+.pet-themed-page {
+  background-color: var(--pet-bg-base);
+  background-image: radial-gradient(
+    ellipse 75% 45% at 50% 0%,
+    var(--pet-bg-ambient),
+    transparent 70%
+  );
+  transition: background-color 280ms ease;
+}
+
+.pet-themed-header {
+  background-color: color-mix(in srgb, var(--pet-bg-base) 92%, transparent);
+  border-bottom: 1px solid var(--pet-border);
+}
+
+.pet-themed-surface {
+  background-color: var(--pet-surface);
+  border: 1px solid var(--pet-border);
+}
+
+.pet-themed-nav-btn {
+  background-color: var(--pet-surface);
+  border: 1px solid var(--pet-border);
+  color: #e2e8f0;
+}
+.pet-themed-nav-btn:hover {
+  background-color: var(--pet-surface-elevated);
+  border-color: var(--pet-border-accent);
+  color: #ffffff;
+}
+
+.pet-themed-nav-btn-active {
+  background-color: var(--pet-primary-soft);
+  border: 1px solid var(--pet-border-accent);
+  color: var(--pet-text-accent);
+}
+
+.pet-themed-primary-btn {
+  background-color: var(--pet-primary);
+  color: #ffffff;
+  border: 1px solid var(--pet-border-accent);
+}
+.pet-themed-primary-btn:hover {
+  background-color: var(--pet-primary-strong);
+}
+
+.pet-themed-modal {
+  background-color: var(--pet-bg-base);
+  border: 1px solid var(--pet-border-accent);
+  box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.75), 0 0 36px -12px var(--pet-glow);
+}
+
+.pet-themed-modal-header {
+  background-color: var(--pet-surface);
+  border-bottom: 1px solid var(--pet-border);
+}
+
+.pet-themed-accent-text {
+  color: var(--pet-text-accent);
+}
+
+.pet-themed-secondary-text {
+  color: var(--pet-text-secondary-accent);
+}
+
+.pet-themed-badge {
+  background-color: var(--pet-primary-soft);
+  border: 1px solid var(--pet-border-accent);
+  color: var(--pet-text-accent);
+}
+
+.pet-themed-xp-fill {
+  background: linear-gradient(90deg, var(--pet-primary), var(--pet-secondary));
 }

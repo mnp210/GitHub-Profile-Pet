@@ -1,5 +1,5 @@
-import type { PetState } from '../../types/pet.ts';
-import { INITIAL_PET_STATE } from '../../constants/petData.ts';
+import type { PetState, SpeciesId } from '../../types/pet.ts';
+import { INITIAL_PET_STATE, SPECIES_METADATA } from '../../constants/petData.ts';
 import type { ActionHistoryEntry, ActionType } from '../../features/gamification/rewards.ts';
 import { getDefaultPersonalityForSpecies } from '../../features/personality/personalities.ts';
 
@@ -7,6 +7,7 @@ const LOCAL_STORAGE_PET_KEY = 'gh_pet_game_state_v1';
 const LOCAL_STORAGE_HISTORY_KEY = 'gh_pet_action_history_v1';
 const LOCAL_STORAGE_REPO_KEY = 'gh_pet_connected_repo_v1';
 const LOCAL_STORAGE_TOKEN_KEY = 'gh_pet_access_token_v1';
+const LOCAL_STORAGE_VISITOR_SPECIES_PREFIX = 'gh_pet_visitor_species_v1:';
 
 import type { ProgressionState } from '../../features/progression/types.ts';
 import { migrateProgressionState } from '../../features/progression/persistence.ts';
@@ -450,4 +451,62 @@ export function importSaveData(jsonString: string): {
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
+}
+
+function getVisitorSpeciesStorageKey(repo?: string): string {
+  const normalizedRepo = (repo || '').trim().toLowerCase() || 'local';
+  return `${LOCAL_STORAGE_VISITOR_SPECIES_PREFIX}${normalizedRepo}`;
+}
+
+/**
+ * Persists the visitor's locally selected companion species for a given repository
+ * without altering canonical repository progression data.
+ */
+export function saveVisitorSelectedSpecies(repo: string | undefined, species: SpeciesId): void {
+  if (typeof window === 'undefined') return;
+  if (!SPECIES_METADATA[species]) return;
+  try {
+    localStorage.setItem(getVisitorSpeciesStorageKey(repo), species);
+  } catch {
+    // Ignore storage quota / privacy mode errors
+  }
+}
+
+/**
+ * Loads the visitor's locally selected companion species for a given repository,
+ * returning null if absent or invalid.
+ */
+export function loadVisitorSelectedSpecies(repo?: string): SpeciesId | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(getVisitorSpeciesStorageKey(repo));
+    if (raw && SPECIES_METADATA[raw]) {
+      return raw as SpeciesId;
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return null;
+}
+
+/**
+ * Applies a locally selected companion override in unauthenticated Visitor Mode
+ * while preserving canonical repository progression and Trainer Mode authority.
+ */
+export function applyVisitorCompanionOverride(
+  canonicalPet: PetState,
+  selectedSpecies: SpeciesId | null,
+  isAuthenticatedTrainer: boolean
+): PetState {
+  if (isAuthenticatedTrainer || !selectedSpecies || !SPECIES_METADATA[selectedSpecies]) {
+    return canonicalPet;
+  }
+
+  const meta = SPECIES_METADATA[selectedSpecies];
+  return {
+    ...canonicalPet,
+    species: selectedSpecies,
+    name: meta.name,
+    personality: getDefaultPersonalityForSpecies(selectedSpecies),
+  };
 }
