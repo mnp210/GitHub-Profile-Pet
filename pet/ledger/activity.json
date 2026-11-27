@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
-  "generation": 56,
+  "generation": 57,
   "dailyAccruedXp": {
     "2026-11-22": 300,
     "2026-11-23": 30,
-    "2026-11-26": 300
+    "2026-11-26": 300,
+    "2026-11-27": 25
   },
   "processedRegistry": {
     "commitShas": [
@@ -85,7 +86,8 @@
     "issueNumbers": [],
     "prOpenedNumbers": [
       1,
-      3
+      3,
+      4
     ],
     "prMergedNumbers": [
       1,
@@ -177,7 +179,7 @@
       ],
       [
         3,
-        3
+        4
       ]
     ],
     "prMergedIntervals": [
@@ -193,6 +195,33 @@
     "reviewIntervals": []
   },
   "recentEvents": [
+    {
+      "eventId": "pr_merged:1",
+      "eventType": "pr_merged",
+      "actor": "mnp210",
+      "timestamp": "2026-11-27T03:22:12.801Z",
+      "xpAwarded": 0,
+      "status": "skipped_duplicate",
+      "details": "Event pr_merged:1 has already been recorded in permanent deduplication index. Replay ignored."
+    },
+    {
+      "eventId": "pr_merged:3",
+      "eventType": "pr_merged",
+      "actor": "mnp210",
+      "timestamp": "2026-11-27T03:22:12.798Z",
+      "xpAwarded": 0,
+      "status": "skipped_duplicate",
+      "details": "Event pr_merged:3 has already been recorded in permanent deduplication index. Replay ignored."
+    },
+    {
+      "eventId": "pr_opened:4",
+      "eventType": "pr_opened",
+      "actor": "mnp210",
+      "timestamp": "2026-11-27T03:22:12.791Z",
+      "xpAwarded": 25,
+      "status": "rewarded",
+      "details": "feat(readme): interactive-style pet dashboard & game menu"
+    },
     {
       "eventId": "pr_merged:1",
       "eventType": "pr_merged",
@@ -1047,12 +1076,12 @@
       "ref": "refs/heads/main"
     }
   ],
-  "updatedAt": "2026-11-26T14:45:27.653Z",
+  "updatedAt": "2026-11-27T03:22:12.801Z",
   "checkpoints": {
-    "lastCommitSha": "b9095da455745ed1d951b09328cc8983c515f95b",
-    "lastIssueNumber": 3,
-    "lastPrNumber": 3,
-    "reconciledAt": "2026-11-26T14:45:25.939Z",
+    "lastCommitSha": "f82c5b2ec640118577c47cb062ff1329f7c0c454",
+    "lastIssueNumber": 4,
+    "lastPrNumber": 4,
+    "reconciledAt": "2026-11-27T03:22:11.065Z",
     "historicalPrCompleted": true
   }
 }
