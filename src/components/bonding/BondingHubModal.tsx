@@ -68,16 +68,16 @@ export const BondingHubModal: React.FC<BondingHubModalProps> = ({
     >
       <div className="relative w-full max-w-2xl max-h-[90vh] bg-slate-900 border border-purple-500/50 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-purple-800/40 bg-slate-950/70">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-purple-900/60 border border-purple-400/40 flex items-center justify-center text-lg shadow-[0_0_12px_rgba(168,85,247,0.3)]">
+        <div className="flex items-start sm:items-center justify-between gap-3 px-4 sm:px-5 py-3.5 sm:py-4 border-b border-purple-800/40 bg-slate-950/70 min-w-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+            <div className="w-9 h-9 shrink-0 rounded-xl bg-purple-900/60 border border-purple-400/40 flex items-center justify-center text-lg">
               🤝
             </div>
-            <div>
-              <h2 id="bonding-hub-title" className="text-base font-bold text-white tracking-wide">
+            <div className="min-w-0">
+              <h2 id="bonding-hub-title" className="text-sm sm:text-base font-bold text-white tracking-wide leading-snug break-words">
                 Companion Bonding & Daily Focus
               </h2>
-              <p className="text-xs text-purple-300/80">
+              <p className="text-[11px] sm:text-xs text-purple-300/80 leading-snug break-words">
                 Bond Level {bondingState.bondLevel} • {bondingState.bondPoints} Pts • {pet.name} ({pet.personality})
               </p>
             </div>
@@ -85,7 +85,7 @@ export const BondingHubModal: React.FC<BondingHubModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800/80 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
+            className="shrink-0 p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800/80 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400 cursor-pointer"
             aria-label="Close bonding hub"
           >
             ✕
@@ -93,7 +93,7 @@ export const BondingHubModal: React.FC<BondingHubModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-2 px-5 py-2.5 bg-slate-950/40 border-b border-slate-800">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-4 sm:px-5 py-2.5 bg-slate-950/40 border-b border-slate-800">
           <button
             onClick={() => handleTabSwitch('overview')}
             className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${

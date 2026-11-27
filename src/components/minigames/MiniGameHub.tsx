@@ -116,16 +116,16 @@ export const MiniGameHub: React.FC<MiniGameHubProps> = ({
     >
       <div className="relative w-full max-w-2xl bg-[#0b0e17] border-2 border-[#2b274c] rounded-2xl p-4 sm:p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
         {/* Hub Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">🎮</span>
-            <div>
-              <h2 className="text-base sm:text-lg font-extrabold text-white">
+        <div className="flex items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-800 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <span className="text-xl shrink-0">🎮</span>
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-extrabold text-white leading-snug">
                 Companion Play Zone
               </h2>
-              <p className="text-[11px] text-slate-400">
-                Bonding activities with <span className="text-purple-300 font-bold">{pet.name}</span>
-                <span className={`ml-1.5 px-1.5 py-0.2 rounded text-[10px] border ${profile.badgeBg}`}>
+              <p className="text-[11px] text-slate-400 flex flex-wrap items-center gap-1.5">
+                <span>Bonding activities with <span className="text-purple-300 font-bold">{pet.name}</span></span>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] border ${profile.badgeBg}`}>
                   {profile.name}
                 </span>
               </p>
@@ -134,7 +134,7 @@ export const MiniGameHub: React.FC<MiniGameHubProps> = ({
 
           <button
             onClick={handleClose}
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700"
+            className="shrink-0 p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 cursor-pointer"
             aria-label="Close Play Zone"
           >
             ✕
