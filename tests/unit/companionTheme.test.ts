@@ -6,6 +6,8 @@ import {
   getCompanionThemeCssVars,
   normalizeThemeSpecies,
 } from '../../src/features/theme/companionTheme.ts';
+import { applyVisitorCompanionOverride } from '../../src/lib/storage/gameStateStorage.ts';
+import type { PetState, SpeciesId } from '../../src/types/pet.ts';
 
 describe('Centralized Companion Theme System', () => {
   it('defines four distinct companion palettes for cat, dragon, fox, and slime', () => {
@@ -48,5 +50,44 @@ describe('Centralized Companion Theme System', () => {
     assert.equal(vars['--pet-border'], dragonTheme.border);
     assert.equal(vars['--pet-text-accent'], dragonTheme.textAccent);
     assert.equal(Object.keys(vars).length, 14);
+  });
+
+  it('preserves visitor companion selection over canonical repo sync without altering progression or Trainer Mode', () => {
+    const canonicalCat: PetState = {
+      name: 'Shadow Claw',
+      species: 'cat',
+      level: 5,
+      xp: 225,
+      maxExp: 500,
+      mood: 'Happy',
+      evolutionStage: 'Juvenile',
+      hunger: 97,
+      happiness: 40,
+      energy: 100,
+      personality: 'curious',
+    };
+
+    // Visitor Mode: applies selected companion while preserving canonical vitals/progression
+    const overridden = applyVisitorCompanionOverride(canonicalCat, 'dragon', false);
+    assert.equal(overridden.species, 'dragon');
+    assert.equal(overridden.name, 'Ignis Ember');
+    assert.equal(overridden.personality, 'determined');
+    assert.equal(overridden.level, 5);
+    assert.equal(overridden.xp, 225);
+    assert.equal(overridden.hunger, 97);
+
+    // Trainer Mode: canonical repository pet remains authoritative
+    const trainerPet = applyVisitorCompanionOverride(canonicalCat, 'dragon', true);
+    assert.equal(trainerPet.species, 'cat');
+    assert.equal(trainerPet.name, 'Shadow Claw');
+
+    // Invalid / null selection: falls back safely to canonical pet
+    const invalidPet = applyVisitorCompanionOverride(
+      canonicalCat,
+      'invalid_species' as SpeciesId,
+      false
+    );
+    assert.equal(invalidPet.species, 'cat');
+    assert.equal(applyVisitorCompanionOverride(canonicalCat, null, false).species, 'cat');
   });
 });

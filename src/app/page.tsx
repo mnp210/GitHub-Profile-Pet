@@ -60,6 +60,9 @@ import {
   importSaveData,
   fetchRemoteReadme,
   updateRemoteReadme,
+  saveVisitorSelectedSpecies,
+  loadVisitorSelectedSpecies,
+  applyVisitorCompanionOverride,
   ConnectedRepoConfig,
 } from '@/lib/storage/gameStateStorage';
 import {
@@ -389,8 +392,14 @@ export default function Home() {
       fetchRemotePetState(activeRepo, initialConfig.token).then((res) => {
         if (res.success && res.pet) {
           setIsRepoUninitialized(false);
-          setPet(res.pet);
-          saveLocalGameState(res.pet, loadLocalActionHistory());
+          const visitorSpecies = loadVisitorSelectedSpecies(activeRepo);
+          const resolvedPet = applyVisitorCompanionOverride(
+            res.pet,
+            visitorSpecies,
+            Boolean(initialConfig.token)
+          );
+          setPet(resolvedPet);
+          saveLocalGameState(resolvedPet, loadLocalActionHistory());
           setSyncStatusMsg(`Synchronized with ${activeRepo}`);
         } else {
           if (res.uninitialized) {
@@ -458,7 +467,11 @@ export default function Home() {
   // Switch Companion Species
   const handleSelectSpecies = (speciesId: SpeciesId) => {
     const meta = SPECIES_METADATA[speciesId];
+    if (!meta) return;
     retroAudio.playClick();
+    if (!repoConfig.token) {
+      saveVisitorSelectedSpecies(repoConfig.repo || 'local', speciesId);
+    }
     const updated: PetState = {
       ...pet,
       species: speciesId,
