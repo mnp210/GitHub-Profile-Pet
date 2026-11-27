@@ -114,9 +114,9 @@ export const MiniGameHub: React.FC<MiniGameHubProps> = ({
       aria-modal="true"
       aria-label="Companion Mini-Games Play Area"
     >
-      <div className="relative w-full max-w-2xl bg-[#0b0e17] border-2 border-[#2b274c] rounded-2xl p-4 sm:p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+      <div className="relative w-full max-w-2xl pet-themed-modal rounded-2xl p-4 sm:p-6 space-y-4 max-h-[92vh] overflow-y-auto">
         {/* Hub Header */}
-        <div className="flex items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-800 min-w-0">
+        <div className="flex items-start sm:items-center justify-between gap-3 pb-3 border-b border-[var(--pet-border)] min-w-0">
           <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <span className="text-xl shrink-0">🎮</span>
             <div className="min-w-0">
@@ -124,7 +124,7 @@ export const MiniGameHub: React.FC<MiniGameHubProps> = ({
                 Companion Play Zone
               </h2>
               <p className="text-[11px] text-slate-400 flex flex-wrap items-center gap-1.5">
-                <span>Bonding activities with <span className="text-purple-300 font-bold">{pet.name}</span></span>
+                <span>Bonding activities with <span className="pet-themed-accent-text font-bold">{pet.name}</span></span>
                 <span className={`px-1.5 py-0.5 rounded text-[10px] border ${profile.badgeBg}`}>
                   {profile.name}
                 </span>

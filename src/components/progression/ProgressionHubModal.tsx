@@ -61,9 +61,9 @@ export const ProgressionHubModal: React.FC<ProgressionHubModalProps> = ({
       aria-modal="true"
       aria-labelledby="progression-hub-title"
     >
-      <div className="relative w-full max-w-4xl max-h-[92vh] bg-[#0c0e18] border border-purple-500/40 rounded-2xl flex flex-col overflow-hidden shadow-2xl shadow-purple-950/50">
+      <div className="relative w-full max-w-4xl max-h-[92vh] pet-themed-modal rounded-2xl flex flex-col overflow-hidden">
         {/* ── MODAL HEADER ───────────────────────────────────────────────────── */}
-        <div className="p-3.5 sm:p-4 border-b border-slate-800/90 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-[#121524] min-w-0">
+        <div className="p-3.5 sm:p-4 pet-themed-modal-header flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0">
           <div className="flex items-start justify-between gap-3 min-w-0 flex-1">
             <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0">
               <span className="text-xl sm:text-2xl shrink-0">✨</span>
@@ -100,7 +100,7 @@ export const ProgressionHubModal: React.FC<ProgressionHubModalProps> = ({
                 }}
                 className={`flex-1 sm:flex-initial justify-center px-2.5 sm:px-3 py-1.5 sm:py-1 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                   activeTab === 'wardrobe'
-                    ? 'bg-purple-600 text-white shadow'
+                    ? 'pet-themed-primary-btn shadow'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -115,7 +115,7 @@ export const ProgressionHubModal: React.FC<ProgressionHubModalProps> = ({
                 }}
                 className={`flex-1 sm:flex-initial justify-center px-2.5 sm:px-3 py-1.5 sm:py-1 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                   activeTab === 'achievements'
-                    ? 'bg-indigo-600 text-white shadow'
+                    ? 'pet-themed-primary-btn shadow'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >

@@ -145,7 +145,14 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
   return (
     <div className="relative flex flex-col items-center w-full max-w-full">
       {/* ARENA CONTAINER */}
-      <div className="relative w-full aspect-16/10 sm:aspect-16/9 min-h-[300px] max-h-[380px] bg-gradient-to-b from-[#090b10] via-[#10131f] to-[#0c0e16] border-2 border-[#2b274c] rounded-2xl p-4 flex flex-col items-center justify-between select-none overflow-hidden shadow-2xl shadow-indigo-950/40">
+      <div
+        className="relative w-full aspect-16/10 sm:aspect-16/9 min-h-[300px] max-h-[380px] rounded-2xl p-4 flex flex-col items-center justify-between select-none overflow-hidden border border-[var(--pet-border-accent)] shadow-2xl"
+        style={{
+          background:
+            'radial-gradient(ellipse 80% 60% at 50% 40%, var(--pet-primary-soft), transparent 70%), linear-gradient(to bottom, var(--pet-bg-base), var(--pet-surface))',
+          boxShadow: '0 20px 44px -14px rgba(0, 0, 0, 0.7), 0 0 32px -12px var(--pet-glow)',
+        }}
+      >
         {/* Environment Backdrop Layer */}
         <EnvironmentBackground environmentId={equippedCosmetics?.environment ?? 'void_chamber'} />
 
@@ -155,10 +162,10 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
         {/* TOP STATUS BAR: Element, Rarity, Mood & Cooldown Timer */}
         <div className="relative z-10 w-full flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
-            <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-[#19152b] text-purple-200 border border-purple-800/50 shadow-sm">
+            <span className="px-2 py-0.5 text-[10px] font-bold rounded-md pet-themed-badge shadow-sm">
               {speciesMeta.element}
             </span>
-            <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-[#141224] text-slate-400 border border-slate-700/50">
+            <span className="px-2 py-0.5 text-[10px] font-bold rounded-md pet-themed-surface text-slate-300">
               {speciesMeta.rarity}
             </span>
             {isActionsSyncing && (
@@ -200,7 +207,7 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
 
         {/* REACTION OR LIVING THOUGHT BUBBLE */}
         {(lastReaction || thoughtBubble) && (
-          <div className="relative z-20 max-w-[85%] bg-[#1a172e]/90 border border-purple-500/30 rounded-xl px-3 py-1.5 text-center text-xs text-purple-200 shadow-lg backdrop-blur-sm animate-fade-in mt-1">
+          <div className="relative z-20 max-w-[85%] pet-themed-surface rounded-xl px-3 py-1.5 text-center text-xs pet-themed-accent-text shadow-lg backdrop-blur-sm animate-fade-in mt-1">
             <span className="italic font-medium">&ldquo;{lastReaction || thoughtBubble}&rdquo;</span>
           </div>
         )}
@@ -232,12 +239,18 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
           />
         </div>
 
-        {/* ARCANE PEDESTAL PLATFORM */}
+        {/* COMPANION PEDESTAL PLATFORM */}
         <div className="relative z-10 w-full flex flex-col items-center">
-          <div className="w-48 sm:w-64 h-2.5 bg-gradient-to-r from-transparent via-[#312a59] to-transparent rounded-full border-t border-purple-500/40 shadow-[0_0_15px_rgba(147,51,234,0.3)]" />
-          <div className="text-[11px] text-purple-300/70 mt-1 flex items-center justify-between w-full px-2">
+          <div
+            className="w-48 sm:w-64 h-2.5 rounded-full border-t border-[var(--pet-border-accent)]"
+            style={{
+              background: 'linear-gradient(90deg, transparent, var(--pet-primary-soft), transparent)',
+              boxShadow: '0 0 18px var(--pet-glow)',
+            }}
+          />
+          <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between w-full px-2">
             <span>✨ Tap companion to stroke</span>
-            <span className="font-mono text-purple-400 font-semibold">{pet.name}</span>
+            <span className="font-mono pet-themed-accent-text font-semibold">{pet.name}</span>
           </div>
         </div>
       </div>
@@ -320,7 +333,7 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
         {onOpenMiniGames && (
           <button
             onClick={() => onOpenMiniGames()}
-            className="py-2 px-2.5 rounded-xl bg-gradient-to-r from-purple-950/80 to-indigo-950/80 hover:from-purple-900/90 hover:to-indigo-900/90 border border-purple-500/40 hover:border-purple-400 text-purple-200 text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.99] cursor-pointer"
+            className="py-2 px-3 rounded-xl pet-themed-nav-btn text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
             title="Launch interactive companion mini-games"
             aria-label="Open Companion Play Zone"
           >
@@ -332,7 +345,7 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
         {onOpenWardrobe && (
           <button
             onClick={() => onOpenWardrobe()}
-            className="py-2 px-2.5 rounded-xl bg-gradient-to-r from-indigo-950/80 to-pink-950/80 hover:from-indigo-900/90 hover:to-pink-900/90 border border-indigo-500/40 hover:border-indigo-400 text-indigo-200 text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.99] cursor-pointer"
+            className="py-2 px-3 rounded-xl pet-themed-nav-btn text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
             title="Open Wardrobe & Achievements Vault"
             aria-label="Open Wardrobe and Achievements Vault"
           >
@@ -344,12 +357,12 @@ export const PetDisplay: React.FC<PetDisplayProps> = ({
         {onOpenBonding && (
           <button
             onClick={() => onOpenBonding()}
-            className="py-2 px-2.5 rounded-xl bg-gradient-to-r from-pink-950/80 to-purple-950/80 hover:from-pink-900/90 hover:to-purple-900/90 border border-pink-500/40 hover:border-pink-400 text-pink-200 text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.99] cursor-pointer"
+            className="py-2 px-3 rounded-xl pet-themed-nav-btn text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
             title={`Open Companion Bonding & Daily Focus (${bondPoints} Pts)`}
             aria-label="Open Companion Bonding & Daily Focus"
           >
             <span className="text-base">🤝</span>
-            <span>Bond (Lvl {bondLevel})</span>
+            <span>Bond <span className="pet-themed-accent-text font-mono">Lv.{bondLevel}</span></span>
           </button>
         )}
       </div>

@@ -66,18 +66,18 @@ export const BondingHubModal: React.FC<BondingHubModalProps> = ({
       aria-modal="true"
       aria-labelledby="bonding-hub-title"
     >
-      <div className="relative w-full max-w-2xl max-h-[90vh] bg-slate-900 border border-purple-500/50 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-2xl max-h-[90vh] pet-themed-modal rounded-2xl flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-start sm:items-center justify-between gap-3 px-4 sm:px-5 py-3.5 sm:py-4 border-b border-purple-800/40 bg-slate-950/70 min-w-0">
+        <div className="flex items-start sm:items-center justify-between gap-3 px-4 sm:px-5 py-3.5 sm:py-4 pet-themed-modal-header min-w-0">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
-            <div className="w-9 h-9 shrink-0 rounded-xl bg-purple-900/60 border border-purple-400/40 flex items-center justify-center text-lg">
+            <div className="w-9 h-9 shrink-0 rounded-xl pet-themed-badge flex items-center justify-center text-lg">
               🤝
             </div>
             <div className="min-w-0">
               <h2 id="bonding-hub-title" className="text-sm sm:text-base font-bold text-white tracking-wide leading-snug break-words">
                 Companion Bonding & Daily Focus
               </h2>
-              <p className="text-[11px] sm:text-xs text-purple-300/80 leading-snug break-words">
+              <p className="text-[11px] sm:text-xs pet-themed-accent-text leading-snug break-words">
                 Bond Level {bondingState.bondLevel} • {bondingState.bondPoints} Pts • {pet.name} ({pet.personality})
               </p>
             </div>

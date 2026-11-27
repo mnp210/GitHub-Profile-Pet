@@ -32,9 +32,10 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
       case 'cyan':
         return 'bg-cyan-500';
       case 'purple':
-        return 'bg-indigo-500';
+      case 'indigo':
+        return 'pet-themed-xp-fill';
       default:
-        return 'bg-indigo-500';
+        return 'pet-themed-xp-fill';
     }
   };
 

@@ -87,13 +87,13 @@ export const WardrobeView: React.FC<WardrobeViewProps> = ({
     <div className="flex flex-col lg:flex-row gap-6 w-full font-mono text-slate-100">
       {/* ── LEFT: COMPANION LIVE PREVIEW ARENA ─────────────────────────────────── */}
       <div className="flex flex-col items-center w-full lg:w-80 shrink-0">
-        <div className="relative w-full aspect-square max-w-[320px] rounded-2xl border-2 border-[#3b3267] p-4 flex flex-col items-center justify-between overflow-hidden shadow-2xl">
+        <div className="relative w-full aspect-square max-w-[320px] rounded-2xl border border-[var(--pet-border-accent)] p-4 flex flex-col items-center justify-between overflow-hidden shadow-2xl">
           {/* Environment backdrop */}
           <EnvironmentBackground environmentId={effectiveEquipped.environment} />
 
           {/* Top Preview Status */}
           <div className="relative z-10 w-full flex items-center justify-between text-[10px] font-bold">
-            <span className="px-2 py-0.5 rounded bg-black/60 border border-slate-700 text-purple-300">
+            <span className="px-2 py-0.5 rounded bg-black/60 border border-[var(--pet-border)] pet-themed-accent-text">
               {pet.name} · {speciesMeta.name}
             </span>
             <span className="px-2 py-0.5 rounded bg-black/60 border border-slate-700 text-amber-300 capitalize">
@@ -127,8 +127,13 @@ export const WardrobeView: React.FC<WardrobeViewProps> = ({
 
           {/* Bottom Podium */}
           <div className="relative z-10 w-full flex flex-col items-center">
-            <div className="w-40 h-2 bg-gradient-to-r from-transparent via-[#4c3e88] to-transparent rounded-full border-t border-purple-400/40" />
-            <div className="text-[10px] text-purple-300/80 mt-1">
+            <div
+              className="w-40 h-2 rounded-full border-t border-[var(--pet-border-accent)]"
+              style={{
+                background: 'linear-gradient(90deg, transparent, var(--pet-primary-soft), transparent)',
+              }}
+            />
+            <div className="text-[10px] pet-themed-accent-text opacity-85 mt-1">
               {previewCosmetic ? (
                 <span className="text-cyan-300 font-bold animate-pulse">
                   Previewing: {previewCosmetic.name}
@@ -200,9 +205,9 @@ export const WardrobeView: React.FC<WardrobeViewProps> = ({
                   retroAudio.playClick();
                   setSelectedCategory(cat);
                 }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
                   isSelected
-                    ? 'bg-purple-900/60 text-purple-200 border border-purple-500 shadow-sm'
+                    ? 'pet-themed-nav-btn-active shadow-sm'
                     : 'bg-slate-900/60 text-slate-400 border border-slate-800 hover:text-slate-200'
                 }`}
               >

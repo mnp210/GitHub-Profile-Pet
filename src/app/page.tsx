@@ -72,6 +72,10 @@ import {
   buildDeepLinkUrl,
   type DeepLinkScreen,
 } from '@/features/navigation/deepLinks';
+import {
+  getCompanionThemeCssVars,
+  normalizeThemeSpecies,
+} from '@/features/theme/companionTheme';
 
 export default function Home() {
   const [pet, setPet] = useState<PetState>(() => loadLocalPetState());
@@ -864,15 +868,32 @@ export default function Home() {
     ].filter(Boolean),
   }));
 
+  // Sync centralized companion theme CSS variables to documentElement
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const vars = getCompanionThemeCssVars(pet.species);
+    const root = document.documentElement;
+    for (const [key, val] of Object.entries(vars)) {
+      root.style.setProperty(key, val);
+    }
+    root.dataset.companionTheme = normalizeThemeSpecies(pet.species);
+  }, [pet.species]);
+
+  const themeVars = getCompanionThemeCssVars(pet.species);
+
   return (
-    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center antialiased w-full max-w-full overflow-x-hidden selection:bg-purple-600 selection:text-white">
+    <div
+      data-companion-theme={normalizeThemeSpecies(pet.species)}
+      style={themeVars as React.CSSProperties}
+      className="min-h-screen pet-themed-page text-slate-100 flex flex-col items-center antialiased w-full max-w-full overflow-x-hidden selection:bg-[var(--pet-primary)] selection:text-white"
+    >
       {/* 1. TOP COMPANION NAVIGATION BAR */}
-      <header className="sticky top-0 z-40 w-full bg-[#0a0c14]/95 backdrop-blur-md border-b border-[#252240]">
+      <header className="sticky top-0 z-40 w-full pet-themed-header backdrop-blur-md">
         <div className="max-w-[1140px] mx-auto w-full px-3 sm:px-6 py-2.5 sm:py-3 flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
           {/* Left Brand & Active Companion Title */}
           <div className="flex items-center justify-between gap-3 min-w-0">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 shrink-0 rounded-lg bg-gradient-to-br from-purple-600/90 to-indigo-800/90 flex items-center justify-center text-base border border-purple-400/30">
+              <div className="w-8 h-8 shrink-0 rounded-lg pet-themed-badge flex items-center justify-center text-base">
                 🐾
               </div>
               <div className="min-w-0">
@@ -880,12 +901,12 @@ export default function Home() {
                   <h1 className="text-sm font-bold tracking-wide text-slate-100 whitespace-nowrap">
                     GitHub Profile Pet
                   </h1>
-                  <span className="text-[10px] font-medium text-purple-300/80 uppercase tracking-wider whitespace-nowrap">
+                  <span className="text-[10px] font-medium pet-themed-accent-text uppercase tracking-wider whitespace-nowrap">
                     Playable Edition
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-400 font-mono truncate">
-                  {pet.name} <span className="text-purple-400 font-semibold">• Lv. {pet.level} {pet.evolutionStage}</span>
+                  {pet.name} <span className="pet-themed-accent-text font-semibold">• Lv. {pet.level} {pet.evolutionStage}</span>
                 </p>
               </div>
             </div>
@@ -894,10 +915,10 @@ export default function Home() {
             <div className="flex lg:hidden items-center gap-1.5 shrink-0">
               <button
                 onClick={handleToggleSound}
-                className={`h-8 px-2.5 rounded-lg border text-xs font-medium inline-flex items-center gap-1 transition-colors cursor-pointer ${
+                className={`h-8 px-2.5 rounded-lg text-xs font-medium inline-flex items-center gap-1 transition-colors cursor-pointer ${
                   isMuted
-                    ? 'bg-[#12141f] border-[#252240] text-slate-400 hover:text-slate-200'
-                    : 'bg-[#16132b] border-purple-700/50 text-purple-200 hover:bg-[#1e1a38]'
+                    ? 'bg-[#12141f] border border-[#252240] text-slate-400 hover:text-slate-200'
+                    : 'pet-themed-nav-btn-active'
                 }`}
                 title={isMuted ? 'Sound is Muted (Click to Unmute)' : 'Sound is Active (Click to Mute)'}
                 aria-label={isMuted ? 'Unmute Sound' : 'Mute Sound'}
@@ -908,7 +929,7 @@ export default function Home() {
                 href="https://github.com/mnp210/GitHub-Profile-Pet"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="h-8 px-2.5 rounded-lg border border-[#252240] bg-[#12141f] hover:bg-[#1a1830] text-slate-300 hover:text-white text-xs font-medium inline-flex items-center whitespace-nowrap transition-colors"
+                className="h-8 px-2.5 rounded-lg pet-themed-nav-btn text-xs font-medium inline-flex items-center whitespace-nowrap transition-colors"
                 title="Open GitHub Repository"
               >
                 GitHub
@@ -924,10 +945,10 @@ export default function Home() {
             {/* Audio Mute/Unmute (Desktop) */}
             <button
               onClick={handleToggleSound}
-              className={`hidden lg:inline-flex h-8 px-2.5 rounded-lg border text-xs font-medium items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+              className={`hidden lg:inline-flex h-8 px-2.5 rounded-lg text-xs font-medium items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
                 isMuted
-                  ? 'bg-[#12141f] border-[#252240] text-slate-400 hover:text-slate-200'
-                  : 'bg-[#16132b] border-purple-700/50 text-purple-200 hover:bg-[#1e1a38]'
+                  ? 'bg-[#12141f] border border-[#252240] text-slate-400 hover:text-slate-200'
+                  : 'pet-themed-nav-btn-active'
               }`}
               title={isMuted ? 'Sound is Muted (Click to Unmute)' : 'Sound is Active (Click to Mute)'}
             >
@@ -938,7 +959,9 @@ export default function Home() {
             {/* Companion Play Zone Mini-Games */}
             <button
               onClick={() => navigateToScreen('playzone')}
-              className="h-8 px-2.5 sm:px-3 rounded-lg border border-[#2c274a] bg-[#131122] hover:bg-[#1d1935] hover:border-purple-500/50 text-slate-200 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer"
+              className={`h-8 px-2.5 sm:px-3 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                isMiniGameModalOpen ? 'pet-themed-nav-btn-active' : 'pet-themed-nav-btn'
+              }`}
               title="Interactive Activities & Mini-Games"
               aria-label="Open Play Zone Mini-Games"
             >
@@ -949,7 +972,9 @@ export default function Home() {
             {/* Wardrobe & Achievements Vault */}
             <button
               onClick={() => navigateToScreen('wardrobe')}
-              className="h-8 px-2.5 sm:px-3 rounded-lg border border-[#2c274a] bg-[#131122] hover:bg-[#1d1935] hover:border-purple-500/50 text-slate-200 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer"
+              className={`h-8 px-2.5 sm:px-3 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                isProgressionModalOpen ? 'pet-themed-nav-btn-active' : 'pet-themed-nav-btn'
+              }`}
               title="Wardrobe, Cosmetics & Achievements"
               aria-label="Open Wardrobe and Achievements"
             >
@@ -960,18 +985,22 @@ export default function Home() {
             {/* Companion Bonding & Daily Focus */}
             <button
               onClick={() => navigateToScreen('bond')}
-              className="h-8 px-2.5 sm:px-3 rounded-lg border border-[#2c274a] bg-[#131122] hover:bg-[#1d1935] hover:border-purple-500/50 text-slate-200 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer"
+              className={`h-8 px-2.5 sm:px-3 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                isBondingModalOpen ? 'pet-themed-nav-btn-active' : 'pet-themed-nav-btn'
+              }`}
               title="Companion Bonding, Daily Activities & Rotating Challenges"
               aria-label="Open Companion Bonding & Daily Focus"
             >
               <span>🤝</span>
-              <span>Bond <span className="text-purple-300/90 font-mono">Lv.{bondingState.bondLevel}</span></span>
+              <span>Bond <span className="pet-themed-accent-text font-mono">Lv.{bondingState.bondLevel}</span></span>
             </button>
 
             {/* Evolution Codex / Pet Profile */}
             <button
               onClick={() => navigateToScreen('stats')}
-              className="h-8 px-2.5 sm:px-3 rounded-lg border border-[#2c274a] bg-[#131122] hover:bg-[#1d1935] hover:border-purple-500/50 text-slate-200 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer"
+              className={`h-8 px-2.5 sm:px-3 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                isCodexModalOpen ? 'pet-themed-nav-btn-active' : 'pet-themed-nav-btn'
+              }`}
               title="Pet Profile & Evolution Milestones Codex"
               aria-label="Open Pet Profile and Evolution Codex"
             >
@@ -982,10 +1011,10 @@ export default function Home() {
             {/* GitHub Sync Button */}
             <button
               onClick={() => setIsSyncModalOpen(true)}
-              className={`h-8 px-2.5 sm:px-3 rounded-lg border text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+              className={`h-8 px-2.5 sm:px-3 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
                 repoConfig.repo
-                  ? 'bg-purple-950/70 border-purple-500/50 text-purple-100 hover:bg-purple-900/70'
-                  : 'bg-[#151824] border-slate-700/80 text-slate-300 hover:bg-[#1e2233]'
+                  ? 'pet-themed-nav-btn-active'
+                  : 'pet-themed-nav-btn'
               }`}
               title="GitHub Repository Sync Settings"
             >
@@ -1000,7 +1029,7 @@ export default function Home() {
               href="https://github.com/mnp210/GitHub-Profile-Pet"
               target="_blank"
               rel="noopener noreferrer"
-              className="hidden lg:inline-flex h-8 px-2.5 rounded-lg border border-[#252240] bg-[#12141f] hover:bg-[#1a1830] text-slate-300 hover:text-white text-xs font-medium items-center whitespace-nowrap transition-colors"
+              className="hidden lg:inline-flex h-8 px-2.5 rounded-lg pet-themed-nav-btn text-xs font-medium items-center whitespace-nowrap transition-colors"
               title="Open GitHub Repository"
             >
               GitHub
@@ -1012,7 +1041,7 @@ export default function Home() {
       {/* 2. MAIN GAME CONTAINER */}
       <main className="flex-1 w-full max-w-[1140px] px-3 sm:px-6 py-4 sm:py-6 space-y-5">
         {/* REPOSITORY STATUS & TRAINER / VISITOR MODE STRIP */}
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl border border-[#211e38] bg-[#0d0f18]/85 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl pet-themed-surface text-xs">
           <div className="flex flex-wrap items-center gap-2 min-w-0">
             {repoConfig.repo ? (
               repoConfig.token ? (
@@ -1390,9 +1419,9 @@ export default function Home() {
           aria-modal="true"
           aria-labelledby="pet-profile-modal-title"
         >
-          <div className="w-full max-w-lg bg-[#12141d] border-2 border-[#38335d] rounded-2xl p-5 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-[#25233c] pb-3">
-              <h3 id="pet-profile-modal-title" className="text-sm font-bold text-purple-200 flex items-center gap-2">
+          <div className="w-full max-w-lg pet-themed-modal rounded-2xl p-5 space-y-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-[var(--pet-border)] pb-3">
+              <h3 id="pet-profile-modal-title" className="text-sm font-bold pet-themed-accent-text flex items-center gap-2">
                 <span>📜</span> Pet Profile &amp; Evolution Codex
               </h3>
               <button
@@ -1404,14 +1433,14 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 bg-[#181629] border border-[#2d284a] rounded-xl p-3.5 text-xs">
+            <div className="grid grid-cols-2 gap-2.5 pet-themed-surface rounded-xl p-3.5 text-xs">
               <div>
                 <div className="text-slate-400">Companion</div>
                 <div className="font-bold text-slate-100">{pet.name} ({currentSpeciesMeta.name})</div>
               </div>
               <div>
                 <div className="text-slate-400">Stage &amp; Level</div>
-                <div className="font-bold text-purple-300">Lv. {pet.level} · {pet.evolutionStage}</div>
+                <div className="font-bold pet-themed-accent-text">Lv. {pet.level} · {pet.evolutionStage}</div>
               </div>
               <div>
                 <div className="text-slate-400">XP Progress</div>
@@ -1421,7 +1450,7 @@ export default function Home() {
                 <div className="text-slate-400">Mood &amp; Personality</div>
                 <div className="font-semibold text-slate-100">{pet.mood} · {pet.personality || getDefaultPersonalityForSpecies(pet.species)}</div>
               </div>
-              <div className="col-span-2 pt-1 border-t border-[#262240] flex flex-wrap gap-4 font-mono text-[11px] text-slate-200">
+              <div className="col-span-2 pt-1 border-t border-[var(--pet-border)] flex flex-wrap gap-4 font-mono text-[11px] text-slate-200">
                 <span>Energy: {Math.round(pet.energy)}%</span>
                 <span>Satiety: {Math.round(pet.hunger)}%</span>
                 <span>Happiness: {Math.round(pet.happiness)}%</span>
@@ -1433,10 +1462,10 @@ export default function Home() {
               currentLevel={pet.level}
             />
 
-            <div className="pt-2 border-t border-[#25233c] text-right">
+            <div className="pt-2 border-t border-[var(--pet-border)] text-right">
               <button
                 onClick={() => navigateToScreen('care')}
-                className="px-4 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-600 text-xs font-bold text-white cursor-pointer"
+                className="px-4 py-1.5 rounded-lg pet-themed-primary-btn text-xs font-bold cursor-pointer"
               >
                 Close Profile
               </button>
